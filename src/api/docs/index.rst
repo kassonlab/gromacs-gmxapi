@@ -2,6 +2,8 @@
 Gromacs External Interfaces
 ===========================
 
+This Gromacs fork is hosted at https://bitbucket.org/kassonlab/gromacs
+
 ..  toctree::
     :maxdepth: 2
     :caption: Documentation sections
