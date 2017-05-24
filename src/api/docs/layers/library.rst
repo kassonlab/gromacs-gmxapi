@@ -25,8 +25,8 @@ Plugins should also be provided with facilities for checkpointing, logging,
 status messages, and whatever else they need to avoid doing their own I/O.
 
 I suspect there is even less burden of ABI compatibility for plugins, but the
-public API, library API, and plugin API should be have separately managed
-versioning to facilitate API compatibility checks.
+public API, library API, and plugin API should have separately managed
+versioning to facilitate API compatibility checks and independent stability.
 
 The API should provide plugins with (at least) the following resources:
 
@@ -38,6 +38,8 @@ The API should provide plugins with (at least) the following resources:
 * serialization / checkpoint hooks
 * neighbor list(s)
 
+See :doc:`library`
+
 Callback hooks
 ==============
 
@@ -47,7 +49,7 @@ or just compute kernels, but a simple callback API allows greater
 flexibility. But how should a callback be bound and invoked?
 
 I propose one call-back function can be registered with the runner to be called
-every `period` steps (provide a helper function for time units).
+every ``period`` steps (provide a helper function for time units).
 The function will be called with a single argument that is a
 reference to the simulation object.
 The call-back function can access whatever statefull information

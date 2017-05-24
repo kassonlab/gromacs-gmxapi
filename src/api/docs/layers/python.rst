@@ -23,18 +23,17 @@ The APIs developed should allow access to these functionalities.
 A user should be able to link together tasks programatically, dynamically, and
 with no requirements of filesystem I/O.
 
-
 Gromacs command-line functionality should be easily achieved in a Python script. This
 does not mean that all CLI tools should be simply exposed to Python, since
 many represent trivial data transformations, tasks that are well-handled by other
 Python-based tools, or easily-scripted tasks. Common scriptable tasks can be
 provided by high-level convenience functions or "bottled" workflows. More
 elemental functionality that should be available through the C++ API can be
-exposed through bindings to the C++ API.
+exposed through bindings to the Python API.
 
 With Python's reference counting and conceptual differences about the mutability
 of data, it is appropriate to support a few different modes of access to Gromacs
-data structures. When it is necessary to copy data, explicit API syntax should
+data structures in the C++ API. When it is necessary to copy data, explicit API syntax should
 make it clear to the user. When possible, the Python buffer protocol can be used
 to give Python direct access to memory shared by C++ data structures. In general,
 though, for data and objects that exist only to be used in subsequent API calls,
@@ -44,20 +43,6 @@ already exist. This also helps with the notion that the Python interpreter
 expects to "own" objects that are handed to it through bindings.
 
 The design should emphasize idiomatic Python usage.
-
-Suggested use case timeline:
-
-1. Read and write various Gromacs files with appropriately
-general objects at the high level interface.
-2. Integrate with the Trajectory Analysis framework to run pipelines of modules
-implemented in C++, Python, and external tools.
-3. Drive a simulation workflow from a Python script.
-4. Manage an adaptive simulation workflow combining analysis and simulations
-configured programmatically, with minimal I/O or parallel gathers/scatters and
-with workflow checkpointing. Edit input configurations, topologies, and runtime parameters.
-5. Use Python call-backs for low-performance invasive experimentation with a running
-simulation and provide the user interface to connect plugins that use the C++
-plugin API.
 
 Other Python Gromacs interfaces
 ===============================
@@ -86,13 +71,13 @@ single pass on a trajectory
 Existing Python tools to leverage
 =================================
 
-| Some of the tools available from the ``gmx`` command-line interface
-  are bundled largely for convenience,
-| and Python users may be better served by turning to other projects
-  rather than relying on exposing
-| redundant functionality from ``libgromacs``.
-| In other cases, Gromacs developers may simply want to be aware of the
-  other tools and interoperability requirements.
+Some of the tools available from the ``gmx`` command-line interface
+are bundled largely for convenience,
+and Python users may be better served by turning to other projects
+rather than relying on exposing
+redundant functionality from ``libgromacs``.
+In other cases, Gromacs developers may simply want to be aware of the
+other tools and interoperability requirements.
 
 -  `pypdb <https://github.com/williamgilpin/pypdb>`__ A Python API for
    the RCSB Protein Data Bank (PDB)
@@ -134,9 +119,9 @@ Existing Python tools to leverage
 Naming
 ======
 
-| The package should have a name that does not collide with other known
-  projects, particularly any projects on pypi.
-| "gmx" is available on pypi, but similar existing package names include
+The package should have a name that does not collide with other known
+projects, particularly any projects on pypi.
+"gmx" is available on pypi, but similar existing package names include
 
 -  ``gmx-script``
 -  ``python-gmx``
@@ -181,13 +166,15 @@ Linux distributions released after June 2013 and supported at least to June 2019
 | RHEL 7: n/a
 | CentOS 7: n/a
 
-Suggestion: require Python 3.4+: widely supported by distributions that, as of a
-projected public release, will have been released less than five years ago and
-will be supported for at least another year. Built-in `pip` and enum types would
-be very nice to be able to rely on. If Python 2.7 is supported, then we should
-not support less than Python 3.3, but it may be hard enough to take advantage of
-features in 3.4+ that there isn't a good reason to require it without motivation
-from a clear roadmap of which versions Gromacs will support in the future.
+Suggestion: Initially support Python 2.7 and 3.3, with both immediately
+depracated. Plan to require Python 3.4+ when Python 2.7 is end-of-lifed in 2020.
+Python 3.4 is widely supported by distributions that, as of a projected public
+release, will have been released less than five years ago and will be supported
+for at least another year. Built-in `pip` and enum types would be very nice to
+be able to rely on. If Python 2.7 is supported, then we should not support less
+than Python 3.3, but it may be hard enough to take advantage of features in 3.4+
+that there isn't a good reason to require it without motivation from a clear
+roadmap of which versions Gromacs will support in the future.
 
 Use cases and Scenarios
 =======================
@@ -398,15 +385,221 @@ Implementation option:
    forward to an appropriate helper function for files, current instances, etc.
 
 Examples
-==============
+========
 
-The following examples show what the Python interface might look like and
-illustrate more concretely the concepts in the scenarios above.
-Ultimately this documentation-by-example will be extracted from the source code,
-but right now it is static content that will guide the source code layout.
+Set up and run a simple simulation
+----------------------------------
+
+Consider the entire workflow as a directed acyclic graph.
+
+With various implicit functionality and helper functions, a simple script may
+look like this.
+
+.. code-block:: python
+
+    system = gmx.System.from_file('nvt.mdp', structure=pdbsource, topology=pdbsource, T_init=T)
+
+    # Custom analysis code can be attached as an API oject, or a convenient but
+    # lower performing call-back.
+    system.integrator.callback.append(lambda timestep: do_something(timestep),
+                        period=gmx.units.ps(1.0))
+
+    # System is only allowed to have one "runnable" object bound,
+    # which is implicitly system.integrator
+    status = gmx.run(system, time)
+
+Here I use a lambda to indicate callback signature. Though it is conceivable
+to serialize lambdas and closures for non-local execution contexts, it is
+questionable whether this is a rabbit-hole we would want to go down. The
+context layer can, however, do some introspection and in the worst case
+can just implicitly retrieve state to the calling Python interpreter every
+``period`` timesteps. In such a case, it would be the remote execution
+context that holds a thin proxy object representing the (Sink) callback node.
+
+Note that rather than try to figure out what data a call-back needs, the call-back can be constructed as a functor or with a closure that binds to the system or integrator API objects before the simulation launches, allowing the library freedom to provide a call-back with only the access and data it needs.
+
+Continuing the notion that data constitutes graph edges and computation constitutes
+graph nodes. Special terminal nodes are Source and Sink objects that only provide
+ports for data flow in one direction. The following assumes a framework in which
+standard data stream types have standard names or other means of discovery.
+Non-standard data streams could be extracted from catch-all bundled data or
+represented with classes defined in additional extensions.
+
+The above script implicitly translates to the following, which a user could
+just as well use if desiring more control or additional data handles.
+
+
+.. code-block:: python
+
+    # Or use other tools for preparation...
+    import pypdb
+    pdbfile = pypdb.get_pdb_file(somerecord, filetype='pdb', compression=True)
+    # repair sequence errors, sanitizing
+    record = myscripts.clean_pdb(pdbfile)
+    builder = gmx.TopologyBuilder(gmx.forcefields.amber99sb-ildn, water='tip3p')
+    # Create an object that is both a StructureSource and TopologySource
+    record = builder.from_pdb(record)
+
+    # set up a (set of) simulation(s) with API calls, and include energy log
+    options = gmx.Options.from_mdp('nvt.mdp')
+    options.temperature_coupling('Nose-Hoover').t = [323, 323, 323]
+    options.neighbors('Verlet').ns_type = 'grid'
+
+    # Set and initialize electrostatics options::
+
+    pme = options.coulombtype('PME')
+    pme.order = 4
+    pme.fourierspacing = 0.16
+    nvt = gmx.md.Integrator(options)
+
+    # Create an object that is a VelocitySource with trivial iterator.
+    # Initialize with temperature atomic mass data. No inputs. Yields a set of
+    # velocities.
+    v_init = gmx.ThermalVelocities(**params)
+
+    # Note:
+    (gmx.core.VelocitySource(v_init) is v_init.velocity) == True
+
+    system = gmx.System(structure=record, topology=record, velocity=v_init)
+    system.integrator = nvt
+
+    # Remove the last logger-like object, if any
+    try:
+        if isinstance(nvt.observers[-1], gmx.Logger):
+            nvt.observers.pop()
+    except IndexError:
+        pass
+
+    # Add outputs
+    gmx.md.FileLogger(nvt, **log_params)
+    gmx.io.TrajectoryFile(nvt, **trajout_params)
+
+    # Custom analysis code can still be attached as above, or a convenient but
+    # lower performing call-back used.
+    nvt.callback.append(lambda timestep: do_something(timestep),
+                        period=gmx.units.ps(1.0))
+
+    # run simulation(s)
+    status = gmx.run(nvt)
+
+    # Check for energy convergence and rerun
+
+    def converged(quantity):
+        return something_clever(quantity)
+
+    while not converged(nvt.potential_energy):
+        options.integrator.nsteps += 10000
+        status = gmx.run(nvt)
+
+Note: A task like energy minimization can be implemented as a "bottled workflow" implemented at the highest level, as a series of API objects connected in the simulation--analysis graph, as a plugin, or as an "integrator".
+
+For additional musings, see :doc:`library`
+
+
+Trajectory analysis
+-------------------
+
+Implicit context management
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: python
+
+    import gmx
+    from gmx import TrajectoryFile
+
+    # instantiate trajectory file object
+    mytraj = TrajectoryFile(filename, 'r')
+    # note nothing is in it yet
+    dir(mytraj)
+
+    # add my_filter to to tool chain
+    my_filter = gmx.Filter(coordinates=mytraj.coordinates)
+    help(my_filter) # we see the output streams available
+
+    # bind low-pass output to saxs modeling to tool chain
+    mysaxs = gmx.Saxs(coordinates=my_filter.lowpass, mass=mytraj.mass)
+    filehandle = gmx.DataFile('saxs.xvg', 'w')
+    filehandle.write(mysaxs.data)
+
+    # get data handle to high-pass output and process into numpy
+    try:
+        X = [numpy.array(frame.position.extract(), copy=False) for frame in mytraj]
+    except gmx.Error as e:
+        e.msg == "No execution context"
+    # No context is active, and initializing one implicitly could cause poorly-
+    # defined behavior for the unevaluated API objects, partiularly if more are
+    # added after the extract
+
+    # evaluate remaining tasks and finish
+    gmx.run()
+    # or
+    status = gmx.Context(**runtime_params).resolve(gmx.run())
+
+    # only get the last frame
+    X = numpy.array(mytraj.positions.extract(), copy=False)
+
+
+Explicit context management
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: python
+
+    # instantiate trajectory file object
+    mytraj = TrajectoryFile(filename, 'r')
+    # note nothing is in it yet
+    dir(mytraj)
+
+    # add filter to to tool chain
+    my_filter = gmx.Filter(coordinates=mytraj.coordinates)
+    help(my_filter) # we see the output streams available
+
+    # bind low-pass output to saxs modeling to tool chain
+    mysaxs = gmx.Saxs(coordinates=my_filter.lowpass, mass=mytraj.mass)
+    gmx.DataFile('saxs.xvg', 'w').write(mysaxs.data)
+
+    context = gmx.LocalContext()
+    mytraj.runner.initialize(context, options)
+    # get data handle to high-pass output and process into numpy
+    X = [numpy.array(positions.extract(), copy=False) for positions in my_filter.highpass]
+
+    # evaluate remaining tasks and finish
+    context.resolve()
+
+Idiomatic context management
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: python
+
+    with context, gmx.DataFile('saxs.xvg', 'w') as fh:
+        # API objects can create or discover the initialized context from the library
+        # context must be initialized in the library in order to perform extract
+        # instantiate trajectory file object
+        mytraj = TrajectoryFile(filename, 'r')
+
+        # add filter to to tool chain
+        my_filter = gmx.Filter(coordinates=mytraj.coordinates)
+
+        # bind low-pass output to saxs modeling to tool chain
+        mysaxs = gmx.Saxs(coordinates=my_filter.lowpass, mass=mytraj.mass)
+        fh.write(mysaxs.data)
+
+        # get data handle to high-pass output and process into numpy
+        X = [numpy.array(frame.position.extract(), copy=False) for frame in mytraj]
+        # Triggers evaluation and data retrieval
+
+        # evaluate remaining tasks and finish by leaving the ``with`` block
+
+    try:
+        Y = [numpy.array(frame.position.extract(), copy=False) for frame in mytraj]
+    catch gmx.Error as e:
+        e.msg == "No data"
+
+
 
 Sea-level Scenario: Simulate counter-ion effects on peptide from PDB
 --------------------------------------------------------------------
+
+Note:: To do: the following syntax is out of date.
 
 Reimplement the CLI workflow described in the funnel web spider toxin
 tutorial at
@@ -421,7 +614,7 @@ http://cinjweb.umdnj.edu/~kerrigje/pdf_files/fwspidr_tutor.pdf
 
 Assumes
 
-.. sourcecode :: python
+.. code-block::  python
 
      import gmx
 
@@ -433,7 +626,7 @@ Read and clean pdb file.
 Consume ``fws.pdb`` and produces ``.gro`` and ``.top`` files. e.g.
 ``pdb2gmx -ignh -ff amber99sb-ildn -f fws.pdb -o fws.gro -p fws.top -water tip3p``
 
-.. sourcecode :: python
+.. code-block::  python
 
      # Depending on how pdb2gmx is currently implemented...
      cleanpdb = gmx.util.clean_pdb('fws.pdb', ignore_hydrogens=True)
@@ -451,7 +644,7 @@ Consume ``fws.pdb`` and produces ``.gro`` and ``.top`` files. e.g.
 
 Build topology using force field and structure data
 
-.. sourcecode :: python
+.. code-block::  python
 
      # return a gmx.Topology object for atoms in pdbfile
      topology = gmx.TopologyBuilder(gmx.forcefields.amber99sb-ildn).from_pdb(pdbfile)
@@ -461,14 +654,14 @@ Build topology using force field and structure data
 Produce .gro and .top files
 with a convenience function.
 
-.. sourcecode :: python
+.. code-block::  python
 
      gmx.AtomData.from_pdb(pdbfile).save('fws.gro')
      topology.save('fws.top')
 
 Alternatively
 
-.. sourcecode :: python
+.. code-block::  python
 
      # Use utility to read and write files. Bottled workflow.
      gmx.utils.pdb2gmx(force_field=gmx.forcefield.amber99sb-ildn,
@@ -484,7 +677,7 @@ Set up the box.
 
 e.g. ``editconf -f fws.gro -o fws-PBC.gro -bt dodecahedron -d 1.2``
 
-.. sourcecode :: python
+.. code-block::  python
 
      #Read the file into a Atom data object, intuiting the file type by extension
      grofile = gmx.AtomData('fws.gro')
@@ -503,7 +696,7 @@ In vacuo energy minimization
 
 Prepare input record. e.g. ``grompp -f em-vac-pme.mdp -c fws-PBC.gro -p fws.top -o em-vac.tpr``
 
-.. sourcecode :: python
+.. code-block::  python
 
      # using convenience function for mdp file
      minimization = gmx.System.from_mdpfile(mdpfile='em-vac-pmd.mdp',
@@ -534,7 +727,7 @@ are processed. If we want to provide convenience, we could bundle options
 as dictionaries to be passed to, e.g., an nlist_params argument to the
 integrator.
 
-.. sourcecode :: python
+.. code-block::  python
 
      # With no arguments, use current gmx code to detect and allocate compute resources.
      context = gmx.Context()
@@ -563,7 +756,7 @@ Maybe the ``from_`` is cumbersome.
 
 Optionally, add loggers
 
-.. sourcecode :: python
+.. code-block::  python
 
      # optionally
      # get an energy group of all atoms in the system
@@ -574,7 +767,7 @@ Optionally, add loggers
 Run energy minimizer.
 e.g. ``mdrun -v -deffnm em-vac``
 
-.. sourcecode :: python
+.. code-block::  python
 
      # optionally set output behavior
      minimization.filename_base('em-vac')
@@ -597,7 +790,7 @@ gmx.solvent submodule could already be AtomData objects.
 Similarly, the solute and solvent arguments in solvate() could try to cast
 to AtomData objects.
 
-.. sourcecode :: python
+.. code-block::  python
 
      solvent = gmx.AtomData('spc216.gro') # load solvent molecule coordinates
      grofile = gmx.AtomData('em-vac.gro') # load energy-minimized configuration
@@ -653,7 +846,7 @@ Need to figure out what is really needed by genion. It may be that it is
 more appropriate as an integrator, like Steep(). Maybe we need a different
 term. Integrator is too specific, and so is MD. Simply Updater?
 
-.. sourcecode :: python
+.. code-block::  python
 
      minimization = gmx.System.from_mdpfile(
                                      mdpfile='em-sol-pmd.mdp',
@@ -671,7 +864,7 @@ reconsidered as something more abstract. I.e. an alchemy module or
 add/change atom methods to invoke these algorithms with appropriate
 parameters as arguments.
 
-.. sourcecode :: python
+.. code-block::  python
 
      # Should the utility be allowed to modify the input in place?
      # e.g. gmx.util.genion(system=minimization)
@@ -703,7 +896,7 @@ Minimize energy in solvated system.
 
 e.g. ``grompp -f em-sol-pme.mdp -c fws-b4em.gro -p fws.top -o em-sol.tpr``
 
-.. sourcecode :: python
+.. code-block::  python
 
      # Prep simulation
      minimization = gmx.System.from_mdpfile(
@@ -739,7 +932,7 @@ Compare to
 
 Set up and run two System objects in sequence.
 
-.. sourcecode :: python
+.. code-block::  python
 
      # grompp -f nvt-pr-md.mdp -c em-sol.gro -p fws.top -o nvt-pr.tpr
      # mdrun -deffnm nvt-pr
@@ -858,226 +1051,15 @@ Make the dummy gro file for the g_covar analysis.
 Concatenate trajectories
 ``trjcat –f md1.xtc md2.xtc md3.xtc ... (etc) –o mdall.xtc -settime``
 
-Trajectory analysis
--------------------
-
-The following example is from a comment by Teemu on Redmine issue `1625 <https://redmine.gromacs.org/issues/1625#note-13>`_ with changes reflecting the following considerations.
-
-1. add instances of analyzer classes instead of keywords
-2. call-back at level of Runner can be supplemented if custom modules can easily be subclassed from AnalysisModule
-3. Data flow management is a a project aim and will be available Pythonically.
-
-::
-
-     # Adapted from https://redmine.gromacs.org/issues/1625#note-13
-     import gmx.analysis
-
-     class MyCustomDataCombiner(gmx.analysis.Module):
-         def __init__(self, distances, angles):
-             gmx.analysis.Module.__init__() # does the base class do anything?
-             self._distances = distances
-             self._angles = angles
-
-         def process_frame(self):
-             curr_dist = self._distances.get_current_frame()
-             curr_angles = self._angles.get_current_frame()
-             # do whatever custom analysis on the combined angles and distances
-
-     # It is useful to require that operations be atomically added to a runner
-     # after the execution context has been initialized so that each node
-     # can be initialized once (at binding) and have the opportunity to raise exceptions.
-     # Create execution context, detect environment, and parse launch parameters
-     runner = gmx.Runner(**kwargs)
-
-     # Parameters can specify the trajectory, begin and end times etc
-     # Lazy initialization defers any I/O until object is run in the Gromacs execution context.
-     traj = gmx.Trajectory.from_file(filename=name, **kwargs)
-     # traj uses a special Trajectory class method to create an object with no externally-accessible input connection.
-
-     # Create data flow graph by adding the first node
-     runner.add_module(traj)
-     # traj is initialized and should do as much error checking as possible.
-
-     # These make the runner run the specified predetermined analysis modules, with the given parameters used to initialize them.
-     # Bind two inputs that Distance will consume when run.
-     # Some type checking or other sanity tests can be performed here.
-     distances = gmx.analysis.Distance(traj, traj)
-     # Further configure the modular task by setting parameters.
-     # Missing parameters will be hard to detect until the graph is run or
-     # a runner (implicit or explicit) initializes the module, presumably when it is mapped into the execution context.
-     distances.params(select=['<selection1>', '<selection2>'], **kwargs)
-
-     # bind Analyzer object to execution context
-     runner.add_module(distances)
-     # distances is initialized and can raise exceptions for, e.g., missing parameters, insufficient/inappropriate resources.
-
-     angles = runner.add_module(gmx.analysis.Angle(g1='vector', g2='vector', group1=[...], group2=[...]))
-
-     # The custom module gets called each frame, and can combine the data from the various
-     # intermediate data structures that the predefined modules provide to compute, e.g.,
-     # cross-correlation.
-     custom = MyCustomDataCombiner(distances, angles)
-
-     runner.add_frame_callback(custom.process_frame)
-
-     # This reads in the trajectory
-     # and does all the specified analyses with a single pass.
-     runner.run()
-
-In the above example, graph nodes are bound to their upstream data source at construction.
-
-Alternatively, binding inputs could be a separate step, allowing more flexibility for nodes at the data flow terminus. E.g.::
-
-     # Create Distances object
-     distances = gmx.analysis.Distances()
-     distances.params(select=['<selection1>', '<selection2>'], **kwargs)
-
-     # Create empty Trajectory object
-     traj = gmx.Trajectory()
-
-     # Over-ride dangling input connection with special method
-     traj.from_file(filename, **kwargs)
-
-     # Bind distances input
-     distances.input(traj, traj)
-
-     runner.add_module(traj)
-     runner.add_module(distance)
-     # Note the ultimate output of the graph may be another Trajectory object...
-
-
-It might be important for additional methods to handle fancier processing or multiple outputs for some modules.
-::
-
-     trajectory = Trajectory(filename, mode="r")
-
-     # Distances is an Analyzer subclass that requires two input objects that provide an iterator for Nx3 arrays or an iterator of Frame objects, or something of the sort.
-     distances1 = Distances()
-     distances1.input(trajectory(selection=group1), trajectory(selection=group2)) # connect data sources
-     distances2 = Distances()
-     distances2.input(trajectory(selection=group1), trajectory(selection=group3))
-
-     # CrossCorrelation is an Analyzer subclass that requires two input objects that provide an iterator for Nx3 arrays or of Vector objects or something else, depending on design choices.
-     xcorr = CrossCorrelation()
-     xcorr.input(distances1.output(), distances2.output()) # connect data sources
-
-The binding operation input() could throw a ValueError or TypeError if the inputs do not provide objects of the right type.
-For Analyzers that provide multiple outputs, the subscriber could either ask for a specific standardized attribute (like 'traj') or require a specific binding, either through attributes or more granular objects.  E.g.::
-
-     bar.input(foo.traj)
-
-Analysis tools
-=====================
-
-For more flexible workflows, whether driven from python or some other (TBD) external API,
-the line will be blurred between analysis tools, utilities such as ``trajconv``,
-and actual simulation.
-
-Early proof-of-concept targets for abstraction and API access will be
-I/O, file parsing, manipulations such as ``trajconv`` components, and the more actively developed analysis modules using the new C++ trajectory analysis API.
-We expect to be influenced by dataflow-centric prior art such as the TensorFlow framework.
-
-Whether explicit or implicit, the gmx framework will include some sort of "runner" that manages the graph of operations,
-exploiting data localization in the Gromacs parallelization schemes on behalf of the user.
-
-
-
-Read-only access internal data structures
-=========================================
-::
-
-    md_params = gmx.read_mdp(filename)
-    context = gmx.initialize(**md_params)
-    system = gmx.Integrator(context)
-    system.run(1e6)
-    print(system.force_rec.get_nonbonded().get_potential_energy())
-    system.run(1e6)
-    system.dump()
-    context.finalize()
-
-Alternatively or additionally, a slot for a Reporter or Analyzer class could be
-inserted into the simulation loop.
-
-OpenMM-like::
-
-    system.reporters.append(ThermoReporter('data.csv', kineticEnergy=True, potentialEnergy=True, pressure=True))
-    # low performance Python-level custom reporters?
-    class MyReporter(Reporter):
-        def report():
-            cur_fr = self.system._cpp_integrator.force_rec
-            sys.stderr.write(cur_fr.get_nonbonded().get_potential_energy())
-    system.reporters.append(MyReporter())
-
-HOOMD-like::
-
-    context.initialize()
-    ...
-    system = init_from_xml()
-    ...
-    # hook into a loggable quantity provided by the Lennard-Jones force-calculation kernel
-    logger = analyze.log('out.dat', period=1, quantities=['potential_energy_lj'])
-    system.run(10) # 'out.dat' has ten lines
-    e = logger.query('potential_energy_lj') # retrieve most recently logged value
-
-Retrievable handles to modules owned by MD engine
-=================================================
-::
-
-    coordinates, topology = gmx.utils.pdb2gmx(**{**ff_params, **water_params, ...})
-    minimization = gmx.integrator.Steep(coords=coordinates, topology=topology, **params)
-    ff = minimization.get_force_field()
-    minimization.run(nsteps)
-    for compute in ff.get_computes():
-        print(compute.name, compute.get_energy())
-
-Modules exposed at a "context" level
-====================================
-such that a handle exists before and after the MD integrator runs.
-
-.. sourcecode :: python
-
-    with gmx.initialize_empty(**runtime_params) as context:
-        coordinates, topology = gmx.utils.pdb2gmx(
-                                        force_field=gmx.forcefield.amber99sb-ildn,
-                                        pdb_file="fws.pdb",
-                                        coords_file="fws.gro",
-                                        topology_file="fws.top",
-                                        water=gmx.watermodel.tip3p)
-        context.set_positions(coordinates)
-        integrator = VVIntegrator(topology, ff, **md_params)
-        context.set_integrator(integrator)
-        context.reporters.append(gmx.reporter.EnergyLogger(**log_params))
-        # integrator, force compute kernels, and reporter are not yet initialized
-
-        context.run(1)
-        # domain decomposition has taken place, particles migrated, compute
-
-        # modules initialized for the topology, and all internal data structures initialized
-        context.step(1000)
-        # nothing changed due to user input, so nothing was reinitialized
-
-        context.nonbonded[0] # handle to the first force kernel applied during nonbonded evaluation
-        context.nonbonded.append(Plumed.FancyForce(...))
-        context.step(1)
-        # if cut-off range has changed, domain decomposition has been updated, etc.
-
-        # Now get energy from last compute, i.e. Plumed.FancyForce
-        energy = context.nonbonded[-1].get_energy()
-        # communication has been triggered and all ranks now have the total energy stored locally in Python.
-
-        # Interact with the distributed objects at a low level.
-        positions = gmx.get_comm().Gather(context.get_local_particles().positions[:])
-
-        print("Done")
-
-    # 'with' calls context.__exit__() to make sure context.finalize() cleans up
-    # despite remaining references
 
 TensorFlow analogy
 ==================
-The following is a mind-expanding thought experiment, not a personal goal.
 
-.. sourcecode :: python
+The following is a mind-expanding thought experiment, not a goal. Taken to an
+exterme, data flow and execution abstraction as a thin layer on top of
+TensorFlow might look like the following.
+
+.. code-block::  python
 
     coordinates, topology = gmx.utils.pdb2gmx(force_field=gmx.forcefield.amber99sb-ildn,
                                     pdb_file="fws.pdb",
