@@ -47,15 +47,14 @@
 
 #include "config.h"
 
-#include <assert.h>
-#include <signal.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cassert>
+#include <csignal>
+#include <cstdlib>
+#include <cstring>
 
 #include <algorithm>
 
 #include "gromacs/commandline/filenm.h"
-#include "gromacs/compat/make_unique.h"
 #include "gromacs/domdec/domdec.h"
 #include "gromacs/domdec/domdec_struct.h"
 #include "gromacs/ewald/pme.h"
@@ -160,8 +159,10 @@ void Mdrunner::reinitializeOnSpawnedThread()
 
     if (!MASTER(cr))
     {
-        // Only the master rank writes to the log files
-        fplog = nullptr;
+        // We expect that the filehandle shared pointer was copied to get to this point
+        assert(logFileHandle_.use_count() > 1);
+        // Only the master rank writes to the log files and should close them
+        logFileHandle_ = nullptr;
     }
 }
 
@@ -461,11 +462,6 @@ int Mdrunner::mdrunner()
     gmx::MDModules mdModules;
     snew(mtop, 1);
 
-    if (Flags & MD_APPENDFILES)
-    {
-        fplog = nullptr;
-    }
-
     bool doMembed = opt2bSet("-membed", nfile, fnm);
     bool doRerun  = (Flags & MD_RERUN);
 
@@ -481,8 +477,16 @@ int Mdrunner::mdrunner()
     bool forceUsePhysicalGpu = (strncmp(nbpu_opt, "gpu", 3) == 0) || !hw_opt.gpuIdTaskAssignment.empty();
     bool tryUsePhysicalGpu   = (strncmp(nbpu_opt, "auto", 4) == 0) && !emulateGpu && (GMX_GPU != GMX_GPU_NONE);
 
+    FILE* fplog = logFileHandle_.get();
+    if (Flags & MD_APPENDFILES)
+    {
+        // If we are appending, we will get the filehandle another way
+        fplog = nullptr;
+    }
     // Here we assume that SIMMASTER(cr) does not change even after the
     // threads are started.
+    // The lifetime of logOwner and mdlog are confined to the enclosing block, so it seems safe to pass the
+    // raw pointers to fplog and cr.
     gmx::LoggerOwner logOwner(buildLogger(fplog, cr));
     gmx::MDLogger    mdlog(logOwner.logger());
 
@@ -515,7 +519,10 @@ int Mdrunner::mdrunner()
     if (SIMMASTER(cr))
     {
         /* Read (nearly) all data required for the simulation */
-        read_tpx_state(ftp2fn(efTPR, nfile, fnm), inputrec.get(), state, mtop);
+        if (auto filename = ftp2fn(efTPR, nfile, fnm))
+        {
+            read_tpx_state(filename, inputrec.get(), state, mtop);
+        }
         if (molecularTopologyInput_ != nullptr)
         {
             // Override with input from other sources.
@@ -529,6 +536,7 @@ int Mdrunner::mdrunner()
         if (stateInput_ != nullptr)
         {
             // Override with input from other sources.
+            // Todo: This would reset state on a subsequent run.
             *state = *stateInput_;
         }
         else
@@ -546,7 +554,18 @@ int Mdrunner::mdrunner()
             // Update member data
             inputRecord_ = inputrec;
         }
-
+        if (inputRecord_ == nullptr)
+        {
+            gmx_fatal(FARGS, "No simulation input record or TPR file.");
+        }
+        if (stateInput_ == nullptr)
+        {
+            gmx_fatal(FARGS, "No simulation state data structure. Need atomic configuration input.");
+        }
+        if (molecularTopologyInput_ == nullptr)
+        {
+            gmx_fatal(FARGS, "No system topology (top or tpr file).");
+        }
 
         exitIfCannotForceGpuRun(forceUsePhysicalGpu,
                                 emulateGpu,
@@ -790,6 +809,17 @@ int Mdrunner::mdrunner()
     {
         gmx_log_open(ftp2fn(efLOG, nfile, fnm), cr,
                      Flags, &fplog);
+        // Make sure we either capture a new file handle or copy the updated FILE state for a file descriptor from one handle to another
+        if (logFileHandle_ == nullptr)
+        {
+            logFileHandle_ = std::make_shared<FILE>();
+            logFileHandle_.reset(fplog, &gmx_log_close);
+        }
+        else
+        {
+            *logFileHandle_ = *fplog;
+        }
+
         logOwner = buildLogger(fplog, nullptr);
         mdlog    = logOwner.logger();
     }
@@ -1237,7 +1267,9 @@ int Mdrunner::mdrunner()
     /* Close logfile already here if we were appending to it */
     if (MASTER(cr) && (Flags & MD_APPENDFILES))
     {
-        gmx_log_close(fplog);
+        // To get to this point, the log file should have been opened and not yet closed.
+        assert(*std::get_deleter<void(*)(FILE*)>(logFileHandle_) == &gmx_log_close);
+        logFileHandle_.reset();
     }
 
     rc = (int)gmx_get_stop_condition();
@@ -1253,6 +1285,21 @@ int Mdrunner::mdrunner()
 #endif
 
     return rc;
+}
+
+void Mdrunner::molecularTopologyInput(std::shared_ptr<gmx_mtop_t> input) noexcept
+{
+    molecularTopologyInput_ = std::move(input);
+}
+
+void Mdrunner::stateInput(std::shared_ptr<t_state> input) noexcept
+{
+    stateInput_ = std::move(input);
+}
+
+void Mdrunner::inputRecord(std::shared_ptr<t_inputrec> input) noexcept
+{
+    inputRecord_ = std::move(input);
 }
 
 } // namespace gmx

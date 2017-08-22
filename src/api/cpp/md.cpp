@@ -2,6 +2,7 @@
 
 #include "gmxapi/gmxapi.h"
 #include "gmxapi/md.h"
+#include "gmxapi/runner.h"
 
 #include "gromacs/compat/make_unique.h"
 #include "md-impl.h"
@@ -14,6 +15,38 @@
 
 namespace gmxapi
 {
+
+MDEngine::~MDEngine() = default;
+
+const std::string MDEngine::info() const
+{
+    return "Generic MDEngine object";
+}
+
+std::unique_ptr<MDBuilder> MDEngine::builder()
+{
+//    std::unique_ptr<MDBuilder> builder = std::make_unique<MDEngineBuilder>();
+//    return builder;
+    class DummyBuilder : public MDBuilder
+    {
+        public:
+            virtual ~DummyBuilder() override = default;
+
+            virtual std::unique_ptr<MDEngine> build() override
+            {
+                std::unique_ptr<MDEngine> proxy = gmx::compat::make_unique<MDProxy>();
+                return proxy;
+            }
+    };
+    std::unique_ptr<MDBuilder> builder = gmx::compat::make_unique<DummyBuilder>();
+    return builder;
+}
+
+void MDEngine::bind(IMDRunner* runner)
+{
+    auto builder = this->builder();
+    runner->registerMDBuilder(std::move(builder));
+}
 
 MDInput::MDInput() :
     inputRecord_ {gmx::compat::make_unique<t_inputrec>()},
@@ -85,7 +118,7 @@ std::unique_ptr<MDInput> MDInput::from_tpr_file(std::string filename)
 //std::unique_ptr<MDProxy> mdFromTpr(const std::string filename)
 //{
 //    using gmx::compat::make_unique;
-//    auto tprInput = MDInput::from_tpr_file(filename);
+//    auto tprInput = MDInput::fromTprFile(filename);
 //
 //    // Transfer ownership of input to new state object
 //    auto newState = make_unique<MDStateFromMDInput>(std::move(tprInput), filename);

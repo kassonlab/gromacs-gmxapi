@@ -1,43 +1,53 @@
+#include "gmxapi/runner.h"
+#include "gmxapi/md/runnerstate.h"
+#include "gmxapi/md.h"
+
 #include "gromacs/compat/make_unique.h"
-#include "runner-impl.h"
-#include "gmxapi/gmxapi.h"
+
+#include "gmxapi/system.h"
+#include "gmxapi/context.h"
 #include <gtest/gtest.h>
 
-#include "gromacs/fileio/tpxio.h"
-#include "gromacs/mdlib/integrator.h"
-#include "gromacs/mdlib/mdrun.h"
-#include "gromacs/mdtypes/inputrec.h"
-#include "gromacs/mdtypes/state.h"
-#include "gromacs/topology/topology.h"
-#include "gromacs/utility/keyvaluetree.h"
-#include "programs/mdrun/md.h"
+namespace
+{
 
+class DummyMD : public gmxapi::MDEngine
+{
+};
+
+TEST(ApiRunner, Build)
+{
+    auto md = std::make_shared<gmxapi::MDEngine>();
+    auto runnerBuilder = gmxapi::UninitializedMDRunnerState::Builder();
+    runnerBuilder.mdEngine(md);
+    runnerBuilder.topology(gmx::compat::make_unique<gmx_mtop_t>());
+    runnerBuilder.state(gmx::compat::make_unique<t_state>());
+    runnerBuilder.inputRecord(gmx::compat::make_unique<t_inputrec>());
+    auto runner = runnerBuilder.build();
+    auto session = runner->initialize(gmxapi::defaultContext());
+    auto status = session->run();
+    // Just make sure we made it this far...
+    ASSERT_TRUE(!status.success());
+}
 
 TEST(ApiRunner, BasicMD)
 {
-    const std::string filename = "topol.tpr";
-    // Configure an MD simulation from tpr file
-    auto              runner = gmx::compat::make_unique<gmxapi::RunnerImpl>(filename);
-    // Get the initial atom positions
-    auto              x = runner->getX();
-    // Check for success
-    ASSERT_NE(x, nullptr);
-    // Check for expected result. Note this is padded. Not sure what to do about that.
-    ASSERT_EQ(x->size(), 7);
-    // Stash one of the atom positions
-    auto atom1 = (*x)[1];
-    // Run from initial configuration to 1000 steps
-    runner->run(1000);
-    // Continue run for an additional 1000 steps
-    runner->run(1000);
-    // Get new atom positions
-    x = runner->getX();
-    // Check for success
-    ASSERT_NE(x, nullptr);
-    // Make sure atom moved
-    ASSERT_NE((*x)[1][0], atom1[0]);
-    // Clean up
-    runner->close();
-    runner.reset();
-    ASSERT_NE(x, nullptr);
+//    const std::string filename = "topol.tpr";
+    const std::string filename = "/Users/eric/build/gromacs-dev/src/api/cpp/tests/topol.tpr";
+    auto system = gmxapi::fromTprFile(filename);
+
+    {
+        std::shared_ptr<gmxapi::Context> context = gmxapi::defaultContext();
+        ASSERT_TRUE(context != nullptr);
+        ASSERT_TRUE(system != nullptr);
+        ASSERT_TRUE(system->runner() != nullptr);
+        auto runner = system->runner();
+        auto session = runner->initialize(context);
+        ASSERT_TRUE(session != nullptr);
+        ASSERT_NO_THROW(session->run());
+//        ASSERT_NO_THROW(session->run(1000));
+    }
+
+}
+
 }

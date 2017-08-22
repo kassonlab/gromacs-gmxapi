@@ -49,7 +49,7 @@ class Version
         /// \param major gmxapi major version number.
         /// \param minor gmxapi minor version number (optional).
         /// \param patch patch level of the api library (optional).
-        static bool is_at_least(const unsigned int major, const unsigned int minor = 0, const unsigned int patch = 0);
+        static bool is_at_least(unsigned int major, unsigned int minor = 0, unsigned int patch = 0);
 };
 
 }      // namespace gmxapi

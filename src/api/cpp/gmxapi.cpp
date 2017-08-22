@@ -68,16 +68,8 @@ Status::Status(Status &&status) noexcept
 }
 
 Status::Status(const bool &success) :
-    impl_
-{
-    new Impl {
-        success
-    }
-}
-{
-}
-
-
+    impl_ {gmx::compat::make_unique<Status::Impl>(success)}
+{}
 
 bool Status::success() const
 {

@@ -16,6 +16,15 @@ TEST(ApiModuleMD, Construction)
     ASSERT_EQ(module->info(), "MDStatePlaceholder initialized with filename: \"topol.tpr\"\n");
 }
 
+TEST(ApiModuleMD, Build)
+{
+    auto mdBuilder = gmxapi::MDProxy().builder();
+    ASSERT_TRUE(mdBuilder != nullptr);
+    auto md = mdBuilder->build();
+    ASSERT_TRUE(md != nullptr);
+    ASSERT_STREQ("Generic MDEngine object", md->info().c_str());
+}
+
 TEST(ApiModuleMD, Binding)
 {
     class MyRunner : public gmxapi::IMDRunner
@@ -23,6 +32,11 @@ TEST(ApiModuleMD, Binding)
         private:
             std::unique_ptr<gmxapi::MDBuilder> builder_;
         public:
+            std::shared_ptr<gmxapi::IMDRunner> initialize(std::shared_ptr<gmxapi::Context> context) override
+            {
+                return nullptr;
+            }
+
             void registerMDBuilder(std::unique_ptr<gmxapi::MDBuilder> builder) override
             {
                 builder_ = std::move(builder);
@@ -34,13 +48,13 @@ TEST(ApiModuleMD, Binding)
                     builder_->build();
                 }
 //                else assert(false);
-                return gmxapi::Status();
+                return gmxapi::Status(true);
             };
     };
 
     {
         // Dummy state object to test registration protocol.
-        class MyDummyMD: public gmxapi::MDState
+        class MyDummyMD: public gmxapi::MDEngine
         {
             public:
                 MyDummyMD() = default;
@@ -54,8 +68,8 @@ TEST(ApiModuleMD, Binding)
         };
         auto runner = MyRunner();
         MyDummyMD module{};
-        runner.registerMDBuilder(module.builder());
-        runner.run();
+        ASSERT_NO_THROW(runner.registerMDBuilder(module.builder()));
+        ASSERT_TRUE(runner.run().success());
     }
 
 

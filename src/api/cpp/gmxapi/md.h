@@ -2,7 +2,9 @@
 #define GMXAPI_MD_H
 
 /*! \file
- * \brief Declare Proxy and API objects for MD simulation engines.
+ * \brief Declare base classes and API for MD simulation engines.
+ *
+ * Helper functions, standard concrete classes, and implementation interfaces are in gmxapi/md/
  * \ingroup gmxapi
  */
 #include "exceptions.h"
@@ -12,7 +14,60 @@
 namespace gmxapi
 {
 class IMDRunner;
-class MDState;
+class MDBuilder;
+
+/*!
+ * \brief Base class for Molecular Dynamics engine implementations and states.
+ *
+ * An MD task can have a handle before, during, or after execution, and the local handle may refer
+ * to a different implementation class depending on whether execution takes place locally or remotely,
+ * and whether distributed data structures are cached locally, etc.
+ *
+ * Pure virtual base class is not instantiated by clients directly. Objects are created
+ * by other API objects or helper functions. \see mdFromTpr()
+ *
+ * A State instance provides the instantaneous implementation for the owning object.
+ *
+ * The MDState implementation is responsible for implementing the bind() method, allowing a
+ * runner proxy and MD proxy to be translated into an actual runner and MD Engine instance.
+ */
+class MDEngine
+{
+    public:
+        MDEngine() = default;
+        virtual ~MDEngine();
+        MDEngine(const MDEngine&) = delete;
+        MDEngine& operator=(const MDEngine&) = delete;
+        MDEngine(MDEngine&&) = default;
+        MDEngine& operator=(MDEngine&&) = default;
+        /*!
+         * \brief Get a builder for an MD Engine
+         *
+         * This method allows a caller to convert a proxy object or uninitialized MDEngine into
+         * a runnable functor or for unprivileged code to advance the state engine.
+         *
+         * The default implementation produces an empty proxy, but it might
+         * be important to provide a different behavior (or make pure virtual) to help catch usage errors when called on
+         * states that do not have clear semantics for builder().
+         *
+         * \return ownership of a MD Engine builder implementing the gmxapi::MDBuilder interface.
+         */
+        virtual std::unique_ptr<MDBuilder> builder();
+
+        /// Allow implementing classes to provide information in a generic way.
+        virtual const std::string info() const;
+
+        /*
+         * \brief Bind to a runner.
+         *
+         * Implement the runner binding protocol. \See gmxapi::IMDRunner::registerMDBuilder().
+         * An object implementing the IMDRunner interface may bind. MDProxy will register a
+         * function pointer with which to
+         * request a builder for an actual MDEngine.
+         */
+        virtual // Implemented in libgmxapi. Maybe it should be easier to get the behavioral template?...
+        void bind(IMDRunner* runner);
+};
 
 /*! \brief Proxy object for an MD engine.
  *
@@ -24,43 +79,26 @@ class MDState;
  * to manage the underlying resources, other API objects may keep alive a proxy's state member, potentially
  * issuing a new proxy for it at some point.
  */
-class MDProxy
+class MDProxy : public MDEngine
 {
     public:
         MDProxy();
 
-        ~MDProxy();
-
-        MDProxy(const MDProxy &proxy);
-
+        ~MDProxy() override = default;
+        MDProxy(MDProxy &) = delete;
+        MDProxy &operator=(MDProxy &) = delete;
         MDProxy(MDProxy &&proxy) noexcept;
-
-        MDProxy &operator=(const MDProxy &proxy);
-
         MDProxy &operator=(MDProxy &&proxy) noexcept;
 
-        /*!
-         * \brief Bind to a runner.
-         *
-         * An object implementing the IMDRunner interface may bind. MDProxy will register a function pointer with which to
-         * request a builder for an actual MDEngine.
-         */
-        void bind(IMDRunner* runner);
-
-        /// \endcond
-
+        std::unique_ptr<MDBuilder> builder() override;
 
         /// Note: the caller can retain access to the state argument through whatever interfaces it implements...
-        void setState(std::shared_ptr<MDState> state);
+        void setState(std::shared_ptr<MDEngine> state);
 
         /// Get some human-readable status information.
-        std::string info();
+        const std::string info() const override;
     private:
-        std::shared_ptr<MDState> state_;
-};
-
-class MDEngine
-{
+        std::shared_ptr<MDEngine> instanceState_;
 };
 
 /*!

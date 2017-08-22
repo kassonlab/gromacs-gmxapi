@@ -13,16 +13,22 @@
 # Copy test files to test directory
 configure_file(data/topol.tpr topol.tpr COPYONLY)
 
-gmx_add_unit_test(gmxapi_external_interface gmxapi-test
-        test_version_helpers.cpp
-        test_status.cpp
-        test_md.cpp)
+gmx_add_unit_test(GmxapiExternalInterfaceTests gmxapi-test
+                  test_md.cpp
+                  test_runner.cpp
+                  test_status.cpp
+                  test_system.cpp
+                  test_version_helpers.cpp
+                  )
+
+set_tests_properties(GmxapiExternalInterfaceTests PROPERTIES
+                     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 
 target_compile_definitions(gmxapi-test PUBLIC
     GMXAPI_MAJOR=${GMXAPI_MAJOR}
     GMXAPI_MINOR=${GMXAPI_MINOR}
     GMXAPI_PATCH=${GMXAPI_PATCH})
-target_link_libraries(gmxapi-test gmxapi)
+target_link_libraries(gmxapi-test Gromacs::gmxapi)
 
 #add_executable(test_apirunner test_basic_mdrunner.cpp)
 #gmx_add_unit_test(gmxapi_runner test_apirunner test_basic_mdrunner.cpp)

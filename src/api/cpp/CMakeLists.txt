@@ -13,6 +13,10 @@ configure_file(gmxapi/md.h gmxapi)
 configure_file(gmxapi/runner.h gmxapi)
 configure_file(gmxapi/system.h gmxapi)
 configure_file(gmxapi/version.h gmxapi)
+
+file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/gmxapi/md)
+configure_file(gmxapi/md/runnerstate.h gmxapi/md)
+
 # Populate version constants from CMake.
 configure_file(apiversion.in.h apiversion.h)
 
@@ -41,14 +45,16 @@ target_include_directories(gmxapi PRIVATE
 target_sources(
         gmxapi PRIVATE
         apiversion.h
-#        context.cpp
+        context.cpp
         gmxapi.cpp
         md-impl.h
         md.cpp
         mdproxy.cpp
-        runner.cpp
-        runnerproxy.cpp
-#        system.cpp
+#        runnerimpl.cpp
+        runnerstate.cpp
+        system.cpp
+        system-builder.h
+        system-impl.h
         version.cpp
         )
 
@@ -75,17 +81,23 @@ target_link_libraries(gmxapi PRIVATE libgromacs)
 # which CMake will create a helper file. Specify the directory for clients to
 # add to their include path to be able to `#include "gmxapi/some_header.h"`
 install(TARGETS gmxapi
-        EXPORT libgmxapi
+        EXPORT gmxapiExport
         LIBRARY DESTINATION ${LIB_INSTALL_DIR}
         ARCHIVE DESTINATION ${LIB_INSTALL_DIR}
         RUNTIME DESTINATION ${LIB_INSTALL_DIR}
         INCLUDES DESTINATION include
-        COMPONENT libraries)
+        COMPONENT gmxapi)
 
 
 # Create the CMake exports file to help other projects build against libgmxapi
-# as a CMake import target.
-install(EXPORT libgmxapi DESTINATION share/cmake/gromacs/)
+# as a CMake import target Gromacs::gmxapi.
+install(EXPORT gmxapiExport
+        NAMESPACE Gromacs::
+        DESTINATION share/cmake/gromacs/
+        )
+add_library(Gromacs::gmxapi ALIAS gmxapi )
+
+include(CMakePackageConfigHelpers)
 
 if(BUILD_TESTING)
     add_subdirectory(tests)

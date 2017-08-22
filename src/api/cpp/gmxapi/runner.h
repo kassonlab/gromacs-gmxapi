@@ -16,18 +16,7 @@
 namespace gmxapi
 {
 class MDProxy;
-
-/// Proxy to an API Gromacs runner.
-/*! Can be converted to a concrete runner when work and compute
- * environment are available. Provides a factory (or factory methods or builder(s)) to create an appropriate
- * implementation.
- * \ingroup gmxapi
- */
-class RunnerProxy
-{
-public:
-    virtual ~RunnerProxy() = default;
-};
+class Context;
 
 class MDBuilder;
 
@@ -36,7 +25,7 @@ class MDBuilder;
  *
  * A runner implements this interface in order to bind to an MD task. A caller passes an IMDRunner pointer to the
  * bind() method of an MDProxy object. The MDProxy object then provides the runner with a builder for an MD task by
- * calling IMDRunner::registerMDBuilder(std::unique_ptr<ModuleBuilder>).
+ * calling IMDRunner::registerMDBuilder(std::unique_ptr<MDBuilder>).
  *
  * The caller of bind() should guarantee the lifetime of IMDRunner through the subsequent call to registerMDBuilder().
  * The call to bind() should be made when the caller is ready to construct an MD task, such that the state of the
@@ -85,14 +74,23 @@ class MDBuilder;
 class IMDRunner
 {
     public:
-        IMDRunner() = default;
-        IMDRunner(const IMDRunner&) = default;
-        IMDRunner& operator=(const IMDRunner&) = default;
         virtual ~IMDRunner() = default;
+
         virtual void registerMDBuilder(std::unique_ptr<MDBuilder> builder) = 0;
-        // todo: reconsider interfaces
-        virtual gmxapi::Status run() = 0;
-        virtual gmxapi::Status run(long int) { throw gmxapi::Exception(); };
+        virtual Status run() = 0;
+        // This is an overly complicated and awkward pattern. Probably replace with
+        // templated implementation in base class using curiously-recurring-template idiom
+        //virtual Status run(const EndCondition& condition) = 0;
+
+        /*!
+         * \brief Activate a GROMACS runner in the given execution context.
+         *
+         * Launches a fully configured workflow.
+         * Changes the state of the runner from uninitialized to initialized.
+         * \param context Execution environment and resources.
+         * \return Handle to a launched and runnable workflow.
+         */
+        virtual std::shared_ptr<IMDRunner> initialize(std::shared_ptr<Context> context) = 0;
 };
 
 /*!
@@ -105,10 +103,11 @@ class IMDRunner
  * In general, the class providing this interface will bind to a concrete task before returning from
  * build(). \see registerMDBuiler()
  */
-class IRunnerBuilder
+class IMDRunnerBuilder
 {
     public:
-        virtual ~IRunnerBuilder() = default;
+        virtual ~IMDRunnerBuilder();
+
         /// Build a runner. Return a handle to something that can be run.
         virtual std::shared_ptr<IMDRunner> build() = 0;
 };
@@ -124,23 +123,37 @@ class IRunnerBuilder
  * on the module to be run.
  * \ingroup gmxapi
  */
-class SingleNodeRunnerProxy : public RunnerProxy, public std::enable_shared_from_this<SingleNodeRunnerProxy>
+class RunnerProxy : public IMDRunner, public std::enable_shared_from_this<RunnerProxy>
 {
     public:
-        class State;
-        SingleNodeRunnerProxy();
-        virtual ~SingleNodeRunnerProxy();
+        RunnerProxy();
 
-        explicit SingleNodeRunnerProxy(std::shared_ptr<MDProxy> md);
+        // Disallow copy to avoid ambiguity of state ownership
+        RunnerProxy(const RunnerProxy&) = delete;
+        RunnerProxy& operator=(const RunnerProxy&) = delete;
 
-        std::shared_ptr<IRunnerBuilder> builder();
+        // Allow move
+        RunnerProxy(RunnerProxy&&) = default;
+        RunnerProxy& operator=(RunnerProxy&&) = default;
 
-        void setState(std::shared_ptr<State> state);
+        explicit RunnerProxy(std::shared_ptr<MDProxy> md);
+
+        ~RunnerProxy() override = default;
+
+        Status run() override;
+
+        void registerMDBuilder(std::unique_ptr<MDBuilder> builder) override;
+
+        std::shared_ptr <IMDRunner> initialize(std::shared_ptr<Context> context) override;
+
+        void setState(std::shared_ptr<IMDRunner> state);
 
     private:
         /// bound task, if any
         std::shared_ptr<MDProxy> module_;
-        std::shared_ptr<State> state_;
+
+        /// Implementation object we are proxying for
+        std::shared_ptr<IMDRunner> instanceState_;
 };
 /// \endcond
 

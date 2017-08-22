@@ -54,9 +54,8 @@
 
 #include "config.h"
 
-#include <stdio.h>
-#include <string.h>
-
+#include <cstdio>
+#include <cstring>
 #include <cstdlib>
 
 #include "gromacs/commandline/filenm.h"
@@ -67,6 +66,7 @@
 #include "gromacs/mdrunutility/handlerestart.h"
 #include "gromacs/mdtypes/commrec.h"
 #include "gromacs/utility/arraysize.h"
+#include "gromacs/utility/exceptions.h"
 #include "gromacs/utility/fatalerror.h"
 #include "gromacs/utility/smalloc.h"
 
@@ -92,13 +92,31 @@ static bool is_multisim_option_set(int argc, const char *const argv[])
 int gmx_mdrun(int argc, char *argv[])
 {
     gmx::Mdrunner runner;
-    return runner.mainFunction(argc, argv);
+    bool initialized{false};
+    int rc = 0;
+    try
+    {
+        runner.initFromCLI(argc, argv);
+        initialized = true;
+    }
+    catch (const gmx::InvalidInputError& e)
+    {
+        // Argument parsing failed, but notification has already been made
+        initialized = false;
+    }
+
+    if (initialized)
+    {
+        rc = runner.mdrunner();
+    }
+
+    return rc;
 }
 
 namespace gmx
 {
 
-int Mdrunner::mainFunction(int argc, char *argv[])
+void Mdrunner::initFromCLI(int argc, char *argv[])
 {
     const char   *desc[] = {
         "[THISMODULE] is the main computational chemistry engine",
@@ -366,8 +384,7 @@ int Mdrunner::mainFunction(int argc, char *argv[])
         { "-resethway", FALSE, etBOOL, {&bResetCountersHalfWay},
           "HIDDENReset the cycle counters after half the number of steps or halfway [TT]-maxh[tt]" }
     };
-    gmx_bool          bDoAppendFiles, bStartFromCpt;
-    int               rc;
+    gmx_bool          bStartFromCpt;
     char            **multidir = nullptr;
 
     cr = init_commrec();
@@ -398,7 +415,7 @@ int Mdrunner::mainFunction(int argc, char *argv[])
                            asize(desc), desc, 0, nullptr, &oenv))
     {
         sfree(cr);
-        return 0;
+        GMX_THROW(gmx::InvalidInputError("Could not parse command line arguments."));
     }
 
     // Handle the option that permits the user to select a GPU task
@@ -497,12 +514,14 @@ int Mdrunner::mainFunction(int argc, char *argv[])
        there instead.  */
     if (MASTER(cr) && !bDoAppendFiles)
     {
+        FILE* fplog;
         gmx_log_open(ftp2fn(efLOG, nfile, fnm), cr,
                      Flags & MD_APPENDFILES, &fplog);
+        logFileHandle_.reset(fplog, &gmx_log_close);
     }
     else
     {
-        fplog = nullptr;
+        logFileHandle_ = nullptr;
     }
 
     ddxyz[XX] = (int)(realddxyz[XX] + 0.5);
@@ -511,16 +530,8 @@ int Mdrunner::mainFunction(int argc, char *argv[])
 
     dddlb_opt = dddlb_opt_choices[0];
     nbpu_opt  = nbpu_opt_choices[0];
-    rc        = mdrunner();
-
-    /* Log file has to be closed in mdrunner if we are appending to it
-       (fplog not set here) */
-    if (MASTER(cr) && !bDoAppendFiles)
-    {
-        gmx_log_close(fplog);
-    }
-
-    return rc;
 }
+
+Mdrunner::~Mdrunner() = default;
 
 } // namespace

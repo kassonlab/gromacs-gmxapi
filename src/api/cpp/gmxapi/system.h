@@ -12,14 +12,14 @@
 namespace gmxapi
 {
 
-class Status;
 class Atoms;
 class MDEngine;
+class IMDRunner;
 
 /// Container for molecular model and simulation parameters.
 /*!
  * \cond
- * check: a system instance is is sort of a builder, and a context is sort of a factory. together they allow a simulation to be constructed and initialized with the appropriate implementations of runner, integrator, and data objects.
+ * A system instance is sort of a container of builders, and a Context is sort of a factory. together they allow a simulation to be constructed and initialized with the appropriate implementations of runner, integrator, and data objects.
  * \endcond
  * \ingroup gmxapi
  */
@@ -38,9 +38,9 @@ class System
         System &operator=(const System &) = delete;
 
         /// Allow move.
-        System(System &&);
+        System(System &&) noexcept;
         /// Allow move.
-        System &operator=(System &&);
+        System &operator=(System &&) noexcept;
 
         /// \cond internal
         /// Destructor defined later to allow unique_ptr members of partially-defined types.
@@ -54,10 +54,20 @@ class System
 //        /// Get a handle to system atoms.
 //        std::unique_ptr<Atoms> atoms();
 
-//        /// Get a handle to bound MD engine.
-//        std::unique_ptr<MDEngine> md();
+        /// Get a handle to bound MD engine.
+        std::shared_ptr<MDEngine> md();
+
+        /// Set the MD engine
+        void md(std::shared_ptr<MDEngine> md);
+
+        /// Get a handle to bound runner.
+        std::shared_ptr<IMDRunner> runner();
+
+        /// Set the runner.
+        void runner(std::shared_ptr<IMDRunner> runner);
 
 //        /// Invoke an appropriate runner, if possible.
+//        /// Equivalent to system->runner()->initialize(defaultContext())->run();
 //        Status run();
 
     private:
@@ -79,7 +89,7 @@ class System
  * \returns gmxapi::System with bound objects and parameters specified in TPR.
  * \ingroup gmxapi
  */
-std::unique_ptr<gmxapi::System> from_tpr_file(std::string filename);
+std::unique_ptr<gmxapi::System> fromTprFile(std::string filename);
 
 }      // end namespace gmxapi
 

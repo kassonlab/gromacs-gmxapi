@@ -6,6 +6,7 @@
 #include "gmxapi/md.h"
 #include "gmxapi/runner.h"
 #include "gmxapi/system.h"
+#include "system-builder.h"
 
 #include "atoms.h"
 #include "gromacs/compat/make_unique.h"
@@ -13,6 +14,7 @@
 #include "system-impl.h"
 #include "gromacs/utility.h"
 #include "gromacs/commandline/pargs.h"
+#include "gromacs/fileio/tpxio.h"
 #include "gromacs/gmxlib/network.h"
 #include "gromacs/hardware/hw_info.h"
 #include "gromacs/math/utilities.h"
@@ -24,32 +26,40 @@
 #include "gromacs/utility/smalloc.h"
 #include "programs/mdrun/repl_ex.h"
 #include "programs/mdrun/runner.h"
+#include "api/cpp/gmxapi/md/runnerstate.h"
 
 namespace gmxapi
 {
 
-System::Impl::Impl()
+System::Impl::Impl() :
+    md_{std::make_shared<EmptyMD>()},
+    runner_{std::make_shared<EmptyMDRunnerState>()}
 {
 }
 
-System::Impl::~Impl()
+System::Impl::~Impl() = default;
+
+std::shared_ptr<MDEngine> System::Impl::md()
 {
+    assert(md_ != nullptr);
+    return md_;
 }
-//
-//std::unique_ptr<Atoms> System::Impl::atoms()
-//{
-//    return atoms_->handle();
-//}
-//
-//void System::Impl::setAtoms(const Atoms& atoms)
-//{
-//    atoms_ = gmx::compat::make_unique<Atoms>(atoms);
-//}
-//
-//std::unique_ptr<Atoms> System::atoms()
-//{
-//    return impl_->atoms();
-//}
+
+void System::Impl::md(std::shared_ptr<MDEngine> md)
+{
+    md_ = std::move(md);
+}
+
+std::shared_ptr<IMDRunner> & System::Impl::runner()
+{
+    assert(runner_ != nullptr);
+    return runner_;
+}
+
+void System::Impl::runner(std::shared_ptr<IMDRunner> runner)
+{
+    runner_ = std::move(runner);
+}
 
 // Constructor and destructor needs to be defined after Impl is defined so that we can
 // use unique_ptr
@@ -57,12 +67,33 @@ System::System() :
     impl_ {gmx::compat::make_unique<System::Impl>()}
 {}
 
-System::~System()
-{}
+System::~System() = default;
 
-System::System(System &&) = default;
+std::shared_ptr<MDEngine> System::md()
+{
+    assert(impl_ != nullptr);
+    return impl_->md();
+}
 
-System &System::operator=(System &&) = default;
+void System::md(std::shared_ptr<MDEngine> md)
+{
+    impl_->md(std::move(md));
+}
+
+std::shared_ptr<IMDRunner> System::runner()
+{
+    assert(impl_ != nullptr);
+    return impl_->runner();
+}
+
+void System::runner(std::shared_ptr<IMDRunner> runner)
+{
+    impl_->runner(std::move(runner));
+}
+
+System::System(System &&) noexcept = default;
+
+System &System::operator=(System &&) noexcept = default;
 
 
 System::Builder::Builder() :
@@ -92,16 +123,18 @@ System::Builder::~Builder() = default;
 //    system_->impl_->setAtoms(*atoms);
 //    return *this;
 //}
-//
-//System::Builder& System::Builder::topology(const MDInput& inputrec)
+
+//System::Builder& System::Builder::topology(std::shared_ptr<Topology> topology)
 //{
+//
 //    return *this;
 //}
-//
-//System::Builder& System::Builder::mdEngine(const MDInput& inputrec)
-//{
-//    return *this;
-//}
+
+System::Builder& System::Builder::mdEngine(std::shared_ptr<MDEngine> md)
+{
+    system_->md(std::move(md));
+    return *this;
+}
 
 std::unique_ptr<System> System::Builder::build()
 {
@@ -110,7 +143,7 @@ std::unique_ptr<System> System::Builder::build()
     //  * configure environment
     //  * initialize communicator
     //  * open log file
-    // Runner:
+    // IRunner:
     //  * prepare mdrunner_arglist
     //  * configure mdModules
     //  * configure parallelism
@@ -121,14 +154,19 @@ std::unique_ptr<System> System::Builder::build()
     // {
     //     throw();
     // };
-    std::unique_ptr<System> product {
-        nullptr
-    };
+    std::unique_ptr<System> product {nullptr};
     product.swap(system_);
+    assert(product != nullptr);
     return product;
 }
 
-std::unique_ptr<gmxapi::System> from_tpr_file(std::string filename)
+System::Builder &System::Builder::runner(std::shared_ptr<IMDRunner> runner)
+{
+    system_->runner(std::move(runner));
+    return *this;
+}
+
+std::unique_ptr<gmxapi::System> fromTprFile(std::string filename)
 {
     // The TPR file has enough information for us to
     //  1. choose an MD engine
@@ -153,16 +191,43 @@ std::unique_ptr<gmxapi::System> from_tpr_file(std::string filename)
 //
 //    builder->structure(*inputrec);
 
-    //builder->topology(*inputrec);
+//    builder->topology(topology);
 
-//    builder->mdEngine(*inputrec);
-//
+    // Get all of the information we are going to extract from the TPR file.
+    auto inputRecord = gmx::compat::make_unique<t_inputrec>();
+    auto state = gmx::compat::make_unique<t_state>();
+    auto topology = gmx::compat::make_unique<gmx_mtop_t>();
+
+    // Fill the output parameters.
+    read_tpx_state(filename.c_str(), inputRecord.get(), state.get(), topology.get());
+
+
+    // Build and assign MDEngine member
+    auto mdBuilder = MDProxy().builder();
+    assert(mdBuilder != nullptr);
+    std::shared_ptr<MDEngine> md = mdBuilder->build();
+    assert(md != nullptr);
+    assert(!md->info().empty());
+    builder->mdEngine(md);
+
+
+//    builder->topology(std::move(topology));
+
+//    auto runnerBuilder =
+    auto runnerBuilder = UninitializedMDRunnerState::Builder();
+    runnerBuilder.mdEngine(md);
+    runnerBuilder.inputRecord(std::move(inputRecord));
+    runnerBuilder.state(std::move(state));
+    runnerBuilder.topology(std::move(topology));
+    auto runner = runnerBuilder.build();
+    builder->runner(std::move(runner));
+
     auto system = builder->build();
 
     // initialize libgromacs. parameters are passed to MPI initialization funcs.
     // gmx::init(int *argc, char ***argv)
     // noop if no MPI compiled in
-    // TODO: handle MPI, avoid bare pointers it external API
+    // TODO: handle MPI, avoid bare pointers in external API
 //    gmx::init(nullptr, nullptr);
 
     //

@@ -31,7 +31,7 @@ bool Version::has_feature(std::string featurename)
     return false;
 }
 
-bool Version::is_at_least(const unsigned int major, const unsigned int minor, const unsigned int patch)
+bool Version::is_at_least(unsigned int major, unsigned int minor, unsigned int patch)
 {
     if (Version::major() >= major && Version::minor() >= minor && Version::patch() >= patch)
     {

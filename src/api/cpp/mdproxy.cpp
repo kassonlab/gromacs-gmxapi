@@ -4,30 +4,26 @@
 
 #include <memory>
 #include <functional>
+#include <cassert>
 
 #include "gmxapi/gmxapi.h"
 #include "gmxapi/md.h"
 
 #include "gromacs/compat/make_unique.h"
 #include "md-impl.h"
-#include "runnerproxy.h"
+#include "api/cpp/gmxapi/md/runnerstate.h"
 
 namespace gmxapi
 {
 
-MDState::~MDState() = default;
-
-std::string MDState::info()
+/*!
+ * \brief Represent empty or new MDEngine instance.
+ *
+ * Not necessary while MDEngine is instantiable.
+ */
+class MDNull : public MDEngine
 {
-    return "Generic MDState object";
-}
-
-std::unique_ptr<MDBuilder> MDState::builder()
-{
-//    std::unique_ptr<MDBuilder> builder = std::make_unique<MDEngineBuilder>();
-//    return builder;
-    return nullptr;
-}
+};
 
 MDStateFromMDInput::MDStateFromMDInput() : input_{nullptr} {}
 
@@ -43,21 +39,21 @@ MDStateFromMDInput::MDStateFromMDInput(std::unique_ptr<MDInput> input, std::stri
 MDStateFromMDInput::~MDStateFromMDInput() = default;
 
 
-MDProxy::MDProxy() = default;
-MDProxy::~MDProxy() = default;
-MDProxy::MDProxy(MDProxy &&proxy) noexcept = default;
-MDProxy::MDProxy(const MDProxy &proxy) = default;
-MDProxy& MDProxy::operator=(const MDProxy&) = default;
+MDProxy::MDProxy() :
+    instanceState_{std::make_shared<MDEngine>()}
+{};
+MDProxy::MDProxy(MDProxy&&) noexcept = default;
 MDProxy& MDProxy::operator=(MDProxy&&) noexcept = default;
 
-void MDProxy::setState(std::shared_ptr<MDState> state)
+void MDProxy::setState(std::shared_ptr<MDEngine> state)
 {
-    state_ = state;
+    instanceState_ = std::move(state);
 }
 
-std::string MDProxy::info()
+const std::string MDProxy::info() const
 {
-    return state_->info();
+    assert(instanceState_ != nullptr);
+    return instanceState_->info();
 }
 
 std::unique_ptr<MDBuilder> MDStateFromMDInput::builder()
@@ -65,7 +61,7 @@ std::unique_ptr<MDBuilder> MDStateFromMDInput::builder()
     return nullptr;
 }
 
-std::string MDStateFromMDInput::info()
+const std::string MDStateFromMDInput::info() const
 {
     if (input_ == nullptr)
     {
@@ -83,10 +79,10 @@ std::string MDStateFromMDInput::info()
     }
 }
 
-void MDProxy::bind(IMDRunner* runner)
+std::unique_ptr<MDBuilder> MDProxy::builder()
 {
-    auto builder = state_->builder();
-    runner->registerMDBuilder(std::move(builder));
+    assert(instanceState_ != nullptr);
+    return instanceState_->builder();
 }
 
 } // end namespace gmxapi
