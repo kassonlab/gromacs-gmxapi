@@ -45,14 +45,18 @@
 #include <cstdio>
 
 #include <array>
+#include <gromacs/topology/topology.h>
 
 #include "gromacs/commandline/filenm.h"
+#include "gromacs/compat/make_unique.h"
 #include "gromacs/hardware/hw_info.h"
 #include "gromacs/math/vec.h"
 #include "gromacs/utility/basedefinitions.h"
 #include "gromacs/utility/real.h"
 
 #include "repl_ex.h"
+
+#include <assert.h>
 
 struct gmx_output_env_t;
 struct ReplicaExchangeParameters;
@@ -186,6 +190,12 @@ class Mdrunner
         FILE                            *fplog;
         //! Handle to communication data structure.
         t_commrec                       *cr;
+        //! Global molecular topology data
+        std::shared_ptr<gmx_mtop_t>      molecularTopologyInput_{nullptr};
+        //! Molecular microstate
+        std::shared_ptr<t_state>         stateInput_{nullptr};
+        //! Input record (shares ownership with mdrunner() function scope)
+        std::shared_ptr<t_inputrec>      inputRecord_{nullptr};
 
     public:
         /*! \brief Defaulted constructor.
