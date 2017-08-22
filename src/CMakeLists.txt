@@ -66,7 +66,7 @@ if (NOT GMX_FAHCORE)
 endif()
 
 # Activate targets for new C++ API components and docs.
-option(GMXAPI "Experimental external interfaces" ON)
+option(GMXAPI "Experimental external interfaces" OFF)
 if (GMXAPI)
    add_subdirectory(api)
 endif()
