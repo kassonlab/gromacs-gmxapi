@@ -148,44 +148,16 @@ namespace gmx
 
 std::unique_ptr<Mdrunner> Mdrunner::cloneOnSpawnedThread() const
 {
-    auto newRunner = gmx::compat::make_unique<Mdrunner>();
+    std::unique_ptr<Mdrunner> newRunner{new Mdrunner(*this)};
 
-    newRunner->hw_opt = hw_opt;
     // TODO This duplication is formally necessary if any thread might
     // modify any memory in fnm or the pointers it contains. If the
     // contents are ever provably const, then we can remove this
     // allocation (and memory leak).
     newRunner->fnm = dup_tfn(nfile, fnm);
-    newRunner->oenv = oenv;
-    newRunner->bVerbose = bVerbose;
-    newRunner->nstglobalcomm = nstglobalcomm;
-    newRunner->ddxyz[0] = ddxyz[0];
-    newRunner->ddxyz[1] = ddxyz[1];
-    newRunner->ddxyz[2] = ddxyz[2];
-    newRunner->dd_rank_order = dd_rank_order;
-    newRunner->npme = npme;
-    newRunner->rdd = rdd;
-    newRunner->rconstr = rconstr;
-    newRunner->dddlb_opt = dddlb_opt;
-    newRunner->dlb_scale = dlb_scale;
-    newRunner->ddcsx = ddcsx;
-    newRunner->ddcsy = ddcsy;
-    newRunner->ddcsz = ddcsz;
-    newRunner->nbpu_opt = nbpu_opt;
-    newRunner->nstlist_cmdline = nstlist_cmdline;
-    newRunner->nsteps_cmdline = nsteps_cmdline;
-    newRunner->nstepout = nstepout;
-    newRunner->resetstep = resetstep;
-    newRunner->nmultisim = nmultisim;
-    newRunner->replExParams = replExParams;
-    newRunner->pforce = pforce;
-    newRunner->cpt_period = cpt_period;
-    newRunner->max_hours = max_hours;
-    newRunner->imdport = imdport;
-    newRunner->Flags = Flags;
     newRunner->cr  = reinitialize_commrec_for_this_thread(cr);
     // Don't copy fplog file pointer.
-    newRunner->bDoAppendFiles = bDoAppendFiles;
+    newRunner->fplog = nullptr;
 
     return newRunner;
 }
@@ -478,11 +450,6 @@ int Mdrunner::mdrunner()
     t_inputrec    *inputrec = &inputrecInstance;
     snew(mtop, 1);
 
-    if (Flags & MD_APPENDFILES)
-    {
-        fplog = nullptr;
-    }
-
     bool doMembed = opt2bSet("-membed", nfile, fnm);
     bool doRerun  = (Flags & MD_RERUN);
 
@@ -498,6 +465,11 @@ int Mdrunner::mdrunner()
     bool forceUsePhysicalGpu = (strncmp(nbpu_opt, "gpu", 3) == 0) || !hw_opt.gpuIdTaskAssignment.empty();
     bool tryUsePhysicalGpu   = (strncmp(nbpu_opt, "auto", 4) == 0) && !emulateGpu && (GMX_GPU != GMX_GPU_NONE);
 
+    if (Flags & MD_APPENDFILES)
+    {
+        // If we are appending, we will get the filehandle another way
+        fplog = nullptr;
+    }
     // Here we assume that SIMMASTER(cr) does not change even after the
     // threads are started.
     gmx::LoggerOwner logOwner(buildLogger(fplog, cr));

@@ -194,6 +194,10 @@ class Mdrunner
         //! Whether we are appending files or writing new files
         gmx_bool                         bDoAppendFiles{};
 
+        // Copy requires special attention. Use public clone methods.
+        Mdrunner(const Mdrunner&) = default;
+        Mdrunner& operator=(const Mdrunner&) = default;
+
     public:
         /*! \brief Defaulted constructor.
          *
@@ -212,23 +216,24 @@ class Mdrunner
          */
         ~Mdrunner();
 
-        // Copy requires special attention. Use clone methods.
-        Mdrunner(const Mdrunner&) = delete;
-        Mdrunner& operator=(const Mdrunner&) = delete;
-
         // Allow move
         Mdrunner(Mdrunner&&) noexcept = default;
         Mdrunner& operator=(Mdrunner&&) noexcept = default;
+
         //! Start running mdrun by calling its C-style main function.
         void initFromCLI(int argc, char *argv[]);
+
         /*! \brief Driver routine, that calls the different simulation methods. */
         int mdrunner();
+
         //! Called when thread-MPI spawns threads.
         t_commrec *spawnThreads(int numThreadsToLaunch);
-        /*! \brief Re-initializes the object after threads spawn.
+
+        /*! \brief Initializes a new Mdrunner from the master.
          *
-         * \todo Can this be refactored so that the Mdrunner on a spawned thread is
-         * constructed ready to use? */
+         * Run in a new thread from a const pointer to the master.
+         * \returns New Mdrunner instance suitable for running in additional threads.
+         */
         std::unique_ptr<Mdrunner> cloneOnSpawnedThread() const;
 };
 
