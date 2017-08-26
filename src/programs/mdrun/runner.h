@@ -193,16 +193,6 @@ class Mdrunner
         t_commrec                       *cr;
         //! Whether we are appending files or writing new files
         gmx_bool                         bDoAppendFiles{};
-        //! Global molecular topology data
-        std::shared_ptr<gmx_mtop_t>      molecularTopologyInput_{nullptr};
-        //! Molecular microstate
-        std::shared_ptr<t_state>         stateInput_{nullptr};
-        //! Input record (shares ownership with mdrunner() function scope)
-        std::shared_ptr<t_inputrec>      inputRecord_{nullptr};
-
-        // Private copy. Use clone methods
-        Mdrunner(const Mdrunner&) = default;
-        Mdrunner& operator=(const Mdrunner&) = default;
 
     public:
         /*! \brief Defaulted constructor.
@@ -221,6 +211,10 @@ class Mdrunner
          * necessary.
          */
         ~Mdrunner();
+
+        // Copy requires special attention. Use clone methods.
+        Mdrunner(const Mdrunner&) = delete;
+        Mdrunner& operator=(const Mdrunner&) = delete;
 
         // Allow move
         Mdrunner(Mdrunner&&) noexcept = default;
@@ -241,10 +235,6 @@ class Mdrunner
          * \returns New Mdrunner instance suitable for running in additional threads.
          */
         std::unique_ptr<Mdrunner> cloneOnSpawnedThread() const;
-
-        void molecularTopologyInput(std::shared_ptr<gmx_mtop_t> input) noexcept;
-        void stateInput(std::shared_ptr<t_state> input) noexcept;
-        void inputRecord(std::shared_ptr<t_inputrec> input) noexcept;
 };
 
 }      // namespace gmx
