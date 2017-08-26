@@ -514,14 +514,12 @@ void Mdrunner::initFromCLI(int argc, char *argv[])
        there instead.  */
     if (MASTER(cr) && !bDoAppendFiles)
     {
-        FILE* fplog;
         gmx_log_open(ftp2fn(efLOG, nfile, fnm), cr,
                      Flags & MD_APPENDFILES, &fplog);
-        logFileHandle_.reset(fplog, &gmx_log_close);
     }
     else
     {
-        logFileHandle_ = nullptr;
+        fplog = nullptr;
     }
 
     ddxyz[XX] = (int)(realddxyz[XX] + 0.5);
@@ -530,8 +528,15 @@ void Mdrunner::initFromCLI(int argc, char *argv[])
 
     dddlb_opt = dddlb_opt_choices[0];
     nbpu_opt  = nbpu_opt_choices[0];
+};
+
+Mdrunner::~Mdrunner()
+{
+    /* Log file has to be closed in mdrunner if we are appending to it
+       (fplog not set here) */
+    if (MASTER(cr) && !bDoAppendFiles)
+    {
+        gmx_log_close(fplog);
+    }
 }
-
-Mdrunner::~Mdrunner() = default;
-
 } // namespace

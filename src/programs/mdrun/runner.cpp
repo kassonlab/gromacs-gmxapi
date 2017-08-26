@@ -55,6 +55,7 @@
 #include <algorithm>
 
 #include "gromacs/commandline/filenm.h"
+#include "gromacs/compat/make_unique.h"
 #include "gromacs/domdec/domdec.h"
 #include "gromacs/domdec/domdec_struct.h"
 #include "gromacs/ewald/pme.h"
@@ -145,25 +146,20 @@ tMPI_Thread_mutex_t deform_init_box_mutex = TMPI_THREAD_MUTEX_INITIALIZER;
 namespace gmx
 {
 
-void Mdrunner::reinitializeOnSpawnedThread()
+std::unique_ptr<Mdrunner> Mdrunner::cloneOnSpawnedThread() const
 {
+    std::unique_ptr<Mdrunner> newRunner{new Mdrunner(*this)};
+
     // TODO This duplication is formally necessary if any thread might
     // modify any memory in fnm or the pointers it contains. If the
     // contents are ever provably const, then we can remove this
     // allocation (and memory leak).
-    // TODO This should probably become part of a copy constructor for
-    // Mdrunner.
-    fnm = dup_tfn(nfile, fnm);
+    newRunner->fnm = dup_tfn(nfile, fnm);
+    newRunner->cr  = reinitialize_commrec_for_this_thread(cr);
+    // Don't copy fplog file pointer.
+    newRunner->fplog = nullptr;
 
-    cr  = reinitialize_commrec_for_this_thread(cr);
-
-    if (!MASTER(cr))
-    {
-        // We expect that the filehandle shared pointer was copied to get to this point
-        assert(logFileHandle_.use_count() > 1);
-        // Only the master rank writes to the log files and should close them
-        logFileHandle_ = nullptr;
-    }
+    return newRunner;
 }
 
 /*! \brief The callback used for running on spawned threads.
@@ -180,9 +176,8 @@ static void mdrunner_start_fn(void *arg)
         /* copy the arg list to make sure that it's thread-local. This
            doesn't copy pointed-to items, of course, but those are all
            const. */
-        gmx::Mdrunner mdrunner = *masterMdrunner;
-        mdrunner.reinitializeOnSpawnedThread();
-        mdrunner.mdrunner();
+        std::unique_ptr<gmx::Mdrunner> mdrunner = masterMdrunner->cloneOnSpawnedThread();
+        mdrunner->mdrunner();
     }
     GMX_CATCH_ALL_AND_EXIT_WITH_FATAL_ERROR;
 }
@@ -203,19 +198,10 @@ t_commrec *Mdrunner::spawnThreads(int numThreadsToLaunch)
         return cr;
     }
 
-    gmx::Mdrunner spawnedMdrunner = *this;
-    // TODO This duplication is formally necessary if any thread might
-    // modify any memory in fnm or the pointers it contains. If the
-    // contents are ever provably const, then we can remove this
-    // allocation (and memory leak).
-    // TODO This should probably become part of a copy constructor for
-    // Mdrunner.
-    spawnedMdrunner.fnm = dup_tfn(this->nfile, fnm);
-
     /* now spawn new threads that start mdrunner_start_fn(), while
        the main thread returns, we set thread affinity later */
     if (tMPI_Init_fn(TRUE, numThreadsToLaunch, TMPI_AFFINITY_NONE,
-                     mdrunner_start_fn, static_cast<void*>(&spawnedMdrunner)) != TMPI_SUCCESS)
+                     mdrunner_start_fn, static_cast<void*>(this)) != TMPI_SUCCESS)
     {
         GMX_THROW(gmx::InternalError("Failed to spawn thread-MPI threads"));
     }
@@ -477,7 +463,6 @@ int Mdrunner::mdrunner()
     bool forceUsePhysicalGpu = (strncmp(nbpu_opt, "gpu", 3) == 0) || !hw_opt.gpuIdTaskAssignment.empty();
     bool tryUsePhysicalGpu   = (strncmp(nbpu_opt, "auto", 4) == 0) && !emulateGpu && (GMX_GPU != GMX_GPU_NONE);
 
-    FILE* fplog = logFileHandle_.get();
     if (Flags & MD_APPENDFILES)
     {
         // If we are appending, we will get the filehandle another way
@@ -485,8 +470,6 @@ int Mdrunner::mdrunner()
     }
     // Here we assume that SIMMASTER(cr) does not change even after the
     // threads are started.
-    // The lifetime of logOwner and mdlog are confined to the enclosing block, so it seems safe to pass the
-    // raw pointers to fplog and cr.
     gmx::LoggerOwner logOwner(buildLogger(fplog, cr));
     gmx::MDLogger    mdlog(logOwner.logger());
 
@@ -809,17 +792,6 @@ int Mdrunner::mdrunner()
     {
         gmx_log_open(ftp2fn(efLOG, nfile, fnm), cr,
                      Flags, &fplog);
-        // Make sure we either capture a new file handle or copy the updated FILE state for a file descriptor from one handle to another
-        if (logFileHandle_ == nullptr)
-        {
-            logFileHandle_ = std::make_shared<FILE>();
-            logFileHandle_.reset(fplog, &gmx_log_close);
-        }
-        else
-        {
-            *logFileHandle_ = *fplog;
-        }
-
         logOwner = buildLogger(fplog, nullptr);
         mdlog    = logOwner.logger();
     }
@@ -1267,9 +1239,7 @@ int Mdrunner::mdrunner()
     /* Close logfile already here if we were appending to it */
     if (MASTER(cr) && (Flags & MD_APPENDFILES))
     {
-        // To get to this point, the log file should have been opened and not yet closed.
-        assert(*std::get_deleter<void(*)(FILE*)>(logFileHandle_) == &gmx_log_close);
-        logFileHandle_.reset();
+        gmx_log_close(fplog);
     }
 
     rc = (int)gmx_get_stop_condition();
