@@ -55,6 +55,7 @@
 #include <algorithm>
 
 #include "gromacs/commandline/filenm.h"
+#include "gromacs/compat/make_unique.h"
 #include "gromacs/domdec/domdec.h"
 #include "gromacs/domdec/domdec_struct.h"
 #include "gromacs/ewald/pme.h"
@@ -145,23 +146,48 @@ tMPI_Thread_mutex_t deform_init_box_mutex = TMPI_THREAD_MUTEX_INITIALIZER;
 namespace gmx
 {
 
-void Mdrunner::reinitializeOnSpawnedThread()
+std::unique_ptr<Mdrunner> Mdrunner::cloneOnSpawnedThread() const
 {
+    auto newRunner = gmx::compat::make_unique<Mdrunner>();
+
+    newRunner->hw_opt = hw_opt;
     // TODO This duplication is formally necessary if any thread might
     // modify any memory in fnm or the pointers it contains. If the
     // contents are ever provably const, then we can remove this
     // allocation (and memory leak).
-    // TODO This should probably become part of a copy constructor for
-    // Mdrunner.
-    fnm = dup_tfn(nfile, fnm);
+    newRunner->fnm = dup_tfn(nfile, fnm);
+    newRunner->oenv = oenv;
+    newRunner->bVerbose = bVerbose;
+    newRunner->nstglobalcomm = nstglobalcomm;
+    newRunner->ddxyz[0] = ddxyz[0];
+    newRunner->ddxyz[1] = ddxyz[1];
+    newRunner->ddxyz[2] = ddxyz[2];
+    newRunner->dd_rank_order = dd_rank_order;
+    newRunner->npme = npme;
+    newRunner->rdd = rdd;
+    newRunner->rconstr = rconstr;
+    newRunner->dddlb_opt = dddlb_opt;
+    newRunner->dlb_scale = dlb_scale;
+    newRunner->ddcsx = ddcsx;
+    newRunner->ddcsy = ddcsy;
+    newRunner->ddcsz = ddcsz;
+    newRunner->nbpu_opt = nbpu_opt;
+    newRunner->nstlist_cmdline = nstlist_cmdline;
+    newRunner->nsteps_cmdline = nsteps_cmdline;
+    newRunner->nstepout = nstepout;
+    newRunner->resetstep = resetstep;
+    newRunner->nmultisim = nmultisim;
+    newRunner->replExParams = replExParams;
+    newRunner->pforce = pforce;
+    newRunner->cpt_period = cpt_period;
+    newRunner->max_hours = max_hours;
+    newRunner->imdport = imdport;
+    newRunner->Flags = Flags;
+    newRunner->cr  = reinitialize_commrec_for_this_thread(cr);
+    // Don't copy fplog file pointer.
+    newRunner->bDoAppendFiles = bDoAppendFiles;
 
-    cr  = reinitialize_commrec_for_this_thread(cr);
-
-    if (!MASTER(cr))
-    {
-        // Only the master rank writes to the log files
-        fplog = nullptr;
-    }
+    return newRunner;
 }
 
 /*! \brief The callback used for running on spawned threads.
@@ -178,9 +204,8 @@ static void mdrunner_start_fn(void *arg)
         /* copy the arg list to make sure that it's thread-local. This
            doesn't copy pointed-to items, of course, but those are all
            const. */
-        gmx::Mdrunner mdrunner = *masterMdrunner;
-        mdrunner.reinitializeOnSpawnedThread();
-        mdrunner.mdrunner();
+        std::unique_ptr<gmx::Mdrunner> mdrunner = masterMdrunner->cloneOnSpawnedThread();
+        mdrunner->mdrunner();
     }
     GMX_CATCH_ALL_AND_EXIT_WITH_FATAL_ERROR;
 }
@@ -201,19 +226,10 @@ t_commrec *Mdrunner::spawnThreads(int numThreadsToLaunch)
         return cr;
     }
 
-    gmx::Mdrunner spawnedMdrunner = *this;
-    // TODO This duplication is formally necessary if any thread might
-    // modify any memory in fnm or the pointers it contains. If the
-    // contents are ever provably const, then we can remove this
-    // allocation (and memory leak).
-    // TODO This should probably become part of a copy constructor for
-    // Mdrunner.
-    spawnedMdrunner.fnm = dup_tfn(this->nfile, fnm);
-
     /* now spawn new threads that start mdrunner_start_fn(), while
        the main thread returns, we set thread affinity later */
     if (tMPI_Init_fn(TRUE, numThreadsToLaunch, TMPI_AFFINITY_NONE,
-                     mdrunner_start_fn, static_cast<void*>(&spawnedMdrunner)) != TMPI_SUCCESS)
+                     mdrunner_start_fn, static_cast<void*>(this)) != TMPI_SUCCESS)
     {
         GMX_THROW(gmx::InternalError("Failed to spawn thread-MPI threads"));
     }

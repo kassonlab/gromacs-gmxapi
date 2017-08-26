@@ -43,12 +43,16 @@
 #define GMX_MDLIB_RUNNER_H
 
 #include <cstdio>
+#include <cassert>
 
 #include <array>
+#include <memory>
 
 #include "gromacs/commandline/filenm.h"
 #include "gromacs/hardware/hw_info.h"
 #include "gromacs/math/vec.h"
+#include "gromacs/mdlib/main.h"
+#include "gromacs/topology/topology.h"
 #include "gromacs/utility/basedefinitions.h"
 #include "gromacs/utility/real.h"
 
@@ -84,8 +88,14 @@ class Mdrunner
     private:
         //! Parallelism-related user options.
         gmx_hw_opt_t             hw_opt;
+        /*! \brief Number of filename argument values.
+         *
+         * Provided for compatibility with old C-style code accessing
+         * command-line arguments that are file names. */
+        constexpr static int nfile = 34;
+
         //! Filenames and properties from command-line argument values.
-        std::array<t_filenm, 34> filenames =
+        std::array<t_filenm, nfile> filenames =
         {{{ efTPR, nullptr,     nullptr,     ffREAD },
           { efTRN, "-o",        nullptr,     ffWRITE },
           { efCOMPRESSED, "-x", nullptr,     ffOPTWR },
@@ -124,11 +134,6 @@ class Mdrunner
          * Provided for compatibility with old C-style code accessing
          * command-line arguments that are file names. */
         t_filenm *fnm = filenames.data();
-        /*! \brief Number of filename argument values.
-         *
-         * Provided for compatibility with old C-style code accessing
-         * command-line arguments that are file names. */
-        int nfile = filenames.size();
         //! Output context for writing text files
         gmx_output_env_t                *oenv = nullptr;
         //! TRUE if mdrun should be verbose.
@@ -183,9 +188,11 @@ class Mdrunner
         //! Bitfield of boolean flags configuring mdrun behavior.
         unsigned long                    Flags = 0;
         //! Handle to file used for logging.
-        FILE                            *fplog;
+        FILE                            *fplog{nullptr};
         //! Handle to communication data structure.
         t_commrec                       *cr;
+        //! Whether we are appending files or writing new files
+        gmx_bool                         bDoAppendFiles{};
 
     public:
         /*! \brief Defaulted constructor.
@@ -195,8 +202,25 @@ class Mdrunner
          * then they are initialized with any default member initializer specified
          * when they were declared, or default initialized. */
         Mdrunner() = default;
+
+        /*!
+         * \brief Provide handling for members requiring special attention.
+         *
+         * Note that initFromCLI() is assumed to be called zero or one times, but Mdrunner is
+         * copyable and may be duplicated on the master thread, so more careful management may be
+         * necessary.
+         */
+        ~Mdrunner();
+
+        // Copy requires special attention. Use clone methods.
+        Mdrunner(const Mdrunner&) = delete;
+        Mdrunner& operator=(const Mdrunner&) = delete;
+
+        // Allow move
+        Mdrunner(Mdrunner&&) noexcept = default;
+        Mdrunner& operator=(Mdrunner&&) noexcept = default;
         //! Start running mdrun by calling its C-style main function.
-        int mainFunction(int argc, char *argv[]);
+        void initFromCLI(int argc, char *argv[]);
         /*! \brief Driver routine, that calls the different simulation methods. */
         int mdrunner();
         //! Called when thread-MPI spawns threads.
@@ -205,7 +229,7 @@ class Mdrunner
          *
          * \todo Can this be refactored so that the Mdrunner on a spawned thread is
          * constructed ready to use? */
-        void reinitializeOnSpawnedThread();
+        std::unique_ptr<Mdrunner> cloneOnSpawnedThread() const;
 };
 
 }      // namespace gmx
