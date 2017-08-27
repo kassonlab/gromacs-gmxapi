@@ -64,6 +64,7 @@ struct t_commrec;
 
 namespace gmx
 {
+class TpxState;
 
 /*! \libinternal \brief Runner object for supporting setup and execution of mdrun.
  *
@@ -194,6 +195,8 @@ class Mdrunner
         //! Whether we are appending files or writing new files
         gmx_bool                         bDoAppendFiles{};
 
+        std::shared_ptr<TpxState>       tpxState_{nullptr};
+
     public:
         /*! \brief Defaulted constructor.
          *
@@ -201,7 +204,7 @@ class Mdrunner
          * member initialization list (which is true for the default constructor),
          * then they are initialized with any default member initializer specified
          * when they were declared, or default initialized. */
-        Mdrunner() = default;
+        Mdrunner();
 
         /*!
          * \brief Provide handling for members requiring special attention.

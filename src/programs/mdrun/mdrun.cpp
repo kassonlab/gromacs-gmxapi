@@ -530,13 +530,4 @@ void Mdrunner::initFromCLI(int argc, char *argv[])
     nbpu_opt  = nbpu_opt_choices[0];
 };
 
-Mdrunner::~Mdrunner()
-{
-    /* Log file has to be closed in mdrunner if we are appending to it
-       (fplog not set here) */
-    if (MASTER(cr) && !bDoAppendFiles)
-    {
-        gmx_log_close(fplog);
-    }
-}
 } // namespace

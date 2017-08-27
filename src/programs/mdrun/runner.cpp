@@ -50,7 +50,7 @@
 #include <cassert>
 #include <csignal>
 #include <cstdlib>
-#include <cstring>
+#include <string>
 
 #include <algorithm>
 
@@ -101,6 +101,7 @@
 #include "gromacs/mdtypes/observableshistory.h"
 #include "gromacs/mdtypes/state.h"
 #include "gromacs/mdtypes/swaphistory.h"
+#include "gromacs/mdtypes/TpxState.h"
 #include "gromacs/pbcutil/pbc.h"
 #include "gromacs/pulling/pull.h"
 #include "gromacs/pulling/pull_rotation.h"
@@ -135,6 +136,14 @@ gmx_int64_t         deform_init_init_step_tpx;
 matrix              deform_init_box_tpx;
 //! MPI variable for use in pressure scaling
 tMPI_Thread_mutex_t deform_init_box_mutex = TMPI_THREAD_MUTEX_INITIALIZER;
+
+template<typename T>
+bool stringIsEmpty(T string)
+{ return string == nullptr; };
+
+template<>
+bool stringIsEmpty<std::string>(std::string string)
+{ return string.empty(); };
 
 #if GMX_THREAD_MPI
 /* The minimum number of atoms per tMPI thread. With fewer atoms than this,
@@ -453,7 +462,6 @@ int Mdrunner::mdrunner()
     gmx_ddbox_t               ddbox = {0};
     int                       npme_major, npme_minor;
     t_nrnb                   *nrnb;
-    gmx_mtop_t               *mtop          = nullptr;
     t_mdatoms                *mdatoms       = nullptr;
     t_forcerec               *fr            = nullptr;
     t_fcdata                 *fcd           = nullptr;
@@ -474,7 +482,6 @@ int Mdrunner::mdrunner()
     /* CAUTION: threads may be started later on in this function, so
        cr doesn't reflect the final parallel state right now */
     gmx::MDModules mdModules;
-    snew(mtop, 1);
 
     bool doMembed = opt2bSet("-membed", nfile, fnm);
     bool doRerun  = (Flags & MD_RERUN);
@@ -520,64 +527,27 @@ int Mdrunner::mdrunner()
         please_cite(fplog, "Berendsen95a");
     }
 
-    std::unique_ptr<t_state> stateInstance = std::unique_ptr<t_state>(new t_state);
-    t_state *                state         = stateInstance.get();
+    if (tpxState_ == nullptr)
+    {
+        // Todo: move to Mdrunner constructor
+        tpxState_ = std::make_shared<TpxState>();
+    }
+    if (SIMMASTER(cr))
+    {
+        const char* filename = ftp2fn(efTPR, nfile, fnm);
+        if (!stringIsEmpty(filename) && !tpxState_->isInitialized())
+        {
+            /* Read (nearly) all data required for the simulation */
+            tpxState_ = TpxState::initializeFromFile(filename);
+        }
+    }
 
-//    t_inputrec     inputrecInstance;
-//    t_inputrec    *inputrec = &inputrecInstance;
-    std::shared_ptr<t_inputrec> inputrec{std::make_shared<t_inputrec>()};
+    t_inputrec    *inputrec = tpxState_->getRawInputrec();
+    gmx_mtop_t* mtop = tpxState_->getRawMtop();
+    t_state *                state         = tpxState_->getRawState();
 
     if (SIMMASTER(cr))
     {
-        /* Read (nearly) all data required for the simulation */
-        if (auto filename = ftp2fn(efTPR, nfile, fnm))
-        {
-            read_tpx_state(filename, inputrec.get(), state, mtop);
-        }
-        if (molecularTopologyInput_ != nullptr)
-        {
-            // Override with input from other sources.
-            *mtop = *molecularTopologyInput_;
-        }
-        else
-        {
-            // Update member data
-            molecularTopologyInput_ = std::make_shared<gmx_mtop_t>(*mtop);
-        }
-        if (stateInput_ != nullptr)
-        {
-            // Override with input from other sources.
-            // Todo: This would reset state on a subsequent run.
-            *state = *stateInput_;
-        }
-        else
-        {
-            // Update member data
-            stateInput_ = std::make_shared<t_state>(*state);
-        }
-        if (inputRecord_ != nullptr)
-        {
-            // Override with input from other sources.
-            inputrec = inputRecord_;
-        }
-        else
-        {
-            // Update member data
-            inputRecord_ = inputrec;
-        }
-        if (inputRecord_ == nullptr)
-        {
-            gmx_fatal(FARGS, "No simulation input record or TPR file.");
-        }
-        if (stateInput_ == nullptr)
-        {
-            gmx_fatal(FARGS, "No simulation state data structure. Need atomic configuration input.");
-        }
-        if (molecularTopologyInput_ == nullptr)
-        {
-            gmx_fatal(FARGS, "No system topology (top or tpr file).");
-        }
-
         exitIfCannotForceGpuRun(forceUsePhysicalGpu,
                                 emulateGpu,
                                 inputrec->cutoff_scheme == ecutsVERLET,
@@ -590,7 +560,7 @@ int Mdrunner::mdrunner()
                then the resulting tryUsePhysicalGpu does not need to
                be communicated. */
             if ((tryUsePhysicalGpu || forceUsePhysicalGpu) &&
-                !gpuAccelerationIsUseful(mdlog, inputrec.get(), doRerun))
+                !gpuAccelerationIsUseful(mdlog, inputrec, doRerun))
             {
                 /* Fallback message printed by nbnxn_acceleration_supported */
                 if (forceUsePhysicalGpu)
@@ -609,7 +579,7 @@ int Mdrunner::mdrunner()
                                     tryUsePhysicalGpu ||
                                     emulateGpu);
             prepare_verlet_scheme(fplog, cr,
-                                  inputrec.get(), nstlist_cmdline, mtop, state->box,
+                                  inputrec, nstlist_cmdline, mtop, state->box,
                                   makeGpuPairList, *hwinfo->cpuInfo);
         }
         else
@@ -664,7 +634,7 @@ int Mdrunner::mdrunner()
          * correctly. */
         hw_opt.nthreads_tmpi = get_nthreads_mpi(hwinfo,
                                                 &hw_opt,
-                                                inputrec.get(), mtop,
+                                                inputrec, mtop,
                                                 mdlog,
                                                 doMembed);
 
@@ -682,7 +652,7 @@ int Mdrunner::mdrunner()
     if (PAR(cr))
     {
         /* now broadcast everything to the non-master nodes/threads: */
-        init_parallel(cr, inputrec.get(), mtop);
+        init_parallel(cr, inputrec, mtop);
 
         gmx_bcast_sim(sizeof(tryUsePhysicalGpu), &tryUsePhysicalGpu, cr);
     }
@@ -691,12 +661,12 @@ int Mdrunner::mdrunner()
 
     if (fplog != nullptr)
     {
-        pr_inputrec(fplog, 0, "Input Parameters", inputrec.get(), FALSE);
+        pr_inputrec(fplog, 0, "Input Parameters", inputrec, FALSE);
         fprintf(fplog, "\n");
     }
 
     /* now make sure the state is initialized and propagated */
-    set_state_entries(state, inputrec.get());
+    set_state_entries(state, inputrec);
 
     /* A parallel command line option consistency check that we can
        only do after any threads have started. */
@@ -724,7 +694,7 @@ int Mdrunner::mdrunner()
         gmx_fatal(FARGS, "The .mdp file specified an energy mininization or normal mode algorithm, and these are not compatible with mdrun -rerun");
     }
 
-    if (can_use_allvsall(inputrec.get(), TRUE, cr, fplog) && DOMAINDECOMP(cr))
+    if (can_use_allvsall(inputrec, TRUE, cr, fplog) && DOMAINDECOMP(cr))
     {
         gmx_fatal(FARGS, "All-vs-all loops do not work with domain decomposition, use a single MPI rank");
     }
@@ -766,12 +736,12 @@ int Mdrunner::mdrunner()
     snew(fcd, 1);
 
     /* This needs to be called before read_checkpoint to extend the state */
-    init_disres(fplog, mtop, inputrec.get(), cr, fcd, state, replExParams.exchangeInterval > 0);
+    init_disres(fplog, mtop, inputrec, cr, fcd, state, replExParams.exchangeInterval > 0);
 
-    init_orires(fplog, mtop, as_rvec_array(state->x.data()), inputrec.get(), cr, &(fcd->orires),
+    init_orires(fplog, mtop, as_rvec_array(state->x.data()), inputrec, cr, &(fcd->orires),
                 state);
 
-    if (inputrecDeform(inputrec.get()))
+    if (inputrecDeform(inputrec))
     {
         /* Store the deform reference box before reading the checkpoint */
         if (SIMMASTER(cr))
@@ -805,7 +775,7 @@ int Mdrunner::mdrunner()
 
         load_checkpoint(opt2fn_master("-cpi", nfile, fnm, cr), &fplog,
                         cr, ddxyz, &npme,
-                        inputrec.get(), state, &bReadEkin, &observablesHistory,
+                        inputrec, state, &bReadEkin, &observablesHistory,
                         (Flags & MD_APPENDFILES),
                         (Flags & MD_APPENDFILESSET),
                         (Flags & MD_REPRODUCIBLE));
@@ -825,7 +795,7 @@ int Mdrunner::mdrunner()
     }
 
     /* override nsteps with value from cmdline */
-    override_nsteps_cmdline(mdlog, nsteps_cmdline, inputrec.get());
+    override_nsteps_cmdline(mdlog, nsteps_cmdline, inputrec);
 
     if (SIMMASTER(cr))
     {
@@ -845,7 +815,7 @@ int Mdrunner::mdrunner()
                                            rdd, rconstr,
                                            dddlb_opt, dlb_scale,
                                            ddcsx, ddcsy, ddcsz,
-                                           mtop, inputrec.get(),
+                                           mtop, inputrec,
                                            box, as_rvec_array(state->x.data()),
                                            &ddbox, &npme_major, &npme_minor);
     }
@@ -1004,7 +974,7 @@ int Mdrunner::mdrunner()
         /* Note that membed cannot work in parallel because mtop is
          * changed here. Fix this if we ever want to make it run with
          * multiple ranks. */
-        membed = init_membed(fplog, nfile, fnm, mtop, inputrec.get(), state, cr, &cpt_period);
+        membed = init_membed(fplog, nfile, fnm, mtop, inputrec, state, cr, &cpt_period);
     }
 
     snew(nrnb, 1);
@@ -1016,7 +986,7 @@ int Mdrunner::mdrunner()
         fr                 = mk_forcerec();
         fr->forceProviders = mdModules.initForceProviders();
         init_forcerec(fplog, mdlog, fr, fcd,
-                      inputrec.get(), mtop, cr, box,
+                      inputrec, mtop, cr, box,
                       opt2fn("-table", nfile, fnm),
                       opt2fn("-tablep", nfile, fnm),
                       getFilenm("-tableb", nfile, fnm),
@@ -1028,7 +998,7 @@ int Mdrunner::mdrunner()
         /* Initialize QM-MM */
         if (fr->bQMMM)
         {
-            init_QMMMrec(cr, mtop, inputrec.get(), fr);
+            init_QMMMrec(cr, mtop, inputrec, fr);
         }
 
         /* Initialize the mdatoms structure.
@@ -1079,7 +1049,6 @@ int Mdrunner::mdrunner()
         /* This is a PME only node */
 
         /* We don't need the state */
-        stateInstance.reset();
         state         = nullptr;
 
         ewaldcoeff_q  = calc_ewaldcoeff_q(inputrec->rcoulomb, inputrec->ewald_rtol);
@@ -1135,7 +1104,7 @@ int Mdrunner::mdrunner()
         {
             try
             {
-                status = gmx_pme_init(pmedata, cr, npme_major, npme_minor, inputrec.get(),
+                status = gmx_pme_init(pmedata, cr, npme_major, npme_minor, inputrec,
                                       mtop ? mtop->natoms : 0, nChargePerturbed, nTypePerturbed,
                                       (Flags & MD_REPRODUCIBLE),
                                       ewaldcoeff_q, ewaldcoeff_lj,
@@ -1169,7 +1138,7 @@ int Mdrunner::mdrunner()
         {
             /* Initialize pull code */
             inputrec->pull_work =
-                init_pull(fplog, inputrec->pull, inputrec.get(), nfile, fnm,
+                init_pull(fplog, inputrec->pull, inputrec, nfile, fnm,
                           mtop, cr, oenv, inputrec->fepvals->init_lambda,
                           EI_DYNAMICS(inputrec->eI) && MASTER(cr), Flags);
         }
@@ -1177,7 +1146,7 @@ int Mdrunner::mdrunner()
         if (inputrec->bRot)
         {
             /* Initialize enforced rotation code */
-            init_rot(fplog, inputrec.get(), nfile, fnm, cr, as_rvec_array(state->x.data()), state->box, mtop, oenv,
+            init_rot(fplog, inputrec, nfile, fnm, cr, as_rvec_array(state->x.data()), state->box, mtop, oenv,
                      bVerbose, Flags);
         }
 
@@ -1186,7 +1155,7 @@ int Mdrunner::mdrunner()
          */
         bool doEdsam = (opt2fn_null("-ei", nfile, fnm) != nullptr || observablesHistory.edsamHistory);
 
-        constr = init_constraints(fplog, mtop, inputrec.get(), doEdsam, cr);
+        constr = init_constraints(fplog, mtop, inputrec, doEdsam, cr);
 
         if (DOMAINDECOMP(cr))
         {
@@ -1194,7 +1163,7 @@ int Mdrunner::mdrunner()
             /* This call is not included in init_domain_decomposition mainly
              * because fr->cginfo_mb is set later.
              */
-            dd_init_bondeds(fplog, cr->dd, mtop, vsite, inputrec.get(),
+            dd_init_bondeds(fplog, cr->dd, mtop, vsite, inputrec,
                             Flags & MD_DDBONDCHECK, fr->cginfo_mb);
         }
 
@@ -1204,7 +1173,7 @@ int Mdrunner::mdrunner()
                                      nstglobalcomm,
                                      vsite, constr,
                                      nstepout, mdModules.outputProvider(),
-                                     inputrec.get(), mtop,
+                                     inputrec, mtop,
                                      fcd, state, &observablesHistory,
                                      mdatoms, nrnb, wcycle, fr,
                                      replExParams,
@@ -1230,7 +1199,7 @@ int Mdrunner::mdrunner()
         GMX_RELEASE_ASSERT(pmedata, "pmedata was NULL while cr->duty was not DUTY_PP");
         /* do PME only */
         walltime_accounting = walltime_accounting_init(gmx_omp_nthreads_get(emntPME));
-        gmx_pmeonly(*pmedata, cr, nrnb, wcycle, walltime_accounting, ewaldcoeff_q, ewaldcoeff_lj, inputrec.get());
+        gmx_pmeonly(*pmedata, cr, nrnb, wcycle, walltime_accounting, ewaldcoeff_q, ewaldcoeff_lj, inputrec);
     }
 
     wallcycle_stop(wcycle, ewcRUN);
@@ -1239,7 +1208,7 @@ int Mdrunner::mdrunner()
      * if rerunMD, don't write last frame again
      */
     finish_run(fplog, mdlog, cr,
-               inputrec.get(), nrnb, wcycle, walltime_accounting,
+               inputrec, nrnb, wcycle, walltime_accounting,
                fr ? fr->nbv : nullptr,
                EI_DYNAMICS(inputrec->eI) && !MULTISIM(cr));
 
@@ -1285,19 +1254,16 @@ int Mdrunner::mdrunner()
     return rc;
 }
 
-void Mdrunner::molecularTopologyInput(std::shared_ptr<gmx_mtop_t> input) noexcept
-{
-    molecularTopologyInput_ = std::move(input);
-}
+Mdrunner::Mdrunner() = default;
 
-void Mdrunner::stateInput(std::shared_ptr<t_state> input) noexcept
+Mdrunner::~Mdrunner()
 {
-    stateInput_ = std::move(input);
-}
-
-void Mdrunner::inputRecord(std::shared_ptr<t_inputrec> input) noexcept
-{
-    inputRecord_ = std::move(input);
+    /* Log file has to be closed in mdrunner if we are appending to it
+       (fplog not set here) */
+    if (MASTER(cr) && !bDoAppendFiles)
+    {
+        gmx_log_close(fplog);
+    }
 }
 
 } // namespace gmx
