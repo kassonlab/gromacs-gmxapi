@@ -118,7 +118,7 @@ static const float  nbnxn_gpu_listfac_max   = 1.30;
 
 void increase_nstlist(FILE *fp, t_commrec *cr,
                       t_inputrec *ir, int nstlist_cmdline,
-                      const gmx_mtop_t *mtop, matrix box,
+                      const gmx_mtop_t *mtop, const matrix box,
                       bool makeGpuPairList, const gmx::CpuInfo &cpuinfo)
 {
     float                  listfac_ok, listfac_max;
