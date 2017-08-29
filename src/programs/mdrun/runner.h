@@ -47,6 +47,8 @@
 
 #include <array>
 #include <memory>
+#include <mutex>
+#include "gromacs/commandline/pargs.h"
 #include <bitset>
 
 #include "gromacs/commandline/filenm.h"
@@ -195,6 +197,7 @@ class Mdrunner
         t_commrec                       *cr;
 
         std::shared_ptr<TpxState>       tpxState_{nullptr};
+//        mutable std::mutex            stateAccess;
 
     public:
         /*! \brief Defaulted constructor.
@@ -222,11 +225,27 @@ class Mdrunner
         Mdrunner(Mdrunner&&) noexcept = default;
         Mdrunner& operator=(Mdrunner&&) noexcept = default;
 
-        //! Start running mdrun by calling its C-style main function.
+        //! Set up mdrun by calling its C-style main function.
         void initFromCLI(int argc, char *argv[]);
+
+        //! Set up mdrun with parameters provided by API instead of CLI.
+        void initFromAPI();
 
         /*! \brief Driver routine, that calls the different simulation methods. */
         int mdrunner();
+
+        /*!
+         * \brief Set or replace the TPX state of the runner.
+         *
+         * To avoid race conditions, do not set a dirty state and expect to fix it later.
+         *
+         * Note: does not yet raise any notifications or permit subscribers. Every
+         * member function should assume state gets changed between calls.
+         *
+         * Warning: not thread safe.
+         *
+         */
+        void setTpx(std::shared_ptr<gmx::TpxState> newState);
 
         //! Called when thread-MPI spawns threads.
         t_commrec *spawnThreads(int numThreadsToLaunch);
@@ -237,6 +256,7 @@ class Mdrunner
          * \returns New Mdrunner instance suitable for running in additional threads.
          */
         std::unique_ptr<Mdrunner> cloneOnSpawnedThread() const;
+
 };
 
 }      // namespace gmx
