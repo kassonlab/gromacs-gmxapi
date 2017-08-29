@@ -47,6 +47,7 @@
 
 #include <array>
 #include <memory>
+#include <bitset>
 
 #include "gromacs/commandline/filenm.h"
 #include "gromacs/hardware/hw_info.h"
@@ -187,13 +188,11 @@ class Mdrunner
         //! Socket number used for IMD inter-process communication.
         int                              imdport = 8888;
         //! Bitfield of boolean flags configuring mdrun behavior.
-        unsigned long                    Flags = 0;
+        std::bitset<64>                    Flags{};
         //! Handle to file used for logging.
         FILE                            *fplog{nullptr};
         //! Handle to communication data structure.
         t_commrec                       *cr;
-        //! Whether we are appending files or writing new files
-        gmx_bool                         bDoAppendFiles{};
 
         std::shared_ptr<TpxState>       tpxState_{nullptr};
 
