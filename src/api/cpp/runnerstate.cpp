@@ -3,104 +3,21 @@
 //
 
 #include "gmxapi/runner.h"
-#include "api/cpp/gmxapi/md/runnerstate.h"
-#include "gmxapi/exceptions.h"
 
 #include <string>
 #include <cassert>
-#include <programs/mdrun/runner.h>
-
-#include "gmxapi/md.h"
+#include "gromacs/utility.h"
+#include "programs/mdrun/runner.h"
 #include "gromacs/compat/make_unique.h"
+#include "gromacs/mdtypes/TpxState.h"
+#include "gromacs/mdtypes/inputrec.h"
+
+#include "gmxapi/exceptions.h"
+#include "gmxapi/md.h"
+#include "gmxapi/md/runnerstate.h"
 
 namespace gmxapi
 {
-
-/*!
- * \brief State implementation for first draft hack.
- *
- * Uses an outdated cut-and-pasted mdrunner with minor encapsulation and a filename parameter.
- */
-//RunnerImplState::RunnerImplState(std::string filename) :
-//                impl_{std::make_shared<gmxapi::RunnerImpl>(filename)},
-//                mdproxy_{gmxapi::mdFromTpr(filename)}
-//        {};
-//
-//RunnerImplState::~RunnerImplState()
-//        {
-//        }
-//
-//RunnerImplState::RunnerImplState(std::shared_ptr<RunnerProxy> owner, std::shared_ptr<MDProxy> mdproxy) :
-//                impl_{nullptr},
-//                mdproxy_{std::move(mdproxy)},
-//                owner_{owner}
-//        {};
-//
-//std::shared_ptr<IMDRunnerBuilder> RunnerImplState::builder()
-//        {
-//            if (mdproxy_ == nullptr)
-//            {
-//                // usage error?
-//                throw gmxapi::Exception();
-//            }
-//            // When build() is called, the high-level runner handle needs to be updated.
-//            std::shared_ptr<RunnerProxy> owner;
-//            if (owner_.expired())
-//            {
-//                owner = std::make_shared<RunnerProxy>();
-//                owner_ = owner;
-//            }
-//            else {
-//                owner = owner_.lock();
-//            }
-//            auto builder = std::make_shared<RunnerImplBuilder>(owner, mdproxy_);
-//            return builder;
-//        }
-//
-//gmxapi::Status RunnerImplState::run()
-//        {
-//            return gmxapi::Status(impl_->run() == 0);
-//        }
-//
-//gmxapi::Status RunnerImplState::run(long int nsteps)
-//{
-//    return gmxapi::Status(impl_->run(nsteps) == 0);
-//}
-//
-//void RunnerImplState::registerMDBuilder(std::unique_ptr<MDBuilder> builder)
-//{
-//    // This logic is a mess, but should clean up with the redesign underway...
-//    throw gmxapi::Exception();
-//}
-//
-//RunnerImplBuilder::RunnerImplBuilder(std::shared_ptr<RunnerProxy> owner, std::shared_ptr<MDProxy> md) :
-//    md_{std::move(md)},
-//    owner_{std::move(owner)}
-//{}
-//
-//std::shared_ptr<IMDRunner> RunnerImplBuilder::build()
-//{// This is where we would normally provide a registerMDBuilder to md via bind.
-//    class RegistrationHelper : public IMDRunner
-//    {
-//        public:
-//            std::string filename;
-//            virtual void registerMDBuilder(std::unique_ptr<MDBuilder> builder) override
-//            {
-//
-//                filename = builder->inputAsTprFilename();
-//            };
-//
-//            virtual Status run() override
-//            {
-//                return Status();
-//            }
-//    };
-//    RegistrationHelper registerer;
-//    md_->bind(&registerer);
-//    auto filename = registerer.filename;
-//    auto newState = std::make_shared<RunnerImplState>(filename);
-//    owner_->setState(newState);
-//    return newState;}
 
 // Delegate construction to RunnerProxy::RunnerProxy(std::shared_ptr<MDProxy> md)
 RunnerProxy::RunnerProxy() :
@@ -140,20 +57,20 @@ std::shared_ptr<IMDRunner> RunnerProxy::initialize(std::shared_ptr<Context> cont
 void EmptyMDRunnerState::registerMDBuilder(std::unique_ptr<MDBuilder> builder)
 {
     // nothing to bind to
-    throw(Exception());
+    throw Exception();
 }
 
 Status EmptyMDRunnerState::run()
 {
     // Nothing to run...
-    throw(Exception());
+    throw Exception();
     return Status();
 }
 
 std::shared_ptr<IMDRunner> EmptyMDRunnerState::initialize(std::shared_ptr<Context> context)
 {
     // Runner proxy should have been configured by a builder with something like UninitializedMDRunnerState
-    throw(Exception());
+    throw Exception();
     return nullptr;
 }
 
@@ -161,15 +78,13 @@ class UninitializedMDRunnerState::Impl
 {
     public:
         std::shared_ptr<MDEngine> mdProxy_;
-        std::shared_ptr<t_inputrec> inputRecord_;
-        std::shared_ptr<t_state> state_;
-        std::shared_ptr<gmx_mtop_t> topology_;
+        std::shared_ptr<gmx::TpxState> tpxState_;
 };
 
 Status UninitializedMDRunnerState::run()
 {
     // We could be more helpful about suggesting the user initialize the runner first...
-    throw(Exception());
+    throw Exception();
     return Status();
 }
 
@@ -182,7 +97,7 @@ void UninitializedMDRunnerState::registerMDBuilder(std::unique_ptr<MDBuilder> bu
 std::shared_ptr<IMDRunner> UninitializedMDRunnerState::initialize(std::shared_ptr<Context> context)
 {
     RunningMDRunnerState::Builder builder{};
-
+    builder.tpxState(impl_->tpxState_);
 
     std::shared_ptr<IMDRunner> initializedRunner = builder.build();
     return initializedRunner;
@@ -196,21 +111,31 @@ UninitializedMDRunnerState::UninitializedMDRunnerState() :
 UninitializedMDRunnerState::~UninitializedMDRunnerState() = default;
 
 UninitializedMDRunnerState::Builder::Builder() :
-    runner_{}
+    runner_{nullptr}
 {
-    runner_.reset(new UninitializedMDRunnerState());
+    // Cannot use make_unique() because constructor is private
+    try
+    {
+        runner_.reset(new UninitializedMDRunnerState());
+    }
+    catch(const std::exception& e)
+    {
+        // How should we report memory errors?
+        throw e;
+    }
 }
 
 std::unique_ptr<UninitializedMDRunnerState> UninitializedMDRunnerState::Builder::build()
 {
     std::unique_ptr<UninitializedMDRunnerState> runnerState;
-    if (runner_->impl_->mdProxy_ && runner_->impl_->inputRecord_ && runner_->impl_->state_ && runner_->impl_->topology_)
+    if (runner_->impl_->mdProxy_ && runner_->impl_->tpxState_)
     {
         runnerState.swap(runner_);
     }
     else
     {
-        throw(Exception());
+        // Todo: codify build protocol and/or provide more helpful error-checking
+        throw(ProtocolError("Builder has insufficient input for a valid product."));
     }
     return runnerState;
 }
@@ -218,32 +143,19 @@ std::unique_ptr<UninitializedMDRunnerState> UninitializedMDRunnerState::Builder:
 UninitializedMDRunnerState::Builder &UninitializedMDRunnerState::Builder::mdEngine(std::shared_ptr<MDEngine> md)
 {
     assert(md != nullptr);
+    assert(runner_->impl_ != nullptr);
     runner_->impl_->mdProxy_ = std::move(md);
     return *this;
 }
 
 UninitializedMDRunnerState::Builder &
-UninitializedMDRunnerState::Builder::inputRecord(std::shared_ptr<t_inputrec> inputRecord)
+UninitializedMDRunnerState::Builder::tpxState(std::shared_ptr<gmx::TpxState> input)
 {
-    assert(inputRecord != nullptr);
-    runner_->impl_->inputRecord_ = std::move(inputRecord);
+    assert(input != nullptr);
+    assert(runner_->impl_ != nullptr);
+    runner_->impl_->tpxState_ = std::move(input);
     return *this;
 }
-
-UninitializedMDRunnerState::Builder &UninitializedMDRunnerState::Builder::state(std::shared_ptr<t_state> state)
-{
-    assert(state != nullptr);
-    runner_->impl_->state_ = std::move(state);
-    return *this;
-}
-
-UninitializedMDRunnerState::Builder &UninitializedMDRunnerState::Builder::topology(std::shared_ptr<gmx_mtop_t> topology)
-{
-    assert(topology != nullptr);
-    runner_->impl_->topology_ = std::move(topology);
-    return *this;
-}
-
 
 UninitializedMDRunnerState::Builder::~Builder() = default;
 
@@ -251,30 +163,30 @@ class RunningMDRunnerState::Impl
 {
     public:
         std::shared_ptr<MDEngine> mdProxy_;
-        std::shared_ptr<t_inputrec> inputRecord_;
-        std::shared_ptr<t_state> state_;
-        std::shared_ptr<gmx_mtop_t> topology_;
         std::shared_ptr<gmx::Mdrunner> runner_;
-        decltype(t_inputrec().nsteps) nSteps;
+        // Make sure we don't have incompatible types getting implicitly converted behind our backs.
+        decltype(t_inputrec::nsteps) nSteps_;
+
         Impl();
         Status run();
 };
 
-RunningMDRunnerState::Impl::Impl()
+RunningMDRunnerState::Impl::Impl() :
+    mdProxy_{nullptr},
+    runner_{nullptr},
+    nSteps_{0}
 {
-    runner_ = std::make_shared<gmx::Mdrunner>();
-    runner_->inputRecord(inputRecord_);
-    runner_->stateInput(state_);
-    runner_->molecularTopologyInput(topology_);
-    // Not implemented
-    //runner_->mdEngine(md_);
 }
 
 Status RunningMDRunnerState::Impl::run()
 {
+    if (runner_ == nullptr)
+    {
+        throw gmxapi::ProtocolError("Runner not initialized.");
+    }
     Status status{};
     // Todo: check the number of steps to run
-    if (runner_->mdrunner())
+    if (runner_->mdrunner() == 0)
     {
         status = true;
     }
@@ -290,6 +202,10 @@ RunningMDRunnerState::RunningMDRunnerState() :
 
 Status RunningMDRunnerState::run()
 {
+    if (impl_ == nullptr)
+    {
+        throw gmxapi::ProtocolError("Runner not initialized.");
+    }
     return impl_->run();
 }
 
@@ -297,6 +213,7 @@ Status RunningMDRunnerState::run()
 std::shared_ptr<IMDRunner> RunningMDRunnerState::initialize(std::shared_ptr<Context> context)
 {
     // Should we reinitialize somehow?
+    throw gmxapi::NotImplementedError("Initializing a running Mdrunner is not defined.");
     return std::shared_ptr<IMDRunner>();
 }
 
@@ -307,14 +224,46 @@ void RunningMDRunnerState::registerMDBuilder(std::unique_ptr<MDBuilder> builder)
 
 
 RunningMDRunnerState::Builder::Builder() :
-    runner_{new RunningMDRunnerState()}
+    runner_{nullptr}
 {
+    // make_unique() not available for private constructors
+    std::unique_ptr<RunningMDRunnerState> newRunner{new RunningMDRunnerState()};
+    runner_ = std::move(newRunner);
 }
 
 std::unique_ptr<RunningMDRunnerState> RunningMDRunnerState::Builder::build()
 {
-    std::unique_ptr<RunningMDRunnerState> activeRunner = std::move(runner_);
+    std::unique_ptr<RunningMDRunnerState::Impl> runnerImpl{nullptr};
+
+    if (tpxState_ != nullptr)
+    {
+        auto newMdrunner = gmx::compat::make_unique<gmx::Mdrunner>();
+        newMdrunner->setTpx(tpxState_);
+        // Right now we need to borrow the CLII code...
+        newMdrunner->initFromAPI();
+
+        runnerImpl = gmx::compat::make_unique<RunningMDRunnerState::Impl>();
+        runnerImpl->runner_ = std::move(newMdrunner);
+    }
+    runner_->impl_ = std::move(runnerImpl);
+
+    // Not implemented
+    //runner_->mdEngine(md_);
+
+    std::unique_ptr<RunningMDRunnerState> activeRunner{nullptr};
+    if ((runner_->impl_ != nullptr) /* && other validity checks... */)
+    {
+        activeRunner = std::move(runner_);
+    }
+
     return activeRunner;
+}
+
+RunningMDRunnerState::Builder &RunningMDRunnerState::Builder::tpxState(std::shared_ptr<gmx::TpxState> input)
+{
+    assert(input != nullptr);
+    tpxState_ = std::move(input);
+    return *this;
 }
 
 RunningMDRunnerState::Builder::~Builder() = default;

@@ -179,47 +179,32 @@ std::unique_ptr<gmxapi::System> fromTprFile(std::string filename)
 
     // for what it's worth, we can choose/configure a builder based
     // on the sort of system we are building.
-    auto builder = gmx::compat::make_unique<System::Builder>();
 
     // For now have very limited execution environment abstraction
     // or flexibility.
 //    builder->defaultContext();
-//
-//    const auto inputrec = gmxapi::MDInput::from_tpr_file(filename);
-//
-//    builder->runner(*inputrec);
-//
-//    builder->structure(*inputrec);
 
-//    builder->topology(topology);
-
-    // Get all of the information we are going to extract from the TPR file.
-    auto inputRecord = gmx::compat::make_unique<t_inputrec>();
-    auto state = gmx::compat::make_unique<t_state>();
-    auto topology = gmx::compat::make_unique<gmx_mtop_t>();
-
-    // Fill the output parameters.
-    read_tpx_state(filename.c_str(), inputRecord.get(), state.get(), topology.get());
-
-
-    // Build and assign MDEngine member
+    // Build MDEngine member
     auto mdBuilder = MDProxy().builder();
     assert(mdBuilder != nullptr);
     std::shared_ptr<MDEngine> md = mdBuilder->build();
     assert(md != nullptr);
     assert(!md->info().empty());
-    builder->mdEngine(md);
 
-
-//    builder->topology(std::move(topology));
-
-//    auto runnerBuilder =
     auto runnerBuilder = UninitializedMDRunnerState::Builder();
     runnerBuilder.mdEngine(md);
-    runnerBuilder.inputRecord(std::move(inputRecord));
-    runnerBuilder.state(std::move(state));
-    runnerBuilder.topology(std::move(topology));
+    auto tpxState = gmx::TpxState::initializeFromFile(filename);
+    assert(!tpxState->isDirty());
+    assert(tpxState->isInitialized());
+    runnerBuilder.tpxState(std::move(tpxState));
     auto runner = runnerBuilder.build();
+    assert(runner != nullptr);
+
+    // One way to get around the required CLI argument is to make sure topol.tpr is in the working directory...
+
+
+    auto builder = gmx::compat::make_unique<System::Builder>();
+    builder->mdEngine(md);
     builder->runner(std::move(runner));
 
     auto system = builder->build();

@@ -7,9 +7,15 @@
 
 #include "gmxapi/runner.h"
 #include <memory>
-#include <gromacs/mdtypes/inputrec.h>
-#include <gromacs/mdtypes/state.h>
-#include <gromacs/topology/topology.h>
+
+// Declaring classes from other namespaces is iffy and turns compile errors into linking errors
+// but reduces coupling. If we go this route, TODO: consider consolidating incomplete gmx types in a single header.
+//namespace gmx
+//{
+//    class TpxState;
+//}
+// For now, I prefer the compiler type-checking of the coupled code.
+#include "gromacs/mdtypes/TpxState.h"
 
 namespace gmxapi
 {
@@ -63,9 +69,8 @@ class UninitializedMDRunnerState : public IMDRunner
                 Builder& operator=(Builder&&) noexcept = default;
 
                 Builder& mdEngine(std::shared_ptr<MDEngine> md);
-                Builder& inputRecord(std::shared_ptr<t_inputrec> inputRecord);
-                Builder& state(std::shared_ptr<t_state> state);
-                Builder& topology(std::shared_ptr<gmx_mtop_t> topology);
+                Builder& tpxState(std::shared_ptr<gmx::TpxState> input);
+
                 std::unique_ptr<UninitializedMDRunnerState> build();
             private:
                 std::unique_ptr<UninitializedMDRunnerState> runner_;
@@ -104,9 +109,12 @@ class RunningMDRunnerState : public IMDRunner
                 Builder& operator=(const Builder&) = delete;
                 Builder& operator=(Builder&&) noexcept = default;
 
+                Builder& tpxState(std::shared_ptr<gmx::TpxState> input);
+
                 std::unique_ptr<RunningMDRunnerState> build();
             private:
                 std::unique_ptr<RunningMDRunnerState> runner_;
+                std::shared_ptr<gmx::TpxState> tpxState_;
         };
     private:
         RunningMDRunnerState();
