@@ -505,10 +505,9 @@ Implicit context management
 .. code-block:: python
 
     import gmx
-    from gmx import TrajectoryFile
 
     # instantiate trajectory file object
-    mytraj = TrajectoryFile(filename, 'r')
+    mytraj = gmx.TrajectoryFile(filename, 'r')
     # note nothing is in it yet
     dir(mytraj)
 
@@ -533,7 +532,7 @@ Implicit context management
     # evaluate remaining tasks and finish
     gmx.run()
     # or
-    status = gmx.Context(**runtime_params).resolve(gmx.run())
+    status = gmx.default_context(**runtime_params).resolve(gmx.run())
 
     # only get the last frame
     X = numpy.array(mytraj.positions.extract(), copy=False)
