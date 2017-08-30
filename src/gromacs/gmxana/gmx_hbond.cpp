@@ -423,7 +423,7 @@ static void add_hbond(t_hbdata *hb, int d, int a, int h, int grpd, int grpa,
     }
     else if (grpd != hb->d.grp[id])
     {
-        gmx_fatal(FARGS, "Inconsistent donor groups, %d iso %d, atom %d",
+        gmx_fatal(FARGS, "Inconsistent donor groups, %d instead of %d, atom %d",
                   grpd, hb->d.grp[id], d+1);
     }
     if ((ia = hb->a.aptr[a]) == NOTSET)
@@ -432,7 +432,7 @@ static void add_hbond(t_hbdata *hb, int d, int a, int h, int grpd, int grpa,
     }
     else if (grpa != hb->a.grp[ia])
     {
-        gmx_fatal(FARGS, "Inconsistent acceptor groups, %d iso %d, atom %d",
+        gmx_fatal(FARGS, "Inconsistent acceptor groups, %d instead of %d, atom %d",
                   grpa, hb->a.grp[ia], a+1);
     }
 
@@ -457,7 +457,7 @@ static void add_hbond(t_hbdata *hb, int d, int a, int h, int grpd, int grpa,
             }
             else if (grpd != hb->d.grp[id])
             {
-                gmx_fatal(FARGS, "Inconsistent donor groups, %d iso %d, atom %d",
+                gmx_fatal(FARGS, "Inconsistent donor groups, %d instead of %d, atom %d",
                           grpd, hb->d.grp[id], d+1);
             }
             if ((ia = hb->a.aptr[a]) == NOTSET)
@@ -466,7 +466,7 @@ static void add_hbond(t_hbdata *hb, int d, int a, int h, int grpd, int grpa,
             }
             else if (grpa != hb->a.grp[ia])
             {
-                gmx_fatal(FARGS, "Inconsistent acceptor groups, %d iso %d, atom %d",
+                gmx_fatal(FARGS, "Inconsistent acceptor groups, %d instead of %d, atom %d",
                           grpa, hb->a.grp[ia], a+1);
             }
         }
@@ -3156,7 +3156,7 @@ int gmx_hbond(int argc, char *argv[])
 
     free_grid(ngrid, &grid);
 
-    close_trj(status);
+    close_trx(status);
 
     if (donor_properties)
     {
@@ -3364,7 +3364,7 @@ int gmx_hbond(int argc, char *argv[])
                 sprintf(mat.title, bContact ? "Contact Existence Map" :
                         "Hydrogen Bond Existence Map");
                 sprintf(mat.legend, bContact ? "Contacts" : "Hydrogen Bonds");
-                sprintf(mat.label_x, "%s", output_env_get_xvgr_tlabel(oenv));
+                sprintf(mat.label_x, "%s", output_env_get_xvgr_tlabel(oenv).c_str());
                 sprintf(mat.label_y, bContact ? "Contact Index" : "Hydrogen Bond Index");
                 mat.bDiscrete = TRUE;
                 mat.nmap      = 2;

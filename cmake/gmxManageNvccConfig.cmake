@@ -1,7 +1,7 @@
 #
 # This file is part of the GROMACS molecular simulation package.
 #
-# Copyright (c) 2012,2013,2014,2015,2016, by the GROMACS development team, led by
+# Copyright (c) 2012,2013,2014,2015,2016,2017, by the GROMACS development team, led by
 # Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
 # and including many others, as listed in the AUTHORS file in the
 # top-level source directory and at http://www.gromacs.org.
@@ -49,23 +49,6 @@ gmx_check_if_changed(CUDA_HOST_COMPILER_CHANGED CUDA_HOST_COMPILER)
 # CUDA_HOST_COMPILER changed hence it is not auto-set anymore
 if (CUDA_HOST_COMPILER_CHANGED AND CUDA_HOST_COMPILER_AUTOSET)
     unset(CUDA_HOST_COMPILER_AUTOSET CACHE)
-endif()
-
-# Set the host compiler for nvcc if this is not set by CMake (v<=2.8.9)
-#
-# Note that even though nvcc compiles host code as C++, we use the
-# CMAKE_C_COMPILER as host compiler. We do this because CUDA versions
-# preceding 5.0 only recognize icc, but not icpc. However, both gcc and icc
-# (i.e. all supported compilers) happily compile C++ code.
-#
-# Also note that with MSVC nvcc sets the -compiler-bindir option behind the
-# scenes; to avoid conflicts we don't set -ccbin automatically.
-#
-# TODO: remove this when CMAke >=v2.8.10 is required.
-if (NOT DEFINED CUDA_HOST_COMPILER AND NOT MSVC)
-    set(CUDA_HOST_COMPILER "${CMAKE_C_COMPILER}")
-    set(CUDA_HOST_COMPILER_AUTOSET TRUE CACHE INTERNAL
-        "True if CUDA_HOST_COMPILER is automatically set")
 endif()
 
 # glibc 2.23 changed string.h in a way that breaks CUDA compilation in
@@ -165,12 +148,22 @@ else()
     endif()
 endif()
 
-gmx_dependent_cache_variable(GMX_CUDA_TARGET_SM "List of CUDA GPU architecture codes to compile for (without the sm_ prefix)" STRING "" GMX_CUDA_TARGET_SM)
-gmx_dependent_cache_variable(GMX_CUDA_TARGET_COMPUTE "List of CUDA virtual architecture codes to compile for (without the compute_ prefix)" STRING "" GMX_CUDA_TARGET_COMPUTE)
+if (GMX_CUDA_TARGET_SM)
+    set_property(CACHE GMX_CUDA_TARGET_SM PROPERTY HELPSTRING "List of CUDA GPU architecture codes to compile for (without the sm_ prefix)")
+    set_property(CACHE GMX_CUDA_TARGET_SM PROPERTY TYPE STRING)
+endif()
+if (GMX_CUDA_TARGET_COMPUTE)
+    set_property(CACHE GMX_CUDA_TARGET_COMPUTE PROPERTY HELPSTRING "List of CUDA virtual architecture codes to compile for (without the compute_ prefix)")
+    set_property(CACHE GMX_CUDA_TARGET_COMPUTE PROPERTY TYPE STRING)
+endif()
 
 # assemble the CUDA flags
 list(APPEND GMX_CUDA_NVCC_FLAGS "${GMX_CUDA_NVCC_GENCODE_FLAGS}")
 list(APPEND GMX_CUDA_NVCC_FLAGS "-use_fast_math")
+if (CUDA_VERSION VERSION_EQUAL "8.0")
+    # requesting sm_20 triggers deprecation messages with nvcc 8.0 which we better avoid
+    list(APPEND GMX_CUDA_NVCC_FLAGS "-Wno-deprecated-gpu-targets")
+endif()
 
 # assemble the CUDA host compiler flags
 list(APPEND GMX_CUDA_NVCC_FLAGS "${CUDA_HOST_COMPILER_OPTIONS}")

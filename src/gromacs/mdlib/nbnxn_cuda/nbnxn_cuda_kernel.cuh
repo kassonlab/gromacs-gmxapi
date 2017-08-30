@@ -54,8 +54,8 @@
  * code that is in double precision.
  */
 
-#if GMX_PTX_ARCH < 300
-#error "nbnxn_cuda_kernel.cuh included with GMX_PTX_ARCH < 300"
+#if GMX_PTX_ARCH < 300 && GMX_PTX_ARCH != 0
+#error "nbnxn_cuda_kernel.cuh included with GMX_PTX_ARCH < 300 or host pass"
 #endif
 
 #if defined EL_EWALD_ANA || defined EL_EWALD_TAB
@@ -86,7 +86,7 @@
    Kernel launch parameters:
     - #blocks   = #pair lists, blockId = pair list Id
     - #threads  = NTHREAD_Z * c_clSize^2
-    - shmem     = see nbnxn_cuda.cu:calc_shmem_required()
+    - shmem     = see nbnxn_cuda.cu:calc_shmem_required_nonbonded()
 
     Each thread calculates an i force-component taking one pair of i-j atoms.
  */
@@ -191,7 +191,7 @@ __global__ void NB_KERNEL_FUNC_NAME(nbnxn_kernel, _F_cuda)
     float beta3                 = nbparam.ewald_beta*nbparam.ewald_beta*nbparam.ewald_beta;
 #endif
 #ifdef PRUNE_NBL
-    float rlist_sq              = nbparam.rlist_sq;
+    float rlist_sq              = nbparam.rlistOuter_sq;
 #endif
 
 #ifdef CALC_ENERGIES
@@ -317,7 +317,11 @@ __global__ void NB_KERNEL_FUNC_NAME(nbnxn_kernel, _F_cuda)
 #endif
 
 #ifdef LJ_EWALD
+    #if DISABLE_CUDA_TEXTURES
+            E_lj += LDG(&nbparam.nbfp[atom_types[(sci*c_numClPerSupercl + i)*c_clSize + tidxi]*(ntypes + 1)*2]);
+    #else
             E_lj += tex1Dfetch<float>(nbparam.nbfp_texobj, atom_types[(sci*c_numClPerSupercl + i)*c_clSize + tidxi]*(ntypes + 1)*2);
+    #endif
 #endif
         }
 

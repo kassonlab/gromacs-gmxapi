@@ -461,4 +461,24 @@ gmx_bool inputrecNvtTrotter(const t_inputrec *ir);
 
 gmx_bool inputrecNphTrotter(const t_inputrec *ir);
 
+/* Returns true for MD integator with T and/or P-coupling that supports
+ * calculating the conserved energy quantity.
+ */
+bool integratorHasConservedEnergyQuantity(const t_inputrec *ir);
+
+/*! \brief Return the number of bounded dimensions
+ *
+ * \param[in] ir The input record with MD parameters
+ * \return the number of dimensions in which
+ * the coordinates of the particles are bounded, starting at X.
+ */
+int inputrec2nboundeddim(const t_inputrec *ir);
+
+/*! \brief Returns the number of degrees of freedom in center of mass motion
+ *
+ * \param[in] ir the inputrec structure
+ * \return the number of degrees of freedom of the center of mass
+ */
+int ndof_com(const t_inputrec *ir);
+
 #endif /* GMX_MDTYPES_INPUTREC_H */

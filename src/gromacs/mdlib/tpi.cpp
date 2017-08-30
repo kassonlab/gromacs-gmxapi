@@ -141,7 +141,7 @@ namespace gmx
                            t_nrnb *nrnb, gmx_wallcycle_t wcycle,
                            gmx_edsam_t ed,
                            t_forcerec *fr,
-                           int repl_ex_nst, int repl_ex_nex, int repl_ex_seed,
+                           const ReplicaExchangeParameters &replExParams,
                            real cpt_period, real max_hours,
                            int imdport,
                            unsigned long Flags,
@@ -157,12 +157,11 @@ double do_tpi(FILE *fplog, t_commrec *cr, const gmx::MDLogger gmx_unused &mdlog,
               t_inputrec *inputrec,
               gmx_mtop_t *top_global, t_fcdata *fcd,
               t_state *state_global,
-              energyhistory_t gmx_unused *energyHistory,
+              ObservablesHistory gmx_unused *observablesHistory,
               t_mdatoms *mdatoms,
               t_nrnb *nrnb, gmx_wallcycle_t wcycle,
-              gmx_edsam_t gmx_unused ed,
               t_forcerec *fr,
-              int gmx_unused repl_ex_nst, int gmx_unused repl_ex_nex, int gmx_unused repl_ex_seed,
+              const ReplicaExchangeParameters gmx_unused &replExParams,
               gmx_membed_t gmx_unused *membed,
               real gmx_unused cpt_period, real gmx_unused max_hours,
               int gmx_unused imdport,
@@ -674,7 +673,9 @@ double do_tpi(FILE *fplog, t_commrec *cr, const gmx::MDLogger gmx_unused &mdlog,
                      nullptr, fr, nullptr, mu_tot, t, nullptr, FALSE,
                      GMX_FORCE_NONBONDED | GMX_FORCE_ENERGY |
                      (bNS ? GMX_FORCE_DYNAMICBOX | GMX_FORCE_NS : 0) |
-                     (bStateChanged ? GMX_FORCE_STATECHANGED : 0));
+                     (bStateChanged ? GMX_FORCE_STATECHANGED : 0),
+                     DdOpenBalanceRegionBeforeForceComputation::no,
+                     DdCloseBalanceRegionAfterForceComputation::no);
             cr->nnodes    = nnodes;
             bStateChanged = FALSE;
             bNS           = FALSE;
@@ -839,7 +840,7 @@ double do_tpi(FILE *fplog, t_commrec *cr, const gmx::MDLogger gmx_unused &mdlog,
     }   /* End of the loop  */
     walltime_accounting_end(walltime_accounting);
 
-    close_trj(status);
+    close_trx(status);
 
     if (fp_tpi != nullptr)
     {

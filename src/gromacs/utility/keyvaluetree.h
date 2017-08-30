@@ -113,6 +113,12 @@ class KeyValueTreePath
 
         //! Adds another element to the path, making it a child of the old path.
         void append(const std::string &key) { path_.push_back(key); }
+        //! Adds elements from another path to the path.
+        void append(const KeyValueTreePath &other)
+        {
+            auto elements = other.elements();
+            path_.insert(path_.end(), elements.begin(), elements.end());
+        }
         //! Removes the last element in the path, making it the parent path.
         void pop_back() { return path_.pop_back(); }
         //! Removes and returns the last element in the path.
@@ -138,6 +144,25 @@ class KeyValueTreePath
     private:
         std::vector<std::string> path_;
 };
+
+//! \cond libapi
+
+//! Combines two paths as with KeyValueTreePath::append().
+inline KeyValueTreePath operator+(const KeyValueTreePath &a, const KeyValueTreePath &b)
+{
+    KeyValueTreePath result(a);
+    result.append(b);
+    return result;
+}
+
+//! Combines an element to a path as with KeyValueTreePath::append().
+inline KeyValueTreePath operator+(const KeyValueTreePath &a, const std::string &b)
+{
+    KeyValueTreePath result(a);
+    result.append(b);
+    return result;
+}
+//! \endcond
 
 class KeyValueTreeValue
 {
@@ -259,15 +284,6 @@ class KeyValueTreeObject
          */
         bool hasDistinctProperties(const KeyValueTreeObject &obj) const;
 
-        /*! \brief
-         * Writes a string representation of the object with given writer.
-         *
-         * The output format is designed to be readable by humans; if some
-         * particular machine-readable format is needed, that should be
-         * implemented outside the generic key-value tree code.
-         */
-        void writeUsing(TextWriter *writer) const;
-
     private:
         //! Keeps the properties by key.
         std::map<std::string, KeyValueTreeValue> valueMap_;
@@ -308,6 +324,17 @@ inline KeyValueTreeObject &KeyValueTreeValue::asObject()
 
 //! \cond libapi
 /*! \brief
+ * Writes a human-readable representation of the tree with given writer.
+ *
+ * The output format is designed to be readable by humans; if some
+ * particular machine-readable format is needed, that should be
+ * implemented outside the generic key-value tree code.
+ *
+ * \ingroup module_utility
+ */
+void dumpKeyValueTree(TextWriter *writer, const KeyValueTreeObject &tree);
+
+/*! \brief
  * Compares two KeyValueTrees and prints any differences.
  *
  * \ingroup module_utility
@@ -317,6 +344,14 @@ void compareKeyValueTrees(TextWriter               *writer,
                           const KeyValueTreeObject &tree2,
                           real                      ftol,
                           real                      abstol);
+
+//! Helper function to format a simple KeyValueTreeValue.
+static inline std::string
+simpleValueToString(const KeyValueTreeValue &value)
+{
+    return simpleValueToString(value.asVariant());
+}
+
 //! \endcond
 
 } // namespace gmx

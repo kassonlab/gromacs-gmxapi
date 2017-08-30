@@ -153,7 +153,7 @@ void compute_globals(FILE *fplog, gmx_global_stat *gstat, t_commrec *cr, t_input
                      t_state *state, t_mdatoms *mdatoms,
                      t_nrnb *nrnb, t_vcm *vcm, gmx_wallcycle_t wcycle,
                      gmx_enerdata_t *enerd, tensor force_vir, tensor shake_vir, tensor total_vir,
-                     tensor pres, rvec mu_tot, gmx_constr_t constr,
+                     tensor pres, rvec mu_tot, struct gmx_constr *constr,
                      gmx::SimulationSignaller *signalCoordinator,
                      matrix box, int *totalNumberOfBondedInteractions,
                      gmx_bool *bSumEkinhOld, int flags)
@@ -601,6 +601,10 @@ void set_state_entries(t_state *state, const t_inputrec *ir)
             state->flags  |= (1<<estVETA);
             state->flags  |= (1<<estVOL0);
         }
+        if (ir->epc == epcBERENDSEN)
+        {
+            state->flags  |= (1<<estBAROS_INT);
+        }
     }
 
     if (ir->etc == etcNOSEHOOVER)
@@ -609,9 +613,9 @@ void set_state_entries(t_state *state, const t_inputrec *ir)
         state->flags |= (1<<estNH_VXI);
     }
 
-    if (ir->etc == etcVRESCALE)
+    if (ir->etc == etcVRESCALE || ir->etc == etcBERENDSEN)
     {
-        state->flags |= (1<<estTC_INT);
+        state->flags |= (1<<estTHERM_INT);
     }
 
     init_gtc_state(state, state->ngtc, state->nnhpres, ir->opts.nhchainlength); /* allocate the space for nose-hoover chains */
@@ -621,13 +625,5 @@ void set_state_entries(t_state *state, const t_inputrec *ir)
     {
         snew(state->dfhist, 1);
         init_df_history(state->dfhist, ir->fepvals->n_lambda);
-    }
-    if (ir->eSwapCoords != eswapNO)
-    {
-        if (state->swapstate == nullptr)
-        {
-            snew(state->swapstate, 1);
-        }
-        state->swapstate->eSwapCoords = ir->eSwapCoords;
     }
 }

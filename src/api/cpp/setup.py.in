@@ -1,0 +1,30 @@
+#!/usr/bin/env python
+# Setup script from which to build Python package stub for libgromacs and libgmxapi at CMake build time.
+
+# Setup script for PyPI
+from setuptools import setup
+#from pybind11 import __version__
+import os
+
+# Prevent installation of pybind11 headers by setting
+# PYBIND11_USE_CMAKE.
+# if os.environ.get('PYBIND11_USE_CMAKE'):
+#     headers = []
+# else:
+
+headers = [os.path.join('gmxapi', filename) for filename in os.listdir('gmxapi') if filename.endswith('.h')]
+
+setup(
+    name='gmxapi',
+#    version=__version__,
+#    description='Seamless operability between C++11 and Python',
+#    author='Wenzel Jakob',
+#    author_email='wenzel.jakob@epfl.ch',
+##    url='https://github.com/wjakob/pybind11',
+#    download_url='https://github.com/wjakob/pybind11/tarball/v' + __version__,
+    packages=['gmxapi'],
+    license='LGPL',
+    headers=headers,
+    classifiers=[],
+    #keywords='C++11, Python bindings',
+    long_description="""""")

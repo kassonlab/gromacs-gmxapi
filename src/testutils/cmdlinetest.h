@@ -63,6 +63,7 @@ class ICommandLineOptionsModule;
 namespace test
 {
 
+class IFileMatcherSettings;
 class ITextBlockMatcherSettings;
 class TestFileManager;
 class TestReferenceChecker;
@@ -182,6 +183,9 @@ class CommandLine
 
         //! Returns the command line formatted as a single string.
         std::string toString() const;
+
+        //! Whether the command line contains the given option.
+        bool contains(const char *name) const;
 
     private:
         class Impl;
@@ -316,11 +320,16 @@ class CommandLineTestHelper
          *
          * If the output file is needed to trigger some computation, or is
          * unconditionally produced by the code under test, but the contents
-         * are not interesting for the test, use NoTextMatch as the matcher.
+         * are not interesting for the test, use NoContentsMatch as the matcher.
+         * Note that the existence of the output file is still verified.
          */
         void setOutputFile(CommandLine *args, const char *option,
                            const char *filename,
                            const ITextBlockMatcherSettings &matcher);
+        //! \copydoc setOutputFile(CommandLine *, const char *, const char *, const ITextBlockMatcherSettings &)
+        void setOutputFile(CommandLine *args, const char *option,
+                           const char *filename,
+                           const IFileMatcherSettings &matcher);
 
         /*! \brief
          * Checks output files added with setOutputFile() against reference
@@ -398,6 +407,13 @@ class CommandLineTestBase : public ::testing::Test
          */
         void setOutputFile(const char *option, const char *filename,
                            const ITextBlockMatcherSettings &matcher);
+        /*! \brief
+         * Sets an output file parameter and adds it to the set of tested files.
+         *
+         * \see CommandLineTestHelper::setOutputFile()
+         */
+        void setOutputFile(const char *option, const char *filename,
+                           const IFileMatcherSettings &matcher);
 
         /*! \brief
          * Returns the internal CommandLine object used to construct the

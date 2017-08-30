@@ -64,3 +64,9 @@ add_subdirectory(programs)
 if (NOT GMX_FAHCORE)
     add_subdirectory(contrib)
 endif()
+
+# Activate targets for new C++ API components and docs.
+option(GMXAPI "Experimental external interfaces" ON)
+if (GMXAPI)
+   add_subdirectory(api)
+endif()

@@ -41,6 +41,7 @@
 #include <cstring>
 
 #include <algorithm>
+#include <string>
 
 #include "gromacs/commandline/pargs.h"
 #include "gromacs/commandline/viewit.h"
@@ -260,26 +261,12 @@ static void make_legend(FILE *fp, int ngrps, int isize, int index[],
 
 static real ekrot(rvec x[], rvec v[], real mass[], int isize, int index[])
 {
-    static real **TCM = nullptr, **L;
+    real          TCM[5][5], L[5][5];
     double        tm, m0, lxx, lxy, lxz, lyy, lyz, lzz, ekrot;
     rvec          a0, ocm;
     dvec          dx, b0;
     dvec          xcm, vcm, acm;
     int           i, j, m, n;
-
-    if (TCM == nullptr)
-    {
-        snew(TCM, DIM);
-        for (i = 0; i < DIM; i++)
-        {
-            snew(TCM[i], DIM);
-        }
-        snew(L, DIM);
-        for (i = 0; i < DIM; i++)
-        {
-            snew(L[i], DIM);
-        }
-    }
 
     clear_dvec(xcm);
     clear_dvec(vcm);
@@ -333,7 +320,7 @@ static real ekrot(rvec x[], rvec v[], real mass[], int isize, int index[])
     L[YY][ZZ] = -lyz;
     L[ZZ][ZZ] =  lxx + lyy;
 
-    m_inv_gen(L, DIM, TCM);
+    m_inv_gen(&L[0][0], DIM, &TCM[0][0]);
 
     /* Compute omega (hoeksnelheid) */
     clear_rvec(ocm);
@@ -637,7 +624,7 @@ int gmx_traj(int argc, char *argv[])
         { "-pbc", FALSE, etBOOL, {&bPBC},
           "Make molecules whole for COM" },
         { "-mol", FALSE, etBOOL, {&bMol},
-          "Index contains molecule numbers iso atom numbers" },
+          "Index contains molecule numbers instead of atom numbers" },
         { "-nojump", FALSE, etBOOL, {&bNoJump},
           "Remove jumps of atoms across the box" },
         { "-x", FALSE, etBOOL, {&bX},
@@ -818,12 +805,13 @@ int gmx_traj(int argc, char *argv[])
     }
 
     flags = 0;
+    std::string label(output_env_get_xvgr_tlabel(oenv));
     if (bOX)
     {
         flags = flags | TRX_READ_X;
         outx  = xvgropen(opt2fn("-ox", NFILE, fnm),
                          bCom ? "Center of mass" : "Coordinate",
-                         output_env_get_xvgr_tlabel(oenv), "Coordinate (nm)", oenv);
+                         label, "Coordinate (nm)", oenv);
         make_legend(outx, ngroups, isize0[0], index0[0], grpname, bCom, bMol, bDim, oenv);
     }
     if (bOXT)
@@ -836,21 +824,21 @@ int gmx_traj(int argc, char *argv[])
         flags = flags | TRX_READ_V;
         outv  = xvgropen(opt2fn("-ov", NFILE, fnm),
                          bCom ? "Center of mass velocity" : "Velocity",
-                         output_env_get_xvgr_tlabel(oenv), "Velocity (nm/ps)", oenv);
+                         label, "Velocity (nm/ps)", oenv);
         make_legend(outv, ngroups, isize0[0], index0[0], grpname, bCom, bMol, bDim, oenv);
     }
     if (bOF)
     {
         flags = flags | TRX_READ_F;
         outf  = xvgropen(opt2fn("-of", NFILE, fnm), "Force",
-                         output_env_get_xvgr_tlabel(oenv), "Force (kJ mol\\S-1\\N nm\\S-1\\N)",
+                         label, "Force (kJ mol\\S-1\\N nm\\S-1\\N)",
                          oenv);
         make_legend(outf, ngroups, isize0[0], index0[0], grpname, bCom, bMol, bDim, oenv);
     }
     if (bOB)
     {
         outb = xvgropen(opt2fn("-ob", NFILE, fnm), "Box vector elements",
-                        output_env_get_xvgr_tlabel(oenv), "(nm)", oenv);
+                        label, "(nm)", oenv);
 
         xvgr_legend(outb, 6, box_leg, oenv);
     }
@@ -862,7 +850,7 @@ int gmx_traj(int argc, char *argv[])
         bDum[DIM] = TRUE;
         flags     = flags | TRX_READ_V;
         outt      = xvgropen(opt2fn("-ot", NFILE, fnm), "Temperature",
-                             output_env_get_xvgr_tlabel(oenv), "(K)", oenv);
+                             label, "(K)", oenv);
         make_legend(outt, ngroups, isize[0], index[0], grpname, bCom, bMol, bDum, oenv);
     }
     if (bEKT)
@@ -873,7 +861,7 @@ int gmx_traj(int argc, char *argv[])
         bDum[DIM] = TRUE;
         flags     = flags | TRX_READ_V;
         outekt    = xvgropen(opt2fn("-ekt", NFILE, fnm), "Center of mass translation",
-                             output_env_get_xvgr_tlabel(oenv), "Energy (kJ mol\\S-1\\N)", oenv);
+                             label, "Energy (kJ mol\\S-1\\N)", oenv);
         make_legend(outekt, ngroups, isize[0], index[0], grpname, bCom, bMol, bDum, oenv);
     }
     if (bEKR)
@@ -884,7 +872,7 @@ int gmx_traj(int argc, char *argv[])
         bDum[DIM] = TRUE;
         flags     = flags | TRX_READ_X | TRX_READ_V;
         outekr    = xvgropen(opt2fn("-ekr", NFILE, fnm), "Center of mass rotation",
-                             output_env_get_xvgr_tlabel(oenv), "Energy (kJ mol\\S-1\\N)", oenv);
+                             label, "Energy (kJ mol\\S-1\\N)", oenv);
         make_legend(outekr, ngroups, isize[0], index[0], grpname, bCom, bMol, bDum, oenv);
     }
     if (bVD)
@@ -1059,7 +1047,7 @@ int gmx_traj(int argc, char *argv[])
     }
 
     /* clean up a bit */
-    close_trj(status);
+    close_trx(status);
 
     if (bOX)
     {
@@ -1135,6 +1123,29 @@ int gmx_traj(int argc, char *argv[])
 
     /* view it */
     view_all(oenv, NFILE, fnm);
+
+    done_top(&top);
+    // Free index and isize only if they are distinct from index0 and isize0
+    if (bMol)
+    {
+        for (int i = 0; i < ngroups; i++)
+        {
+            sfree(index[i]);
+        }
+        sfree(index);
+        sfree(isize);
+    }
+    for (int i = 0; i < ngroups; i++)
+    {
+        sfree(index0[i]);
+        sfree(grpname[i]);
+    }
+    sfree(index0);
+    sfree(isize0);
+    sfree(grpname);
+    done_filenms(NFILE, fnm);
+    done_frame(&fr);
+    output_env_done(oenv);
 
     return 0;
 }

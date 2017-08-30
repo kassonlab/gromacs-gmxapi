@@ -264,7 +264,7 @@ static void density_in_time (const char *fn, int **index, int gnx[], real bw, re
 
     /*Free memory we no longer need and exit.*/
     gmx_rmpbc_done(gpbc);
-    close_trj(status);
+    close_trx(status);
 
     if (0)
     {
@@ -532,7 +532,7 @@ static void interfaces_txy (real ****Densmap, int xslices, int yslices, int zsli
 
 static void writesurftoxpms(t_interf ***surf1, t_interf ***surf2, int tblocks, int xbins, int ybins, int zbins, real bw, real bwz, char **outfiles, int maplevels )
 {
-    char   numbuf[13];
+    char   numbuf[STRLEN];
     int    n, i, j;
     real **profile1, **profile2;
     real   max1, max2, min1, min2, *xticks, *yticks;
