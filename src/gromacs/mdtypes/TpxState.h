@@ -5,6 +5,7 @@
 #ifndef GMX_MDTYPES_TPXSTATE_H
 #define GMX_MDTYPES_TPXSTATE_H
 
+#include <atomic>
 #include <memory>
 #include <mutex>
 #include <string>
