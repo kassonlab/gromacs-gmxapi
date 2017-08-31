@@ -26,10 +26,11 @@ gmx_add_unit_test(GmxapiExternalInterfaceTests gmxapi-test
 set_tests_properties(GmxapiExternalInterfaceTests PROPERTIES
                      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 
-target_compile_definitions(gmxapi-test PUBLIC
-    GMXAPI_MAJOR=${GMXAPI_MAJOR}
-    GMXAPI_MINOR=${GMXAPI_MINOR}
-    GMXAPI_PATCH=${GMXAPI_PATCH})
+# If we want to override the API version in the version.h for testing purposes, we'll do it another way...
+#target_compile_definitions(gmxapi-test PUBLIC
+#    GMXAPI_MAJOR=${GMXAPI_MAJOR}
+#    GMXAPI_MINOR=${GMXAPI_MINOR}
+#    GMXAPI_PATCH=${GMXAPI_PATCH})
 target_link_libraries(gmxapi-test Gromacs::gmxapi)
 
 #add_executable(test_apirunner test_basic_mdrunner.cpp)

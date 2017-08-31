@@ -18,8 +18,21 @@
 namespace gmxapi
 {
 
-/// Provide API version information for client code.
-/// \ingroup gmxapi
+// Todo: it may be preferable for CMake to get the version from the header instead of the other way around.
+// It would be nice to be able to pull the headers straight from the repository...
+static constexpr unsigned int GMXAPI_MAJOR   = @GMXAPI_MAJOR@;
+static constexpr unsigned int GMXAPI_MINOR   = @GMXAPI_MINOR@;
+static constexpr unsigned int GMXAPI_PATCH   = @GMXAPI_PATCH@;
+static const std::string  GMXAPI_RELEASE = "@GMXAPI_RELEASE@";
+
+/*!
+ * \brief Provide API library version information for client code.
+ *
+ * Allow client code to query the currently loaded gmxapi library object to find the built version. Provide helpers
+ * to compare against the features for which the client was written and the headers against which it was compiled.
+ *
+ * \ingroup gmxapi
+ */
 class Version
 {
     public:
@@ -45,7 +58,7 @@ class Version
         /// \param featurename Feature name described in the feature's documentation.
         static bool has_feature(std::string featurename);
         /// Check for sufficiently high API version number.
-        /// \returns `true` if gmxapi version is the same or greater than the argument(s).
+        /// \returns `true` if gmxapi library version is the same or greater than the argument(s).
         /// \param major gmxapi major version number.
         /// \param minor gmxapi minor version number (optional).
         /// \param patch patch level of the api library (optional).

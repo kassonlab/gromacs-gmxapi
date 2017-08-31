@@ -1,9 +1,11 @@
-#include "apiversion.h"
 #include "gmxapi/version.h"
 
 namespace gmxapi
 {
 
+// The values returned by these functions are compiled in when the library is built and should not
+// conflict with symbols defined in a different version of the public headers that a client may
+// have compiled against.
 unsigned int Version::major()
 {
     return GMXAPI_MAJOR;

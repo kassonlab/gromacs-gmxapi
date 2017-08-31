@@ -12,13 +12,10 @@ configure_file(gmxapi/gmxapi.h gmxapi)
 configure_file(gmxapi/md.h gmxapi)
 configure_file(gmxapi/runner.h gmxapi)
 configure_file(gmxapi/system.h gmxapi)
-configure_file(gmxapi/version.h gmxapi)
+configure_file(gmxapi/version.in.h gmxapi/version.h)
 
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/gmxapi/md)
 configure_file(gmxapi/md/runnerstate.h gmxapi/md)
-
-# Populate version constants from CMake.
-configure_file(apiversion.in.h apiversion.h)
 
 # Add to install target: copy the public API headers from the source directory
 # into the gmxapi header subdirectory.
@@ -33,6 +30,7 @@ add_library(gmxapi SHARED $<TARGET_OBJECTS:mdrun_objlib>)
 
 target_include_directories(gmxapi PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
     $<INSTALL_INTERFACE:include>
     )
 
@@ -44,13 +42,11 @@ target_include_directories(gmxapi PRIVATE
 # libgmxapi source files.
 target_sources(
         gmxapi PRIVATE
-        apiversion.h
         context.cpp
         gmxapi.cpp
         md-impl.h
         md.cpp
         mdproxy.cpp
-#        runnerimpl.cpp
         runnerstate.cpp
         system.cpp
         system-builder.h
@@ -81,23 +77,44 @@ target_link_libraries(gmxapi PRIVATE libgromacs)
 # which CMake will create a helper file. Specify the directory for clients to
 # add to their include path to be able to `#include "gmxapi/some_header.h"`
 install(TARGETS gmxapi
-        EXPORT gmxapiExport
+        EXPORT gmxapi
         LIBRARY DESTINATION ${LIB_INSTALL_DIR}
         ARCHIVE DESTINATION ${LIB_INSTALL_DIR}
         RUNTIME DESTINATION ${LIB_INSTALL_DIR}
         INCLUDES DESTINATION include
-        COMPONENT gmxapi)
+        )
 
 
 # Create the CMake exports file to help other projects build against libgmxapi
 # as a CMake import target Gromacs::gmxapi.
-install(EXPORT gmxapiExport
+install(EXPORT gmxapi
         NAMESPACE Gromacs::
-        DESTINATION share/cmake/gromacs/
+        DESTINATION share/cmake/gmxapi/
         )
 add_library(Gromacs::gmxapi ALIAS gmxapi )
 
 include(CMakePackageConfigHelpers)
+# TODO: NEED TO MAKE A GmxapiConfig.cmake or gmxapi-config.cmake script, and maybe FindGmxapi.cmake
+write_basic_package_version_file(
+    "${CMAKE_CURRENT_BINARY_DIR}/cmake/gmxapi-version.cmake"
+    VERSION ${GMXAPI_RELEASE}
+    COMPATIBILITY ExactVersion
+    # Every dev release will break things for a while. We can assert backwards compatibility closer to 1.0
+    # COMPATIBILITY SameMajorVersion
+)
+configure_package_config_file(
+    cmake/gmxapi-config.cmake.in
+    "${CMAKE_CURRENT_BINARY_DIR}/cmake/gmxapi-config.cmake"
+    INSTALL_DESTINATION share/cmake/gmxapi/
+    PATH_VARS LIB_INSTALL_DIR
+)
+install(
+    FILES
+    ${CMAKE_CURRENT_BINARY_DIR}/cmake/gmxapi-version.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/cmake/gmxapi-config.cmake
+    DESTINATION share/cmake/gmxapi/
+)
+
 
 if(BUILD_TESTING)
     add_subdirectory(tests)

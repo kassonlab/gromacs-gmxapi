@@ -37,21 +37,19 @@
 # tracks the Gromacs release, or the LIBRARY_VERSION that annotates the shared object.
 set(GMXAPI_MAJOR 0)
 set(GMXAPI_MINOR 0)
-set(GMXAPI_PATCH 0)
+set(GMXAPI_PATCH 1)
 set(GMXAPI_RELEASE ${GMXAPI_MAJOR}.${GMXAPI_MINOR}.${GMXAPI_PATCH})
 
 # Supposedly, cmake should be able to resolve these dependencies, but we need
 # to know what to install and which headers to document publicly.
 set(GMXAPI_PUBLIC_HEADERS
-#    ${CMAKE_CURRENT_SOURCE_DIR}/cpp/gmxapi/basictypes.h
-#    ${CMAKE_CURRENT_SOURCE_DIR}/cpp/include/gmxapi/context.h
-#    ${CMAKE_CURRENT_SOURCE_DIR}/cpp/include/gmxapi/exceptions.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/cpp/include/gmxapi/gmxapi.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/cpp/include/gmxapi/md.h
-#    ${CMAKE_CURRENT_SOURCE_DIR}/cpp/gmxapi/modules.h
-#    ${CMAKE_CURRENT_SOURCE_DIR}/cpp/include/gmxapi/runner.h
-#    ${CMAKE_CURRENT_SOURCE_DIR}/cpp/include/gmxapi/system.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/cpp/include/gmxapi/version.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/cpp/gmxapi/context.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/cpp/gmxapi/exceptions.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/cpp/gmxapi/gmxapi.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/cpp/gmxapi/md.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/cpp/gmxapi/runner.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/cpp/gmxapi/system.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/cpp/gmxapi/version.h
 	)
 
 ###############################
