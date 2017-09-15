@@ -79,7 +79,7 @@ class IMDRunner
         virtual void registerMDBuilder(std::unique_ptr<MDBuilder> builder) = 0;
         virtual Status run() = 0;
         // This is an overly complicated and awkward pattern. Probably replace with
-        // templated implementation in base class using curiously-recurring-template idiom
+        // templated implementation in base class as a mix-in
         //virtual Status run(const EndCondition& condition) = 0;
 
         /*!
@@ -106,7 +106,7 @@ class IMDRunner
 class IMDRunnerBuilder
 {
     public:
-        virtual ~IMDRunnerBuilder();
+        virtual ~IMDRunnerBuilder() = default;
 
         /// Build a runner. Return a handle to something that can be run.
         virtual std::shared_ptr<IMDRunner> build() = 0;

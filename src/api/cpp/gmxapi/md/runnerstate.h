@@ -20,6 +20,13 @@
 namespace gmxapi
 {
 
+/*!
+ * \brief Useless placeholder state.
+ *
+ * This class exists to allow a proxy object to be default initialized with no state.
+ * This is probably a bad idea, and should be replaced by a combination of accessor methods,
+ * nullptr checks, and lazy initialization of proxies.
+ */
 class EmptyMDRunnerState : public IMDRunner
 {
     public:

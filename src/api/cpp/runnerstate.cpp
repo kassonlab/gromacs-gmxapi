@@ -21,7 +21,7 @@ namespace gmxapi
 
 // Delegate construction to RunnerProxy::RunnerProxy(std::shared_ptr<MDProxy> md)
 RunnerProxy::RunnerProxy() :
-    RunnerProxy{std::make_shared<MDProxy>()}
+    RunnerProxy{std::shared_ptr<MDProxy>(nullptr)}
 {};
 
 RunnerProxy::RunnerProxy(std::shared_ptr<MDProxy> md) :
@@ -57,20 +57,20 @@ std::shared_ptr<IMDRunner> RunnerProxy::initialize(std::shared_ptr<Context> cont
 void EmptyMDRunnerState::registerMDBuilder(std::unique_ptr<MDBuilder> builder)
 {
     // nothing to bind to
-    throw Exception();
+    throw ProtocolError("EmptyMDRunnerState has nothing to bind to");
 }
 
 Status EmptyMDRunnerState::run()
 {
     // Nothing to run...
-    throw Exception();
+    throw ProtocolError("EmptyMDRunnerState has nothing to run");
     return Status();
 }
 
 std::shared_ptr<IMDRunner> EmptyMDRunnerState::initialize(std::shared_ptr<Context> context)
 {
     // Runner proxy should have been configured by a builder with something like UninitializedMDRunnerState
-    throw Exception();
+    throw ProtocolError("EmptyMDRunnerState cannot be initialized.");
     return nullptr;
 }
 
@@ -84,7 +84,7 @@ class UninitializedMDRunnerState::Impl
 Status UninitializedMDRunnerState::run()
 {
     // We could be more helpful about suggesting the user initialize the runner first...
-    throw Exception();
+    throw ProtocolError("UninitializedMDRunnerState cannot be run.");
     return Status();
 }
 
@@ -182,7 +182,7 @@ Status RunningMDRunnerState::Impl::run()
 {
     if (runner_ == nullptr)
     {
-        throw gmxapi::ProtocolError("Runner not initialized.");
+        throw gmxapi::ProtocolError("Runner implementation not initialized.");
     }
     Status status{};
     // Todo: check the number of steps to run

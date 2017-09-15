@@ -36,6 +36,21 @@ class Exception : public std::exception
         };
 };
 
+/*!
+ * \brief Basic implementation mix-in for exceptions.
+ *
+ * Allow exceptions to be defined with minimal syntax when their primary function is
+ * to exist as distinct named types.
+ *
+ * \tparam E the class using this template as a base class.
+ *
+ * Use in the "curiously recurring template pattern".
+ *
+ * \example
+ *     class DerivedException : public BasicException<DerivedException> {};
+ *
+ * \note Current implementation only provides constructors and no specialized or dispatched behavior.
+ */
 template<class E>
 class BasicException : public Exception
 {
@@ -75,6 +90,13 @@ class ProtocolError : public BasicException<ProtocolError>
         using BasicException<ProtocolError>::BasicException;
 };
 
+/*!
+ * \brief Intended feature is not implemented.
+ *
+ * Indicates a bug in the API implementation. Either a version mismatch between the client
+ * and library has gone undetected, or the API has purported to offer functionality that does
+ * not exist.
+ */
 class NotImplementedError : public BasicException<NotImplementedError>
 {
     public:
