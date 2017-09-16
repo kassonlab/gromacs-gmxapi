@@ -8,7 +8,6 @@
 #include "gmxapi/system.h"
 #include "system-builder.h"
 
-#include "atoms.h"
 #include "gromacs/compat/make_unique.h"
 #include "md-impl.h"
 #include "system-impl.h"
