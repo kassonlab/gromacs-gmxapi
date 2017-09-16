@@ -767,7 +767,13 @@ static void evaluate_energy(FILE *fplog, t_commrec *cr,
              ems->s.lambda, graph, fr, vsite, mu_tot, t, nullptr, TRUE,
              GMX_FORCE_STATECHANGED | GMX_FORCE_ALLFORCES |
              GMX_FORCE_VIRIAL | GMX_FORCE_ENERGY |
-             (bNS ? GMX_FORCE_NS : 0));
+             (bNS ? GMX_FORCE_NS : 0),
+             DOMAINDECOMP(cr) ?
+             DdOpenBalanceRegionBeforeForceComputation::yes :
+             DdOpenBalanceRegionBeforeForceComputation::no,
+             DOMAINDECOMP(cr) ?
+             DdCloseBalanceRegionAfterForceComputation::yes :
+             DdCloseBalanceRegionAfterForceComputation::no);
 
     /* Clear the unused shake virial and pressure */
     clear_mat(shake_vir);
@@ -978,7 +984,7 @@ namespace gmx
                            t_nrnb *nrnb, gmx_wallcycle_t wcycle,
                            gmx_edsam_t ed,
                            t_forcerec *fr,
-                           int repl_ex_nst, int repl_ex_nex, int repl_ex_seed,
+                           const ReplicaExchangeParameters &replExParams,
                            gmx_membed_t gmx_unused *membed,
                            real cpt_period, real max_hours,
                            int imdport,
@@ -998,9 +1004,8 @@ double do_cg(FILE *fplog, t_commrec *cr, const gmx::MDLogger gmx_unused &mdlog,
              ObservablesHistory *observablesHistory,
              t_mdatoms *mdatoms,
              t_nrnb *nrnb, gmx_wallcycle_t wcycle,
-             gmx_edsam_t gmx_unused ed,
              t_forcerec *fr,
-             int gmx_unused repl_ex_nst, int gmx_unused repl_ex_nex, int gmx_unused repl_ex_seed,
+             const ReplicaExchangeParameters gmx_unused &replExParams,
              gmx_membed_t gmx_unused *membed,
              real gmx_unused cpt_period, real gmx_unused max_hours,
              int imdport,
@@ -1631,7 +1636,7 @@ double do_cg(FILE *fplog, t_commrec *cr, const gmx::MDLogger gmx_unused &mdlog,
                           t_nrnb *nrnb, gmx_wallcycle_t wcycle,
                           gmx_edsam_t ed,
                           t_forcerec *fr,
-                          int repl_ex_nst, int repl_ex_nex, int repl_ex_seed,
+                          const ReplicaExchangeParameters &replExParams,
                           gmx_membed_t gmx_unused *membed,
                           real cpt_period, real max_hours,
                           int imdport,
@@ -1651,9 +1656,8 @@ double do_lbfgs(FILE *fplog, t_commrec *cr, const gmx::MDLogger gmx_unused &mdlo
                 ObservablesHistory *observablesHistory,
                 t_mdatoms *mdatoms,
                 t_nrnb *nrnb, gmx_wallcycle_t wcycle,
-                gmx_edsam_t gmx_unused ed,
                 t_forcerec *fr,
-                int gmx_unused repl_ex_nst, int gmx_unused repl_ex_nex, int gmx_unused repl_ex_seed,
+                const ReplicaExchangeParameters gmx_unused &replExParams,
                 gmx_membed_t gmx_unused *membed,
                 real gmx_unused cpt_period, real gmx_unused max_hours,
                 int imdport,
@@ -2405,7 +2409,7 @@ double do_lbfgs(FILE *fplog, t_commrec *cr, const gmx::MDLogger gmx_unused &mdlo
                           t_nrnb *nrnb, gmx_wallcycle_t wcycle,
                           gmx_edsam_t ed,
                           t_forcerec *fr,
-                          int repl_ex_nst, int repl_ex_nex, int repl_ex_seed,
+                          const ReplicaExchangeParameters &replExParams,
                           real cpt_period, real max_hours,
                           int imdport,
                           unsigned long Flags,
@@ -2424,9 +2428,8 @@ double do_steep(FILE *fplog, t_commrec *cr, const gmx::MDLogger gmx_unused &mdlo
                 ObservablesHistory *observablesHistory,
                 t_mdatoms *mdatoms,
                 t_nrnb *nrnb, gmx_wallcycle_t wcycle,
-                gmx_edsam_t gmx_unused  ed,
                 t_forcerec *fr,
-                int gmx_unused repl_ex_nst, int gmx_unused repl_ex_nex, int gmx_unused repl_ex_seed,
+                const ReplicaExchangeParameters gmx_unused &replExParams,
                 gmx_membed_t gmx_unused *membed,
                 real gmx_unused cpt_period, real gmx_unused max_hours,
                 int imdport,
@@ -2676,7 +2679,7 @@ double do_steep(FILE *fplog, t_commrec *cr, const gmx::MDLogger gmx_unused &mdlo
                           t_nrnb *nrnb, gmx_wallcycle_t wcycle,
                           gmx_edsam_t ed,
                           t_forcerec *fr,
-                          int repl_ex_nst, int repl_ex_nex, int repl_ex_seed,
+                          const ReplicaExchangeParameters &replExParams,
                           real cpt_period, real max_hours,
                           int imdport,
                           unsigned long Flags,
@@ -2695,9 +2698,8 @@ double do_nm(FILE *fplog, t_commrec *cr, const gmx::MDLogger &mdlog,
              ObservablesHistory gmx_unused *observablesHistory,
              t_mdatoms *mdatoms,
              t_nrnb *nrnb, gmx_wallcycle_t wcycle,
-             gmx_edsam_t  gmx_unused ed,
              t_forcerec *fr,
-             int gmx_unused repl_ex_nst, int gmx_unused repl_ex_nex, int gmx_unused repl_ex_seed,
+             const ReplicaExchangeParameters gmx_unused &replExParams,
              gmx_membed_t gmx_unused *membed,
              real gmx_unused cpt_period, real gmx_unused max_hours,
              int imdport,
@@ -2880,7 +2882,9 @@ double do_nm(FILE *fplog, t_commrec *cr, const gmx::MDLogger &mdlog,
                                                &state_work.s, &state_work.f, vir, mdatoms,
                                                nrnb, wcycle, graph, &top_global->groups,
                                                shellfc, fr, bBornRadii, t, mu_tot,
-                                               vsite);
+                                               vsite,
+                                               DdOpenBalanceRegionBeforeForceComputation::no,
+                                               DdCloseBalanceRegionAfterForceComputation::no);
                     bNS = false;
                     step++;
                 }

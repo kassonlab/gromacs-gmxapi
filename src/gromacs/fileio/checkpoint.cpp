@@ -525,8 +525,8 @@ static int doVectorLow(XDR *xd, StatePart part, int ecpt, int sflags,
         return -1;
     }
     /* Read/write the element data type */
-    gmx_constexpr int xdrTypeInTheCode = xdr_type<T>::value;
-    int               xdrTypeInTheFile = xdrTypeInTheCode;
+    constexpr int xdrTypeInTheCode = xdr_type<T>::value;
+    int           xdrTypeInTheFile = xdrTypeInTheCode;
     res = xdr_int(xd, &xdrTypeInTheFile);
     if (res == 0)
     {
@@ -1254,6 +1254,13 @@ static int do_cpt_enerhist(XDR *xd, gmx_bool bRead,
 {
     int ret = 0;
 
+    if (fflags == 0)
+    {
+        return ret;
+    }
+
+    GMX_RELEASE_ASSERT(enerhist != nullptr, "With energy history, we need a valid enerhist pointer");
+
     /* This is stored/read for backward compatibility */
     int  energyHistoryNumEnergies = 0;
     if (bRead)
@@ -1266,10 +1273,6 @@ static int do_cpt_enerhist(XDR *xd, gmx_bool bRead,
     else if (enerhist != nullptr)
     {
         energyHistoryNumEnergies = enerhist->ener_sum_sim.size();
-    }
-    else
-    {
-        GMX_RELEASE_ASSERT(fflags == 0, "Without energy history, all flags should be off");
     }
 
     delta_h_history_t *deltaH = enerhist->deltaHForeignLambdas.get();
