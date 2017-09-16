@@ -56,3 +56,5 @@ set(GMXAPI_PUBLIC_HEADERS
 # New public C++ API components
 ###############################
 add_subdirectory(cpp)
+
+add_subdirectory(docs)

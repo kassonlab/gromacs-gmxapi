@@ -34,14 +34,12 @@
 
 set(GMXAPI_USERDOC_OUTPUT ${CMAKE_BINARY_DIR}/docs/html/doxygen/api-user)
 set(GMXAPI_DEVDOC_OUTPUT ${CMAKE_BINARY_DIR}/docs/html/doxygen/api-dev)
-set(GMXAPI_WEBDOC_OUTPUT ${CMAKE_BINARY_DIR}/docs/html/gmxapi)
+#set(GMXAPI_WEBDOC_OUTPUT ${CMAKE_BINARY_DIR}/docs/html/gmxapi)
 get_target_property(GMXAPI_DEV gmxapi SOURCE_DIR)
 string (REPLACE ";" " " GMXAPI_PUBLIC "${GMXAPI_PUBLIC_HEADERS}")
 
 configure_file(Doxyfile.in Doxyfile @ONLY)
 configure_file(Doxyfile-dev.in Doxyfile-dev @ONLY)
-
-# todo: the docs builds should probably be moved to separate targets under the appropriate subdirectories.
 
 ################################
 # C++ external API documentation
@@ -59,5 +57,5 @@ if (DOXYGEN_FOUND)
 	    COMMENT "Generating API developer documentation for ${GMXAPI_DEVDOC_OUTPUT}"
 	    VERBATIM )
 else (DOXYGEN_FOUND)
-  message("Doxygen need to be installed to generate the doxygen documentation")
+    message("Doxygen need to be installed to generate the doxygen documentation")
 endif (DOXYGEN_FOUND)
