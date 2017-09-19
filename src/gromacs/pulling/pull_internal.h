@@ -95,108 +95,119 @@ typedef struct
 }
 pull_group_work_t;
 
+/*!
+ * \brief State of pull coords and work
+ */
 typedef struct
 {
-    t_pull_coord  params;     /* Pull coordinate (constant) parameters */
+    t_pull_coord  params;     /*!< \brief Pull coordinate (constant) parameters */
 
-    double        value_ref;  /* The reference value, usually init+rate*t, units of nm or rad */
-    double        value;      /* The current value of the coordinate, units of nm or rad */
-    dvec          dr01;       /* The direction vector of group 1 relative to group 0 */
-    dvec          dr23;       /* The direction vector of group 3 relative to group 2 */
-    dvec          dr45;       /* The direction vector of group 5 relative to group 4 */
-    dvec          vec;        /* The pull direction */
-    double        vec_len;    /* Length of vec for direction-relative */
-    dvec          ffrad;      /* conversion factor from vec to radial force */
-    double        cyl_dev;    /* The deviation from the reference position */
-    double        f_scal;     /* Scalar force for directional pulling */
-    dvec          f01;        /* Force due to the pulling/constraining for groups 0, 1 */
-    dvec          f23;        /* Force for groups 2 and 3 */
-    dvec          f45;        /* Force for groups 4 and 5 */
-    dvec          planevec_m; /* Normal of plane for groups 0, 1, 2, 3 for geometry dihedral */
-    dvec          planevec_n; /* Normal of plane for groups 2, 3, 4, 5 for geometry dihedral */
+    double        value_ref;  /*!< \brief The reference value, usually init+rate*t, units of nm or rad */
+    double        value;      /*!< \brief The current value of the coordinate, units of nm or rad */
+    dvec          dr01;       /*!< \brief The direction vector of group 1 relative to group 0 */
+    dvec          dr23;       /*!< \brief The direction vector of group 3 relative to group 2 */
+    dvec          dr45;       /*!< \brief The direction vector of group 5 relative to group 4 */
+    dvec          vec;        /*!< \brief The pull direction */
+    double        vec_len;    /*!< \brief Length of vec for direction-relative */
+    dvec          ffrad;      /*!< \brief conversion factor from vec to radial force */
+    double        cyl_dev;    /*!< \brief The deviation from the reference position */
+    double        f_scal;     /*!< \brief Scalar force for directional pulling */
+    dvec          f01;        /*!< \brief Force due to the pulling/constraining for groups 0, 1 */
+    dvec          f23;        /*!< \brief Force for groups 2 and 3 */
+    dvec          f45;        /*!< \brief Force for groups 4 and 5 */
+    dvec          planevec_m; /*!< \brief Normal of plane for groups 0, 1, 2, 3 for geometry dihedral */
+    dvec          planevec_n; /*!< \brief Normal of plane for groups 2, 3, 4, 5 for geometry dihedral */
 
-    /* For external-potential coordinates only, for checking if a provider has been registered */
+    /*! \brief For external-potential coordinates only, for checking if a provider has been registered */
     bool          bExternalPotentialProviderHasBeenRegistered;
 }
 pull_coord_work_t;
 
-/* Struct for sums over (local) atoms in a pull group */
+/*! \brief Struct for sums over (local) atoms in a pull group */
 struct pull_sum_com_t {
     /* For normal weighting */
-    double sum_wm;    /* Sum of weight*mass        */
-    double sum_wwm;   /* Sum of weight*weight*mass */
-    dvec   sum_wmx;   /* Sum of weight*mass*x      */
-    dvec   sum_wmxp;  /* Sum of weight*mass*xp     */
+    double sum_wm;    /*!< \brief Sum of weight*mass        */
+    double sum_wwm;   /*!< \brief Sum of weight*weight*mass */
+    dvec   sum_wmx;   /*!< \brief Sum of weight*mass*x      */
+    dvec   sum_wmxp;  /*!< \brief Sum of weight*mass*xp     */
 
-    /* For cosine weighting */
-    double sum_cm;    /* Sum of cos(x)*mass          */
-    double sum_sm;    /* Sum of sin(x)*mass          */
-    double sum_ccm;   /* Sum of cos(x)*cos(x)*mass   */
-    double sum_csm;   /* Sum of cos(x)*sin(x)*mass   */
-    double sum_ssm;   /* Sum of sin(x)*sin(x)*mass   */
-    double sum_cmp;   /* Sum of cos(xp)*sin(xp)*mass */
-    double sum_smp;   /* Sum of sin(xp)*sin(xp)*mass */
+    /*!< \brief For cosine weighting */
+    double sum_cm;    /*!< \brief Sum of cos(x)*mass          */
+    double sum_sm;    /*!< \brief Sum of sin(x)*mass          */
+    double sum_ccm;   /*!< \brief Sum of cos(x)*cos(x)*mass   */
+    double sum_csm;   /*!< \brief Sum of cos(x)*sin(x)*mass   */
+    double sum_ssm;   /*!< \brief Sum of sin(x)*sin(x)*mass   */
+    double sum_cmp;   /*!< \brief Sum of cos(xp)*sin(xp)*mass */
+    double sum_smp;   /*!< \brief Sum of sin(xp)*sin(xp)*mass */
 
-    /* Dummy data to ensure adjacent elements in an array are separated
+    /*! \brief Assure cache line size
+     * 
+     * Dummy data to ensure adjacent elements in an array are separated
      * by a cache line size, max 128 bytes.
      * TODO: Replace this by some automated mechanism.
      */
     int    dummy[32];
 };
 
+/*!
+ * \brief communications state for pulling code
+ */
 typedef struct {
-    gmx_bool    bParticipateAll; /* Do all ranks always participate in pulling? */
-    gmx_bool    bParticipate;    /* Does our rank participate in pulling? */
+    gmx_bool    bParticipateAll; /*!< \brief Do all ranks always participate in pulling? */
+    gmx_bool    bParticipate;    /*!< \brief Does our rank participate in pulling? */
 #if GMX_MPI
-    MPI_Comm    mpi_comm_com;    /* Communicator for pulling */
+    MPI_Comm    mpi_comm_com;    /*!< \brief Communicator for pulling */
 #endif
-    int         nparticipate;    /* The number of ranks participating */
+    int         nparticipate;    /*!< \brief The number of ranks participating */
 
-    gmx_int64_t setup_count;     /* The number of decomposition calls */
-    gmx_int64_t must_count;      /* The last count our rank needed to be part */
+    gmx_int64_t setup_count;     /*!< \brief The number of decomposition calls */
+    gmx_int64_t must_count;      /*!< \brief The last count our rank needed to be part */
 
-    rvec       *rbuf;            /* COM calculation buffer */
-    dvec       *dbuf;            /* COM calculation buffer */
-    double     *dbuf_cyl;        /* cylinder ref. groups calculation buffer */
+    rvec       *rbuf;            /*!< \brief COM calculation buffer */
+    dvec       *dbuf;            /*!< \brief COM calculation buffer */
+    double     *dbuf_cyl;        /*!< \brief cylinder ref. groups calculation buffer */
 }
 pull_comm_t;
 
+/*!
+ * \brief Pull work struct
+ */
 struct pull_t
 {
-    pull_params_t      params;       /* The pull parameters, from inputrec */
+    pull_params_t      params;       /*!< \brief The pull parameters, from inputrec */
 
-    gmx_bool           bPotential;   /* Are there coordinates with potential? */
-    gmx_bool           bConstraint;  /* Are there constrained coordinates? */
-    gmx_bool           bAngle;       /* Are there angle geometry coordinates? */
+    gmx_bool           bPotential;   /*!< \brief Are there coordinates with potential? */
+    gmx_bool           bConstraint;  /*!< \brief Are there constrained coordinates? */
+    gmx_bool           bAngle;       /*!< \brief Are there angle geometry coordinates? */
 
-    int                ePBC;         /* the boundary conditions */
-    int                npbcdim;      /* do pbc in dims 0 <= dim < npbcdim */
-    gmx_bool           bRefAt;       /* do we need reference atoms for a group COM ? */
-    int                cosdim;       /* dimension for cosine weighting, -1 if none */
+    int                ePBC;         /*!< \brief the boundary conditions */
+    int                npbcdim;      /*!< \brief do pbc in dims 0 <= dim < npbcdim */
+    gmx_bool           bRefAt;       /*!< \brief do we need reference atoms for a group COM ? */
+    int                cosdim;       /*!< \brief dimension for cosine weighting, -1 if none */
 
-    int                ngroup;       /* Number of pull groups */
-    int                ncoord;       /* Number of pull coordinates */
-    pull_group_work_t *group;        /* The pull group param and work data */
-    pull_group_work_t *dyna;         /* Dynamic groups for geom=cylinder */
-    pull_coord_work_t *coord;        /* The pull group param and work data */
+    int                ngroup;       /*!< \brief Number of pull groups */
+    int                ncoord;       /*!< \brief Number of pull coordinates */
+    pull_group_work_t *group;        /*!< \brief The pull group param and work data */
+    pull_group_work_t *dyna;         /*!< \brief Dynamic groups for geom=cylinder */
+    pull_coord_work_t *coord;        /*!< \brief The pull group param and work data */
 
-    gmx_bool           bCylinder;    /* Is group 0 a cylinder group? */
+    gmx_bool           bCylinder;    /*!< \brief Is group 0 a cylinder group? */
 
-    gmx_bool           bSetPBCatoms; /* Do we need to set x_pbc for the groups? */
+    gmx_bool           bSetPBCatoms; /*!< \brief Do we need to set x_pbc for the groups? */
 
-    int                nthreads;     /* Number of threads used by the pull code */
-    pull_sum_com_t    *sum_com;      /* Work array for summing for COM, 1 entry per thread */
+    int                nthreads;     /*!< \brief Number of threads used by the pull code */
+    pull_sum_com_t    *sum_com;      /*!< \brief Work array for summing for COM, 1 entry per thread */
 
-    pull_comm_t        comm;         /* Communication parameters, communicator and buffers */
+    pull_comm_t        comm;         /*!< \brief Communication parameters, communicator and buffers */
 
-    FILE              *out_x;        /* Output file for pull data */
-    FILE              *out_f;        /* Output file for pull data */
+    FILE              *out_x;        /*!< \brief Output file for pull data */
+    FILE              *out_f;        /*!< \brief Output file for pull data */
 
-    /* The number of coordinates using an external potential */
+    /*! \brief The number of coordinates using an external potential */
     int                numCoordinatesWithExternalPotential;
-    /* Counter for checking external potential registration */
+    /*! \brief Counter for checking external potential registration */
     int                numUnregisteredExternalPotentials;
-    /* */
+    /*! \brief counter... */
     int                numExternalPotentialsStillToBeAppliedThisStep;
 };
 
