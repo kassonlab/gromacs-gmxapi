@@ -1676,6 +1676,8 @@ static void do_pull_pot_coord(struct pull_t *pull, int coord_ind, t_pbc *pbc,
 
     assert(pcrd->params.eType != epullCONSTRAINT);
 
+    // only called here? move a level inwards
+    // pull->coord_scalar_force_and_potential(pull, coord_ind, pbc, t, lambda, V, dVdl)
     dev = get_pull_coord_deviation(pull, coord_ind, pbc, t);
 
     calc_pull_coord_scalar_force_and_potential(pcrd, dev, lambda, V, dVdl);

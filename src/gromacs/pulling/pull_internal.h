@@ -55,7 +55,7 @@
 #include "gromacs/mdtypes/pull-params.h"
 #include "gromacs/utility/gmxmpi.h"
 
-/*! \cond INTERNAL */
+/*! \cond internal */
 
 /*! \brief Determines up to what local atom count a pull group gets processed single-threaded.
  *

@@ -109,16 +109,52 @@ Functions added
 Other
 
 * `md.cpp` uses `step_rel` instead of `step` to determine whether this is a neighbor search step.
+* Additional input: environment variable provides a filename that is opened and
+  parsed by additional code in the extension.
 
+Old implementation
+------------------
+
+- do_md()
+    - do_force()
+      - do_force_cutsVERLET()
+        - pull_potential_wrapper()
+          - pull_potential()
+            - do_pull_pot_coord()
+              - calc_pull_coord_force()
+                - getRouxForce()
+                - getRouxPotential()
+
+```
+static void calc_pull_coord_force(pull_coord_work_t *pcrd, int coord_ind,
+                              double dev, real lambda,
+                              real *V, tensor vir, real *dVdl)
+{   //...
+    switch (pcrd->params.eType)
+    {   //...
+        case epullROUX:
+            dev = pcrd->value;
+            /* We want to pass the value of the pull coordinate, not the
+             * difference between the pull coordinate and pull-init (which
+             * would be dev = pcrd->value - pcrd->value_ref)
+             */
+            pcrd->f_scal = getRouxForce(dev, coord_ind, k);
+            *V          += getRouxPotential(dev, coord_ind, k);
+            *dVdl       += *V/k * dkdl;
+            break;
+    }
+    //...
+}
+```
 
 Current pull code implementation
 --------------------------------
 
 Relevant types:
 
-* \ref t_pull_coord
-* \ref pull_t
-* \ref pull_coord_work_t
+* t_pull_coord
+* pull_t
+* pull_coord_work_t
 
 Dependents
 
@@ -141,10 +177,257 @@ conditionally set `inputrec->pull_work = init_pull(...)`
 
 call `pull_print_output(ir->pull_work, step, t)` in simulation loop.
 
-`do_md()` calls `do_force()` calls `do_force_cutsVERLET()` calls `pull_potential_wrapper()` calls `pull_potential()`
+- `gmx_mdrun()`
+  - `Mdrunner:mdrunner()`
+    - `init_pull()` -> `pull_t`
+
+- `do_md()` accesses the `pull_t` member of the input record to call...
+  - `do_force()`
+    - `do_force_cutsVERLET()`
+      - `pull_potential_wrapper()`
+        - `pull_potential()`
+          - `do_pull_pot_coord()`
+            - `calc_pull_coord_scalar_force_and_potential(pcrd, dev, lambda, V, dVdl);`
+            - `calc_pull_coord_vector_force(pcrd);`
 
 
 Strategy
 --------
 
 Reimplement `init_pull()` and refactor `pull_t`. Allow client code to provide alternatives.
+
+Refactor `do_pull_pot_coord()` to use member functions of `pull_t` argument.
+
+Where control flow is currently guided by enum values, wrap the function to dynamically dispatch to functor or legacy free functions.
+
+A custom `PullPotential` class may (re)implement `calc_pull_coord_scalar_force_and_potential()` or `calc_pull_coord_vector_force();` or some subset of their internals.
+
+Note that `pull_potential()` is the lowest public function in this hierarchy and is passed a pull_t from the inputrec.
+
+Usage
+-----
+
+Instantiate a modified `do_md()` integrator with a builder for the plugin to replace `init_pull()`
+
+Extension code inherits from base `do_pull_pot_coord()` provider that `pull_potential()` will call. Override `calc_...()` method (or submethod).
+
+
+Python client code:
+
+```{.py}
+import numpy
+import csv
+import roux
+import gmx
+
+with open('rawdata.csv', 'r') as datafile:
+    histogram = numpy.asarray(csv.reader(datafile), dtype=float)
+
+puller = roux.PullPotential()
+puller.histogram = histogram
+puller.sigma = 1.0
+puller.k = 30
+puller.nbins = 50
+
+system = gmx.system.from_tpr('topol.tpr')
+# Note: input record does not indicate the custom code
+system.md.addPotential(puller)
+
+# In the simple case, let nranks == num_ensemble_members
+with gmx.context.MpiEnsemble(system) as session:
+    # get an mpi4py COMM_WORLD handle
+    comm = session.communicator
+    size = comm.Get_size()
+    rank = comm.Get_rank()
+    for iteration in range(10):
+        session.run()
+
+        # gather and accumulate statistics
+        recvbuf = None
+        if rank == 0:
+            recvbuf_shape = [size] + puller.data.shape
+            recvbuf = numpy.empty(recvbuf_shape, dtype=float)
+        comm.Gather(puller.data, recvbuf, root=0)
+
+        # perform analysis
+        new_histogram = roux.analyze(recvbuf)
+
+        # broadcast updated histogram
+        comm.Bcast(new_histogram, root=0)
+        puller.histogram = new_histogram
+        if rank == 0:
+            with open('rawdata.csv', 'w') as datafile:
+                csv.writer(datafile).writerows(puller.histogram)
+
+```
+
+sample C++ client code
+
+```{.cpp}
+
+RouxPuller::Builder rouxSetup;
+rouxSetup.addHistogram(arraydata);
+rouxSetup.setDimensions(...);
+std::shared_ptr<RouxPuller> myRoux = rouxSetup.build();
+
+gmx::MdrunnerBuilder simulation;
+simulation.addPullPotential(myRoux);
+gmx::Mdrunner session = myContext(simulation);
+
+for (auto i=0; i < n_iter; i++)
+{
+    session->run();
+    myRoux->update();
+}
+```
+
+Implementing a PullPotential derived class.
+
+```{.cpp}
+
+class RouxPuller : public PullPotential
+{
+public:
+    /// Something we can use to set parameters from external code.
+    class Builder;
+    
+    /// Provide interface for runner to set parameters
+    struct pull_t* init_pull(FILE *fplog,
+                             const pull_params_t *pull_params,
+                             const t_inputrec *ir,
+                             int nfile,
+                             const t_filenm fnm[],
+                             const gmx_mtop_t *mtop,
+                             t_commrec *cr,
+                             const gmx_output_env_t *oenv,
+                             real lambda,
+                             gmx_bool bOutFile,
+                             unsigned long Flags) override;
+    
+    // No need to override
+    /* static void do_pull_pot_coord(struct pull_t *pull, int coord_ind, t_pbc *pbc,
+                                     double t, real lambda,
+                                     real *V, tensor vir, real *dVdl) override;
+     */
+    
+    // No need to override
+    // calc_pull_coord_vector_force(pcrd) override;
+
+    /// Implement potential and force
+    gmxapi::Status calc_pull_coord_scalar_force_and_potential(struct pull_t *pull,
+                                                              int coord_ind,
+                                                              const t_pbc *pbc,
+                                                              double t,
+                                                              real lambda,
+                                                              real *V,
+                                                              real *dVdl
+                                                              ) override;
+    
+    // No need to override
+    // void finish_pull() override;
+    
+    /// Some sort of external interface
+    gmxapi::Status update() override;
+    
+    // custom member functions.
+    // ...
+    
+private:
+    /// custom Potential parameters
+    double sigma_;
+    double k_;
+    /// Histogram data for reference
+    std::vector< std::vector<double> > histogram_;
+};
+
+struct pull_t* RouxPuller::init_pull(FILE *fplog,
+                             const pull_params_t *pull_params,
+                             const t_inputrec *ir,
+                             int nfile,
+                             const t_filenm fnm[],
+                             const gmx_mtop_t *mtop,
+                             t_commrec *cr,
+                             const gmx_output_env_t *oenv,
+                             real lambda,
+                             gmx_bool bOutFile,
+                             unsigned long Flags)
+{
+    assert(!histogram_.empty());
+    this->setCommunicator(cr);
+    this->setInputRecord(ir);
+    return this;
+}
+
+void RouxPuller::calc_pull_coord_scalar_force_and_potential(int coord_ind,
+                                                              double t,
+                                                              real lambda,
+                                                              real *V,
+                                                              real *dVdl
+                                                              )
+{
+    pull_coord_work_t *pcrd = this->coord[coord_ind];
+    // Calculate distances and set V, dVdl
+    dev = pcrd->value;
+    /* We want to pass the value of the pull coordinate, not the
+     * difference between the pull coordinate and pull-init (which
+     * would be dev = pcrd->value - pcrd->value_ref)
+     */
+    pcrd->f_scal = getRouxForce(dev, coord_ind, k);
+    *V          += getRouxPotential(dev, coord_ind, k);
+    *dVdl       += *V/k * dkdl;
+}
+
+PYBIND11_MODULE(roux_, m) {
+    m.doc() = somedocstring;
+
+    pybind11::class_< RouxPuller, PullPotential, std::shared_ptr<RouxPuller> > roux_plugin(m, "PullPotential", "Implements Roux biasing potential.");
+    roux_plugin.def_property("data", &RouxPuller::getData);
+    // The rest is inherited from PullPotential
+    
+    pybind11::class_< RouxBuilder > roux_builder(m, "Builder", "Set up potential");
+    roux_builder.def(pybind11::init());
+    roux_builder.def_property("histogram", &RouxBuilder::addHistogram);
+    roux_builder.def_property("dimensions", &RouxBuilder::setDimensions);
+    roux_builder.def_property("sigma", &RouxBuilder::setSigma);
+    roux_builder.def_property("k", &RouxBuilder::setK);
+    roux_builder.def_property("nbins", &RouxBuilder::setNBins);
+    roux_builder.def("build", &RouxBuilder::build);
+}
+
+```
+
+Python wrapper
+
+```{.py}
+
+# roux.py
+import gmx
+import roux_.PullPotential
+import roux_.Builder
+
+class PullPotential(gmx.PullPotential):
+    ...
+    def bind(self, system):
+        builder = roux_.Builder()
+        builder.histogram = self.histogram
+        builder.sigma = self.sigma
+        builder.k = self.k
+        builder.nbins = self.nbins
+        self.api_object = builder.build();
+        ...
+     ...
+     @property
+     def histogram(self):
+        ...
+     @property
+     def sigma(self):
+        ...
+     ...
+
+def analyze(data):
+    ...
+    return histogram
+
+```
+
+...

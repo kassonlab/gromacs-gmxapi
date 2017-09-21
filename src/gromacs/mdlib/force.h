@@ -34,6 +34,10 @@
  * To help us fund GROMACS development, we humbly ask that you cite
  * the research papers on the package. Check out http://www.gromacs.org.
  */
+/*! \libinternal
+ * \file
+ * \brief Declares symbols for MD force calculation
+ */
 #ifndef GMX_MDLIB_FORCE_H
 #define GMX_MDLIB_FORCE_H
 
@@ -149,6 +153,37 @@ void sum_dhdl(gmx_enerdata_t *enerd, gmx::ConstArrayRef<real> lambda, t_lambda *
 void set_avcsixtwelve(FILE *fplog, t_forcerec *fr,
                       const gmx_mtop_t *mtop);
 
+/*!
+ * \brief Wrapper for integrator-specific force calculation routines.
+ *
+ * \param log log file
+ * \param cr communicator
+ * \param inputrec input record
+ * \param step current time step
+ * \param nrnb opaque pointer to non-bonded something-or-other
+ * \param wcycle wallcycle accounting handle
+ * \param top subdomain-local topology
+ * \param groups
+ * \param box simulation box matrix
+ * \param coordinates interaction site coordinates
+ * \param hist history information for NMR restraints
+ * \param force array of calculated forces
+ * \param vir_force virial tensor
+ * \param mdatoms atomic information structure
+ * \param enerd energy calculation structure
+ * \param fcd force calculation helper data store
+ * \param lambda free energy perturbation coefficients
+ * \param graph
+ * \param fr force record
+ * \param vsite information on virtual sites
+ * \param mu_tot
+ * \param t
+ * \param ed
+ * \param bBornRadii
+ * \param flags MD configuration flags
+ * \param ddOpenBalanceRegion whether to open balancing region
+ * \param ddCloseBalanceRegion whether to close balancing region
+ */
 void do_force(FILE *log, t_commrec *cr,
               t_inputrec *inputrec,
               gmx_int64_t step, struct t_nrnb *nrnb, gmx_wallcycle_t wcycle,
