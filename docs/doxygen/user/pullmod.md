@@ -233,31 +233,34 @@ system = gmx.system.from_tpr('topol.tpr')
 # Note: input record does not indicate the custom code
 system.md.addPotential(puller)
 
+def update(session):
+    # gather and accumulate statistics
+    recvbuf = None
+    if rank == 0:
+        recvbuf_shape = [size] + puller.data.shape
+        recvbuf = numpy.empty(recvbuf_shape, dtype=float)
+    comm.Gather(puller.data, recvbuf, root=0)
+
+    # perform analysis
+    new_histogram = roux.analyze(recvbuf)
+
+    # broadcast updated histogram
+    comm.Bcast(new_histogram, root=0)
+    puller.histogram = new_histogram
+    if rank == 0:
+        with open('rawdata.csv', 'w') as datafile:
+            csv.writer(datafile).writerows(puller.histogram)
+
+
 # In the simple case, let nranks == num_ensemble_members
 with gmx.context.MpiEnsemble(system) as session:
     # get an mpi4py COMM_WORLD handle
     comm = session.communicator
     size = comm.Get_size()
     rank = comm.Get_rank()
-    for iteration in range(10):
-        session.run()
 
-        # gather and accumulate statistics
-        recvbuf = None
-        if rank == 0:
-            recvbuf_shape = [size] + puller.data.shape
-            recvbuf = numpy.empty(recvbuf_shape, dtype=float)
-        comm.Gather(puller.data, recvbuf, root=0)
-
-        # perform analysis
-        new_histogram = roux.analyze(recvbuf)
-
-        # broadcast updated histogram
-        comm.Bcast(new_histogram, root=0)
-        puller.histogram = new_histogram
-        if rank == 0:
-            with open('rawdata.csv', 'w') as datafile:
-                csv.writer(datafile).writerows(puller.histogram)
+    # alternatively set num_steps or end_condition with evaluation period
+    session.run(callback = roux.update, callback_period=10000)
 
 ```
 
@@ -309,11 +312,18 @@ public:
                                      double t, real lambda,
                                      real *V, tensor vir, real *dVdl) override;
      */
+     
+    // // Make it easier to make sense of and override this function to operate on a chosen set of indices
+    // real pull_potential(struct pull_t *pull, t_mdatoms *md, t_pbc *pbc,
+    //                       t_commrec *cr, double t, real lambda,
+    //                       rvec *x, rvec *f, tensor vir, real *dvdlambda) override;
+    
+    
     
     // No need to override
     // calc_pull_coord_vector_force(pcrd) override;
 
-    /// Implement potential and force
+    /// Implement potential and force (too low level and not general enough)
     gmxapi::Status calc_pull_coord_scalar_force_and_potential(struct pull_t *pull,
                                                               int coord_ind,
                                                               const t_pbc *pbc,
