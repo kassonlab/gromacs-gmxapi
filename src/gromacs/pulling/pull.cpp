@@ -47,6 +47,7 @@
 #include <string.h>
 
 #include <algorithm>
+#include "gromacs/compat/make_unique.h"
 
 #include "gromacs/commandline/filenm.h"
 #include "gromacs/domdec/domdec_struct.h"
@@ -2609,3 +2610,25 @@ gmx_bool pull_have_constraint(const struct pull_t *pull)
 {
     return pull->bConstraint;
 }
+
+class gmx::PullPotentialContainer::Impl
+{
+    public:
+        std::vector<std::shared_ptr<gmx::PullPotential>> pullers_;
+};
+
+void gmx::PullPotentialContainer::addPullPotential(std::shared_ptr<gmx::PullPotential> puller)
+{
+    impl_->pullers_.push_back(std::move(puller));
+}
+
+gmx::PullPotentialContainer::PullPotentialContainer() :
+    impl_{gmx::compat::make_unique<gmx::PullPotentialContainer::Impl>()}
+{}
+
+gmx::PullPotentialContainer::~PullPotentialContainer() = default;
+
+gmx::PullPotentialContainer &gmx::PullPotentialContainer::operator=(gmx::PullPotentialContainer &&) noexcept = default;
+
+gmx::PullPotentialContainer::PullPotentialContainer(PullPotentialContainer&&) noexcept = default;
+

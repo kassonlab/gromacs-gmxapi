@@ -67,7 +67,9 @@ struct t_commrec;
 
 namespace gmx
 {
-class TpxState;
+class TpxState; // defined in mdtypes/TpxState.h
+class PullPotential; // defined in pulling/pull.h
+class PullPotentialContainer;
 
 /*! \libinternal \brief Runner object for supporting setup and execution of mdrun.
  *
@@ -196,11 +198,14 @@ class Mdrunner
         //! Handle to communication data structure.
         t_commrec                       *cr;
 
+        std::shared_ptr<gmx::PullPotentialContainer> pullers_;
+
         std::shared_ptr<TpxState>       tpxState_{nullptr};
 //        mutable std::mutex            stateAccess;
 
     public:
-        /*! \brief Defaulted constructor.
+        /*! \brief C
+         * onstructor.
          *
          * Note that when member variables are not present in the constructor
          * member initialization list (which is true for the default constructor),
@@ -246,6 +251,8 @@ class Mdrunner
          *
          */
         void setTpx(std::shared_ptr<gmx::TpxState> newState);
+
+        void addPullPotential(std::shared_ptr<gmx::PullPotential> puller);
 
         //! Called when thread-MPI spawns threads.
         t_commrec *spawnThreads(int numThreadsToLaunch);

@@ -1776,4 +1776,9 @@ void Mdrunner::setTpx(std::shared_ptr<gmx::TpxState> newState)
     tpxState_ = std::move(newState);
 }
 
+void Mdrunner::addPullPotential(std::shared_ptr<gmx::PullPotential> puller)
+{
+    pullers_->addPullPotential(std::move(puller));
+}
+
 } // namespace gmx
