@@ -58,10 +58,6 @@
 #include "gromacs/utility/basedefinitions.h"
 #include "gromacs/utility/real.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 struct gmx_mtop_t;
 struct gmx_output_env_t;
 struct pull_params_t;
@@ -304,8 +300,5 @@ gmx_bool pull_have_constraint(const struct pull_t *pull);
 real max_pull_distance2(const pull_coord_work_t *pcrd,
                         const t_pbc             *pbc);
 
-#ifdef __cplusplus
-}
-#endif
 
 #endif
