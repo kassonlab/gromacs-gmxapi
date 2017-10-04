@@ -106,6 +106,7 @@
 #include "gromacs/mdtypes/TpxState.h"
 #include "gromacs/pbcutil/pbc.h"
 #include "gromacs/pulling/pull.h"
+#include "gromacs/pulling/restraintpotential.h"
 #include "gromacs/pulling/pull_rotation.h"
 #include "gromacs/timing/wallcycle.h"
 #include "gromacs/topology/mtop_util.h"
@@ -1436,6 +1437,8 @@ int Mdrunner::mdrunner()
         /* Initiate forcerecord */
         fr                 = mk_forcerec();
         fr->forceProviders = mdModules.initForceProviders();
+        // TODO: revisit this...
+        fr->pullPotentialContainerPointer_ = static_cast<void*>(pullers_.get());
         init_forcerec(fplog, mdlog, fr, fcd,
                       inputrec, mtop, cr, box,
                       opt2fn("-table", nfile, fnm),
@@ -1585,14 +1588,24 @@ int Mdrunner::mdrunner()
         /* Assumes uniform use of the number of OpenMP threads */
         walltime_accounting = walltime_accounting_init(gmx_omp_nthreads_get(emntDefault));
 
+        // If old MDP traditional MDP pulling options were used, the pull code
+        // wrapped up in gmx::LegacyPullPack can be used.
         if (inputrec->bPull)
         {
-            /* Initialize pull code */
-            inputrec->pull_work =
-                init_pull(fplog, inputrec->pull, inputrec, nfile, fnm,
-                          mtop, cr, oenv, inputrec->fepvals->init_lambda,
-                          EI_DYNAMICS(inputrec->eI) && MASTER(cr), Flags.to_ulong());
+            // Only add the puller the first time the runner is invoked.
+            if (pullers_ == nullptr)
+            {
+                /* Initialize pull code structures */
+                inputrec->pull_work =
+                    init_pull(fplog, inputrec->pull, inputrec, nfile, fnm,
+                              mtop, cr, oenv, real(inputrec->fepvals->init_lambda),
+                              EI_DYNAMICS(inputrec->eI) && MASTER(cr), Flags.to_ulong());
+                auto legacyPullers = gmx::compat::make_unique<gmx::LegacyPullingPack>(inputrec->pull_work);
+                this->pullers_->addPotential(std::move(legacyPullers));
+            }
         }
+        // If we need an initialization hook, we can put it here.
+        //pullers_->startRun();
 
         if (inputrec->bRot)
         {
@@ -1776,9 +1789,9 @@ void Mdrunner::setTpx(std::shared_ptr<gmx::TpxState> newState)
     tpxState_ = std::move(newState);
 }
 
-void Mdrunner::addPullPotential(std::shared_ptr<gmx::PullPotential> puller)
+void Mdrunner::addPullPotential(std::shared_ptr<gmx::RestraintPotential> puller)
 {
-    pullers_->addPullPotential(std::move(puller));
+    pullers_->addPotential(std::move(puller));
 }
 
 } // namespace gmx

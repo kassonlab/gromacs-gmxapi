@@ -64,12 +64,13 @@
 struct gmx_output_env_t;
 struct ReplicaExchangeParameters;
 struct t_commrec;
+class PotentialContainer; // // defined in pulling/pullpotential.h
 
 namespace gmx
 {
+
 class TpxState; // defined in mdtypes/TpxState.h
-class PullPotential; // defined in pulling/pull.h
-class PullPotentialContainer;
+class RestraintPotential; // defined in pulling/pullpotential.h
 
 /*! \libinternal \brief Runner object for supporting setup and execution of mdrun.
  *
@@ -198,7 +199,7 @@ class Mdrunner
         //! Handle to communication data structure.
         t_commrec                       *cr;
 
-        std::shared_ptr<gmx::PullPotentialContainer> pullers_;
+        std::shared_ptr<PotentialContainer> pullers_;
 
         std::shared_ptr<TpxState>       tpxState_{nullptr};
 //        mutable std::mutex            stateAccess;
@@ -252,7 +253,12 @@ class Mdrunner
          */
         void setTpx(std::shared_ptr<gmx::TpxState> newState);
 
-        void addPullPotential(std::shared_ptr<gmx::PullPotential> puller);
+        /*!
+         * \brief Add a pulling potential to be evaluated during integration.
+         *
+         * \param puller GROMACS-provided or custom pulling potential
+         */
+        void addPullPotential(std::shared_ptr<gmx::RestraintPotential> puller);
 
         //! Called when thread-MPI spawns threads.
         t_commrec *spawnThreads(int numThreadsToLaunch);

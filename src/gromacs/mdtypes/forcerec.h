@@ -308,6 +308,7 @@ struct t_forcerec {
      */
     gmx_bool          bF_NoVirSum;
 #ifdef __cplusplus
+    // Does this structure have multiple definitions in the same shared object?!
     /* TODO: Replace the pointer by an object once we got rid of C */
     PaddedRVecVector *forceBufferNoVirialSummation;
 #else
@@ -435,6 +436,21 @@ struct t_forcerec {
     struct ewald_corr_thread_t *ewc_t;
 
     struct ForceProviders      *forceProviders;
+
+    /*!
+     * \brief Pointer to a container owned and managed by the calling code.
+     *
+     * Currently, the forcerec_t is managed within the gmx::Mdrunner::mdrunner() block,
+     * and the gmx::PullPotentialContainer instance is owned by the gmx::Mdrunner, so
+     * this pointer should be safe. We can't reasonably make this a shared_ptr here because
+     * forcerec_t does not have a proper constructor and destructor, but is simply
+     * allocated and deallocated.
+     *
+     * PullPotentialContainer is in the gmx namespace, but forcerec.h is used in C
+     * files, so we would need a linkage solution. Future redesign may make this problem
+     * go away before it needs to be solved, so I'll just be kludgy for now.
+     */
+    void *pullPotentialContainerPointer_;
 };
 
 /* Important: Starting with Gromacs-4.6, the values of c6 and c12 in the nbfp array have

@@ -260,15 +260,17 @@ static void calc_virial(int start, int homenr, rvec x[], rvec f[],
 }
 
 static void pull_potential_wrapper(t_commrec *cr,
-                                   t_inputrec *ir,
-                                   matrix box, rvec x[],
+                                   matrix box,
+                                   rvec x[],
                                    rvec f[],
                                    tensor vir_force,
                                    t_mdatoms *mdatoms,
                                    gmx_enerdata_t *enerd,
                                    real *lambda,
                                    double t,
-                                   gmx_wallcycle_t wcycle)
+                                   gmx_wallcycle_t wcycle,
+                                   int pbcType,
+                                   pull_t *puller)
 {
     t_pbc  pbc;
     real   dvdl;
@@ -279,10 +281,10 @@ static void pull_potential_wrapper(t_commrec *cr,
      * which is why we call pull_potential after calc_virial.
      */
     wallcycle_start(wcycle, ewcPULLPOT);
-    set_pbc(&pbc, ir->ePBC, box);
+    set_pbc(&pbc, pbcType, box);
     dvdl                     = 0;
     enerd->term[F_COM_PULL] +=
-        pull_potential(ir->pull_work, mdatoms, &pbc,
+        pull_potential(puller, mdatoms, &pbc,
                        cr, t, lambda[efptRESTRAINT], x, f, vir_force, &dvdl);
     enerd->dvdl_lin[efptRESTRAINT] += dvdl;
     wallcycle_stop(wcycle, ewcPULLPOT);
@@ -1149,6 +1151,7 @@ void do_force_cutsVERLET(FILE *fplog, t_commrec *cr,
     {
         clear_pull_forces(inputrec->pull_work);
     }
+    // Do we need a RestraintPotential hook here?
 
     /* We calculate the non-bonded forces, when done on the CPU, here.
      * We do this before calling do_force_lowlevel, because in that
@@ -1420,9 +1423,8 @@ void do_force_cutsVERLET(FILE *fplog, t_commrec *cr,
         /* Since the COM pulling is always done mass-weighted, no forces are
          * applied to vsites and this call can be done after vsite spreading.
          */
-        pull_potential_wrapper(cr, inputrec, box, x,
-                               f, vir_force, mdatoms, enerd, lambda, t,
-                               wcycle);
+        pull_potential_wrapper(cr, box, x, f, vir_force, mdatoms, enerd, lambda, t, wcycle, inputrec->ePBC,
+                               inputrec->pull_work);
     }
 
     /* Add the forces from enforced rotation potentials (if any) */
@@ -1801,9 +1803,8 @@ void do_force_cutsGROUP(FILE *fplog, t_commrec *cr,
 
     if (inputrec->bPull && pull_have_potential(inputrec->pull_work))
     {
-        pull_potential_wrapper(cr, inputrec, box, x,
-                               f, vir_force, mdatoms, enerd, lambda, t,
-                               wcycle);
+        pull_potential_wrapper(cr, box, x, f, vir_force, mdatoms, enerd, lambda, t, wcycle, inputrec->ePBC,
+                               inputrec->pull_work);
     }
 
     /* Add the forces from enforced rotation potentials (if any) */
@@ -1862,7 +1863,10 @@ void do_force(FILE *fplog, t_commrec *cr,
               gmx_bool bBornRadii,
               int flags,
               DdOpenBalanceRegionBeforeForceComputation ddOpenBalanceRegion,
-              DdCloseBalanceRegionAfterForceComputation ddCloseBalanceRegion)
+              DdCloseBalanceRegionAfterForceComputation ddCloseBalanceRegion//,
+              // stash pointer to pulling container in forcerec_t for now...
+              //const PotentialContainer& pullManager
+              )
 {
     /* modify force flag if not doing nonbonded */
     if (!fr->bNonbonded)

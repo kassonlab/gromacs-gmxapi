@@ -302,36 +302,4 @@ gmx_bool pull_have_constraint(const struct pull_t *pull);
 real max_pull_distance2(const pull_coord_work_t *pcrd,
                         const t_pbc             *pbc);
 
-namespace gmx
-{
-
-/*!
- * \brief Provide an implementation of pull_potential()
- */
-class PullPotential
-{
-
-};
-
-/*!
- * \brief Hold an arbitrary number of PullPotential objects.
- */
-class PullPotentialContainer
-{
-    public:
-        PullPotentialContainer();
-        PullPotentialContainer(const PullPotentialContainer&) = delete;
-        PullPotentialContainer(PullPotentialContainer&&) noexcept;
-        PullPotentialContainer& operator=(const PullPotentialContainer&) = delete;
-        PullPotentialContainer& operator=(PullPotentialContainer&&) noexcept;
-        ~PullPotentialContainer();
-
-        void addPullPotential(std::shared_ptr<PullPotential> puller);
-    private:
-        class Impl;
-        std::unique_ptr<Impl> impl_;
-};
-
-} // end namespace gmxapi
-
 #endif

@@ -38,7 +38,12 @@ set(PULLING_SOURCES
     pulling/pull.cpp
     pulling/pull_rotation.h
     pulling/pull_rotation.cpp
-    pulling/pullutil.cpp)
+    pulling/pullutil.cpp
+    pulling/restraintpotential.h
+    pulling/restraintpotential.cpp
+    pulling/rouxrestraint.h
+    pulling/rouxrestraint.cpp
+    )
 set(LIBGROMACS_SOURCES ${LIBGROMACS_SOURCES} ${PULLING_SOURCES} PARENT_SCOPE)
 
 if (BUILD_TESTING)

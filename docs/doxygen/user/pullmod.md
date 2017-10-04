@@ -8,10 +8,20 @@ developments in \Gromacs and leaves many problems for the researcher, such as ho
 get user input into the additional code and how to transfer data in and out of the
 extension code.
 
-Case study
-----------
+## Case study
+
 
 2015 \Gromacs fork adding an ensemble biasing scheme after Roux, dx.doi.org/10.1021/jp3110369
+
+The potential applies an additional harmonic force along selected particle-pair separation vectors
+to bias the simulation towards experimental sampling distributions.
+Until a trajectory is produced that samples the desired conformation space,
+pair separation sampling is analyzed across an ensemble of simulations to periodically
+refine the biasing potential.
+
+The code (ab)uses the GROMACS "pull" machinery not specifically for free energy calculation,
+but because the large length scales and small number of relevant coordinates are a
+good match for the computational work managed.
 
 Commit ac9ce76
 
@@ -34,7 +44,29 @@ Summary of changes:
 First, note that over 300 lines are added for processing comma-separated-value data for the extension code.
 This sort of dependency certainly should not need to be satisfied in the `libgromacs` code.
 
-Globals modified
+Second, note that many of these changes can be separated into a separate unrelated change
+for `epullgDISTREF`.
+
+### Roux inputs
+
+    // method parameters
+    bin_width = 0.1
+    sigma = 0.1
+    max_dist = 9.0
+    
+    // working data (runtime environment)
+    path_raw_data = /home/jmh/pmkResearch/exp_DEER
+
+    // system input
+    deer_file = experimental.csv
+    
+    // system parameters
+    pair_file = pairs.txt
+
+
+
+### Globals modified
+
 
 `gmxlib/names.cpp`
 
@@ -46,7 +78,8 @@ Globals modified
 * add `epullROUX`
 * add `epullgDISTREF`
 
-Functions modified
+### Functions modified
+
 
 `fileio/tpxio.cpp`
 
@@ -101,19 +134,21 @@ Functions modified
 * `struct pull_t * init_pull()`
   * extend scope of calculations to an additional case `epullgDISTREF`
   
-Functions added
+### Functions added
+
 
 * `double getRouxForce(double dev, int coord_ind, double K)`
 * `double getRouxPotential(double dev, int coord_ind, double K)`
 
-Other
+### Other
+
 
 * `md.cpp` uses `step_rel` instead of `step` to determine whether this is a neighbor search step.
 * Additional input: environment variable provides a filename that is opened and
   parsed by additional code in the extension.
 
-Old implementation
-------------------
+## Old implementation
+
 
 - do_md()
     - do_force()
@@ -147,8 +182,8 @@ static void calc_pull_coord_force(pull_coord_work_t *pcrd, int coord_ind,
 }
 ```
 
-Current pull code implementation
---------------------------------
+## Current pull code implementation
+
 
 Relevant types:
 
@@ -191,8 +226,8 @@ call `pull_print_output(ir->pull_work, step, t)` in simulation loop.
             - `calc_pull_coord_vector_force(pcrd);`
 
 
-Strategy
---------
+## Strategy
+
 
 Reimplement `init_pull()` and refactor `pull_t`. Allow client code to provide alternatives.
 
@@ -200,16 +235,17 @@ Refactor `do_pull_pot_coord()` to use member functions of `pull_t` argument.
 
 Where control flow is currently guided by enum values, wrap the function to dynamically dispatch to functor or legacy free functions.
 
-A custom `PullPotential` class may (re)implement `calc_pull_coord_scalar_force_and_potential()` or `calc_pull_coord_vector_force();` or some subset of their internals.
+A custom `RestraintPotential` class may (re)implement `calc_pull_coord_scalar_force_and_potential()` or `calc_pull_coord_vector_force();` or some subset of their internals.
 
 Note that `pull_potential()` is the lowest public function in this hierarchy and is passed a pull_t from the inputrec.
 
-Usage
------
+## Usage
+
 
 Instantiate a modified `do_md()` integrator with a builder for the plugin to replace `init_pull()`
 
 Extension code inherits from base `do_pull_pot_coord()` provider that `pull_potential()` will call. Override `calc_...()` method (or submethod).
+
 
 
 Python client code:
@@ -220,20 +256,34 @@ import csv
 import roux
 import gmx
 
+# Load initial data
 with open('rawdata.csv', 'r') as datafile:
     histogram = numpy.asarray(csv.reader(datafile), dtype=float)
 
-puller = roux.PullPotential()
+puller = roux.RestraintPotential()
 puller.histogram = histogram
+
+# Set parameters for experimental protocol
 puller.sigma = 1.0
 puller.k = 30
 puller.nbins = 50
 
+# Load system configuration, topology, simulation and run parameters
 system = gmx.system.from_tpr('topol.tpr')
 # Note: input record does not indicate the custom code
 system.md.addPotential(puller)
 
+
 def update(session):
+    """A potentially slow Python-based callback function for the runner hook.
+    
+    To allow performance optimizations, do not request data that is not needed.
+    """
+    # get an mpi4py COMM_WORLD handle
+    comm = session.communicator
+    size = comm.Get_size()
+    rank = comm.Get_rank()
+    
     # gather and accumulate statistics
     recvbuf = None
     if rank == 0:
@@ -251,16 +301,55 @@ def update(session):
         with open('rawdata.csv', 'w') as datafile:
             csv.writer(datafile).writerows(puller.histogram)
 
+# Alternatively, subclass a functor or generate a closure
+# E.g. in roux module, class RestraintPotential has member function:
+    def makeCallback(session):
+        # get an mpi4py COMM_WORLD handle
+        comm = session.communicator
+        
+        def callable():
+            size = comm.Get_size()
+            rank = comm.Get_rank()
+            # gather and accumulate statistics
+            recvbuf = None
+            if rank == 0:
+                recvbuf_shape = [size] + self.data.shape
+                recvbuf = numpy.empty(recvbuf_shape, dtype=float)
+            comm.Gather(puller.data, recvbuf, root=0)
+        
+            # perform analysis
+            new_histogram = roux.analyze(recvbuf)
+        
+            # broadcast updated histogram
+            comm.Bcast(new_histogram, root=0)
+            puller.histogram = new_histogram
+            if rank == 0:
+                with open('rawdata.csv', 'w') as datafile:
+                    csv.writer(datafile).writerows(self.histogram)
+        
+        return callable
+
 
 # In the simple case, let nranks == num_ensemble_members
 with gmx.context.MpiEnsemble(system) as session:
-    # get an mpi4py COMM_WORLD handle
-    comm = session.communicator
-    size = comm.Get_size()
-    rank = comm.Get_rank()
 
-    # alternatively set num_steps or end_condition with evaluation period
+    # The C++ API class for gmx.runner.StopCondition provides
+    # `unsigned int nextEvaluationStep()` and `bool evaluate(unsigned int currentStep)`
+    # for the runner to call. The basic stop condition set by reading a TPR file looks like
+    # `unsigned int nextEvaluationStep() { return nsteps; };` and
+    # `bool evaluate(unsigned int currentStep) { return currentStep >= nsteps; };`
+    # More sophisticated stop conditions can maintain state and subscribe to additional data.
+    # The Python side of the interface is Pythonically flexible.
+    #
+    # assert isinstance(session.stopCondition, gmx.runner.StopCondition)
+    # assert session.stopCondition == system.runner.numSteps
+    session.stopCondition = puller.convergenceCondition
+
     session.run(callback = roux.update, callback_period=10000)
+    # or
+    #session.run(callback = puller.makeCallback(session), callback_period=10000)
+    # The most performance and flexibility may be to allow RestraintPotential derivatives
+    # to register or bind to one or more periodic updaters.
 
 ```
 
@@ -274,7 +363,7 @@ rouxSetup.setDimensions(...);
 std::shared_ptr<RouxPuller> myRoux = rouxSetup.build();
 
 gmx::MdrunnerBuilder simulation;
-simulation.addPullPotential(myRoux);
+simulation.addPotential(myRoux);
 gmx::Mdrunner session = myContext(simulation);
 
 for (auto i=0; i < n_iter; i++)
@@ -284,11 +373,11 @@ for (auto i=0; i < n_iter; i++)
 }
 ```
 
-Implementing a PullPotential derived class.
+Implementing a RestraintPotential derived class.
 
 ```{.cpp}
 
-class RouxPuller : public PullPotential
+class RouxPuller : public RestraintPotential
 {
 public:
     /// Something we can use to set parameters from external code.
@@ -306,12 +395,6 @@ public:
                              real lambda,
                              gmx_bool bOutFile,
                              unsigned long Flags) override;
-    
-    // No need to override
-    /* static void do_pull_pot_coord(struct pull_t *pull, int coord_ind, t_pbc *pbc,
-                                     double t, real lambda,
-                                     real *V, tensor vir, real *dVdl) override;
-     */
      
     // // Make it easier to make sense of and override this function to operate on a chosen set of indices
     // real pull_potential(struct pull_t *pull, t_mdatoms *md, t_pbc *pbc,
@@ -319,19 +402,6 @@ public:
     //                       rvec *x, rvec *f, tensor vir, real *dvdlambda) override;
     
     
-    
-    // No need to override
-    // calc_pull_coord_vector_force(pcrd) override;
-
-    /// Implement potential and force (too low level and not general enough)
-    gmxapi::Status calc_pull_coord_scalar_force_and_potential(struct pull_t *pull,
-                                                              int coord_ind,
-                                                              const t_pbc *pbc,
-                                                              double t,
-                                                              real lambda,
-                                                              real *V,
-                                                              real *dVdl
-                                                              ) override;
     
     // No need to override
     // void finish_pull() override;
@@ -390,9 +460,9 @@ void RouxPuller::calc_pull_coord_scalar_force_and_potential(int coord_ind,
 PYBIND11_MODULE(roux_, m) {
     m.doc() = somedocstring;
 
-    pybind11::class_< RouxPuller, PullPotential, std::shared_ptr<RouxPuller> > roux_plugin(m, "PullPotential", "Implements Roux biasing potential.");
+    pybind11::class_< RouxPuller, RestraintPotential, std::shared_ptr<RouxPuller> > roux_plugin(m, "RestraintPotential", "Implements Roux biasing potential.");
     roux_plugin.def_property("data", &RouxPuller::getData);
-    // The rest is inherited from PullPotential
+    // The rest is inherited from RestraintPotential
     
     pybind11::class_< RouxBuilder > roux_builder(m, "Builder", "Set up potential");
     roux_builder.def(pybind11::init());
@@ -406,38 +476,33 @@ PYBIND11_MODULE(roux_, m) {
 
 ```
 
-Python wrapper
+Python wrapper `roux.py`:
 
-```{.py}
-
-# roux.py
+\code{.py}
+#roux.py
 import gmx
-import roux_.PullPotential
+import roux_.RestraintPotential
 import roux_.Builder
 
-class PullPotential(gmx.PullPotential):
-    ...
+class RestraintPotential(gmx.RestraintPotential):
+    #...
     def bind(self, system):
         builder = roux_.Builder()
         builder.histogram = self.histogram
         builder.sigma = self.sigma
         builder.k = self.k
         builder.nbins = self.nbins
-        self.api_object = builder.build();
-        ...
-     ...
+        self.api_object = builder.build()
+     #...
      @property
      def histogram(self):
-        ...
+        #...
      @property
      def sigma(self):
-        ...
-     ...
+        #...
+     #...
 
 def analyze(data):
-    ...
+    #...
     return histogram
-
-```
-
-...
+\endcode
