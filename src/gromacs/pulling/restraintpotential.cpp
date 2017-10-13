@@ -57,3 +57,9 @@ gmx::LegacyPullingPack &gmx::LegacyPullingPack::operator=(gmx::LegacyPullingPack
     old.pullWorkPointer_ = nullptr;
     return *this;
 }
+
+gmx::vec3<real> gmx::RestraintPotential::calculateForce(gmx_unused gmx::vec3<real> r1,
+                                                        gmx_unused gmx::vec3<real> r2)
+{
+    return gmx::vec3<real>();
+}

@@ -5,6 +5,8 @@
 #ifndef GMX_PULLING_RESTRAINTPOTENTIAL_H
 #define GMX_PULLING_RESTRAINTPOTENTIAL_H
 
+#include "vectortype.h"
+
 #include <memory>
 
 #include "gromacs/math/vectypes.h"
@@ -26,6 +28,8 @@ struct t_pbc;
 namespace gmx
 {
 
+using detail::vec3;
+
 /*!
  * \brief Base class for providers of pull_potential()
  *
@@ -44,6 +48,15 @@ class RestraintPotential
     public:
         virtual ~RestraintPotential() = default;
 
+        /*!
+         * \brief Calculate a force vector according to two input positions.
+         *
+         * If not overridden by derived class, returns a zero vector.
+         * \param r1 position of first site
+         * \param r2 position of second site
+         * \return force vector to be applied by calling code.
+         */
+        virtual vec3<real> calculateForce(vec3<real> r1, vec3<real> r2);
 };
 
 /*!
