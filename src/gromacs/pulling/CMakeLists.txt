@@ -43,6 +43,7 @@ set(PULLING_SOURCES
     pulling/restraintpotential.cpp
     pulling/rouxrestraint.h
     pulling/rouxrestraint.cpp
+    pulling/vectortype.h
     )
 set(LIBGROMACS_SOURCES ${LIBGROMACS_SOURCES} ${PULLING_SOURCES} PARENT_SCOPE)
 
