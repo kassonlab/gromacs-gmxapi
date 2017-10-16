@@ -41,8 +41,8 @@ set(PULLING_SOURCES
     pulling/pullutil.cpp
     pulling/restraintpotential.h
     pulling/restraintpotential.cpp
-    pulling/rouxrestraint.h
-    pulling/rouxrestraint.cpp
+    pulling/harmonicrestraint.h
+    pulling/harmonicrestraint.cpp
     pulling/vectortype.h
     )
 set(LIBGROMACS_SOURCES ${LIBGROMACS_SOURCES} ${PULLING_SOURCES} PARENT_SCOPE)
