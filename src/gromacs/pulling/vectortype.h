@@ -5,6 +5,7 @@
 #ifndef GROMACS_VECTORTYPE_H
 #define GROMACS_VECTORTYPE_H
 
+#include <cmath>
 #include "gromacs/math/vectypes.h"
 
 namespace gmx
@@ -28,7 +29,15 @@ class vec3
         Scalar y;
         Scalar z;
 
-        vec3() : x{Scalar(0)}, y{Scalar(0)}, z{Scalar(0)} {};
+        /*!
+         * \brief Require type matching for direct construction.
+         * \param X
+         * \param Y
+         * \param Z
+         */
+        constexpr explicit vec3(const Scalar& X, const Scalar& Y, const Scalar& Z) : x{X}, y{Y}, z{Z} {};
+
+        vec3() : vec3{Scalar(0), Scalar(0), Scalar(0)} {};
         vec3(const vec3&) = default;
         vec3& operator=(const vec3&) = default;
 
@@ -38,20 +47,10 @@ class vec3
          * \return
          */
         template<typename T>
-        operator vec3<T>() { return vec3<T>(x, y, z); }
+        explicit operator vec3<T>() { return vec3<T>(x, y, z); }
 
-        /*!
-         * \brief Construct a vec3 from arbitrary numeric arguments, but disallow narrowing.
-         *
-         * \tparam SX numeric type of x
-         * \tparam SY numeric type of y
-         * \tparam SZ numeric type of z
-         * \param X
-         * \param Y
-         * \param Z
-         */
-        template<typename SX, typename SY, typename SZ>
-        vec3(SX X, SY Y, SZ Z) : x{X}, y{Y}, z{Z} {};
+        template<typename T>
+        explicit vec3(const T& a) : vec3(a.x, a.y, a.z) {};
 };
 
 //
@@ -62,22 +61,89 @@ class vec3
 // should imply dot product. Let's stick to explicit free functions.
 //
 
+/*!
+ * \brief Unary negation operator
+ * \tparam Scalar underlying vector type
+ * \param a input vector
+ * \return (-a.x, -a.y, -a.z)
+ */
 template<typename Scalar>
-inline vec3<Scalar> operator+(vec3<Scalar> a, vec3<Scalar> b)
+inline vec3<Scalar> operator-(const vec3<Scalar>& a)
+{
+    return vec3<Scalar>(-a.x, -a.y, -a.z);
+}
+
+template<typename Scalar>
+inline vec3<Scalar> operator+(const vec3<Scalar>& a, const vec3<Scalar>& b)
 {
     return vec3<Scalar>(a.x + b.x, a.y + b.y, a.z + b.z);
 };
 
 template<typename Scalar>
-inline vec3<Scalar> operator-(vec3<Scalar> a, vec3<Scalar> b)
+inline vec3<Scalar> operator-(const vec3<Scalar>& a, const vec3<Scalar>& b)
 {
     return vec3<Scalar>(a.x - b.x, a.y - b.y, a.z - b.z);
 }
 
+
+/*!
+ * \brief Multiply vector by scalar
+ *
+ * \tparam Scalar vector type
+ * \param a input vector
+ * \param s input scalar
+ * \return (a.x, a.y, a.z) * s
+ *
+ * Note that input scalar may be implicitly narrowed if higher precision than input vector.
+ */
+template<typename T1, typename T2>
+inline vec3<T1> operator*(const vec3<T1>& a, const T2& s)
+{
+    return vec3<T1>(T1(a.x * s), T1(a.y * s), T1(a.z * s));
+}
+template<typename T1, typename T2>
+inline vec3<T1> operator*(const T2& s, const vec3<T1>& a)
+{
+    return a * s;
+};
+
+/*!
+ * \brief Vector division by scalar
+ * \tparam Scalar underlying vector type
+ * \param a input vector
+ * \param b input scalar
+ * \return
+ *
+ * Note that input scalar may be implicitly narrowed if higher precision than input vector.
+ */
+template<typename T1, typename T2>
+inline vec3<T1> operator/(const vec3<T1>& a, const T2& s)
+{
+    assert(s != T2(0.0));
+    const T2 inv_s{T2(1.0)/s};
+    return vec3<T1>(T1(a.x * inv_s), T1(a.y * inv_s), T1(a.z * inv_s));
+}
+
+/*!
+ * \brief Scalar vector product
+ * \tparam Scalar underlying vector type
+ * \param a first vector
+ * \param b second vector
+ * \return (a.x * b.x) + (a.y * b.y) + (a.z * b.z)
+ */
 template<typename Scalar>
 inline Scalar dot(const vec3<Scalar>& a, const vec3<Scalar>& b)
 {
     return (a.x * b.x) + (a.y * b.y) + (a.z * b.z);
+}
+
+/*!
+ * \brief Norm or magnitude of vector
+ */
+template<typename Scalar, typename Tout = double>
+inline Tout norm(const vec3<Scalar>& a)
+{
+    return sqrt(dot(vec3<Tout>(a), vec3<Tout>(a)));
 }
 
 //
@@ -106,6 +172,32 @@ inline gmx::RVec as_Rvec(const vec3<Scalar>& v)
 {
     return {v.x, v.y, v.z};
 }
+
+//
+// Helpers
+//
+
+/*!
+ * \brief Flexibly produce vector of a given type.
+ *
+ * \tparam Scalar underlying output vector type
+ * \tparam T1 x input type
+ * \tparam T2 y input type
+ * \tparam T3 z input type
+ * \param x
+ * \param y
+ * \param z
+ * \return vector (x, y, z) of type vec3<Scalar>
+ *
+ * Helper function allows narrowing and mismatched types. Constructs a vec3<Scalar> from any x, y, and z that can be
+ * implicitly converted to type Scalar.
+ */
+template<typename Scalar, typename T1, typename T2, typename T3>
+inline constexpr vec3<Scalar> make_vec3(T1 x, T2 y, T3 z)
+{
+    return vec3<Scalar>(Scalar(x), Scalar(y), Scalar(z));
+};
+
 
 } // end namespace gmx::detail
 } // end namespace gmx
