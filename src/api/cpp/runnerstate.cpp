@@ -54,6 +54,11 @@ std::shared_ptr<IMDRunner> RunnerProxy::initialize(std::shared_ptr<Context> cont
     return instanceState_;
 }
 
+void RunnerProxy::setRestraint(std::shared_ptr<gmx::RestraintPotential> puller)
+{
+    instanceState_->setRestraint(std::move(puller));
+}
+
 void EmptyMDRunnerState::registerMDBuilder(std::unique_ptr<MDBuilder> builder)
 {
     // nothing to bind to
@@ -220,6 +225,11 @@ std::shared_ptr<IMDRunner> RunningMDRunnerState::initialize(std::shared_ptr<Cont
 void RunningMDRunnerState::registerMDBuilder(std::unique_ptr<MDBuilder> builder)
 {
     // implement the runner--mdengine binding protocol
+}
+
+void RunningMDRunnerState::setRestraint(std::shared_ptr<gmx::RestraintPotential> puller)
+{
+    impl_->runner_->addPullPotential(puller);
 }
 
 

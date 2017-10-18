@@ -8,6 +8,7 @@
 #include "gmxapi/system.h"
 #include "gmxapi/context.h"
 #include <gtest/gtest.h>
+#include <gromacs/pulling/restraintpotential.h>
 
 namespace
 {
@@ -45,6 +46,29 @@ TEST(ApiRunner, BasicMD)
         auto runner = system->runner();
         auto session = runner->initialize(context);
         ASSERT_TRUE(session != nullptr);
+        gmxapi::Status status;
+        ASSERT_NO_THROW(status = session->run());
+//        ASSERT_NO_THROW(session->run(1000));
+        ASSERT_TRUE(status.success());
+    }
+}
+
+TEST(ApiRunner, MdAndPlugin)
+{
+    // TODO: Need to set up a test fixture...
+    const std::string filename = "${CMAKE_CURRENT_BINARY_DIR}/topol.tpr";
+
+    auto system = gmxapi::fromTprFile(filename);
+
+    {
+        std::shared_ptr<gmxapi::Context> context = gmxapi::defaultContext();
+        auto runner = system->runner();
+
+        auto session = runner->initialize(context);
+
+        auto puller = std::make_shared<gmx::RestraintPotential>();
+        session->setRestraint(puller);
+
         gmxapi::Status status;
         ASSERT_NO_THROW(status = session->run());
 //        ASSERT_NO_THROW(session->run(1000));

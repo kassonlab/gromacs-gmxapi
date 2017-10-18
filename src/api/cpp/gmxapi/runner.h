@@ -9,6 +9,7 @@
 
 #include <memory>
 #include <string>
+#include <gromacs/pulling/restraintpotential.h>
 
 #include "gmxapi/gmxapi.h"
 #include "gmxapi/system.h"
@@ -91,6 +92,8 @@ class IMDRunner
          * \return Handle to a launched and runnable workflow.
          */
         virtual std::shared_ptr<IMDRunner> initialize(std::shared_ptr<Context> context) = 0;
+
+        virtual void setRestraint(std::shared_ptr<gmx::RestraintPotential> puller) { (void)puller; throw ProtocolError("setRestraint not implemented for this class."); };
 };
 
 /*!
@@ -110,6 +113,7 @@ class IMDRunnerBuilder
 
         /// Build a runner. Return a handle to something that can be run.
         virtual std::shared_ptr<IMDRunner> build() = 0;
+
 };
 
 /// \cond internal
@@ -147,6 +151,8 @@ class RunnerProxy : public IMDRunner, public std::enable_shared_from_this<Runner
         std::shared_ptr <IMDRunner> initialize(std::shared_ptr<Context> context) override;
 
         void setState(std::shared_ptr<IMDRunner> state);
+
+        void setRestraint(std::shared_ptr<gmx::RestraintPotential> puller) override;
 
     private:
         /// bound task, if any

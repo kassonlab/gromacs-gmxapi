@@ -122,7 +122,11 @@ class RunningMDRunnerState : public IMDRunner
             private:
                 std::unique_ptr<RunningMDRunnerState> runner_;
                 std::shared_ptr<gmx::TpxState> tpxState_;
+
         };
+
+        void setRestraint(std::shared_ptr<gmx::RestraintPotential> puller) override;
+
     private:
         RunningMDRunnerState();
         /// Private implementation class
