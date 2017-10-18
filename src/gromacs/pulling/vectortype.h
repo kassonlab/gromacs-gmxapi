@@ -5,6 +5,26 @@
 #ifndef GROMACS_VECTORTYPE_H
 #define GROMACS_VECTORTYPE_H
 
+/*! \file
+ * \brief Template header for 3D vector types and operations.
+ *
+ * Two reasons:
+ *
+ * 1. Make data types and precision explicit and unambiguous.
+ * 2. Provide an abstraction from storage method.
+ *
+ * These types should map easily to float3 (or float4) as in CUDA and other libraries,
+ * as well as to arrays or even non-contiguous structures, at least insofar as
+ * the compiler should be able to optimize away copies.
+ *
+ * Along these lines, the structures are intended to be short-lived handles
+ * for convenience and strong typing of operations. Arrays of vec3 should not
+ * be necessary and are probably not desirable, at least across C++ translation units.
+ *
+ */
+
+// TODO: It's worth taking a look at how compilers handle iterative extraction of vec3 from Nx3 data in practice.
+
 #include <cmath>
 #include "gromacs/math/vectypes.h"
 
@@ -40,6 +60,7 @@ class vec3
         vec3() : vec3{Scalar(0), Scalar(0), Scalar(0)} {};
         vec3(const vec3&) = default;
         vec3& operator=(const vec3&) = default;
+        vec3& operator=(vec3&&) noexcept = default;
 
         /*!
          * \brief Implicit non-narrowing conversion between vec3<>
