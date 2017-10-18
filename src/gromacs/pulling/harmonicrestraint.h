@@ -16,7 +16,7 @@ namespace gmx
  * Applies a restraint to selected pair separation vectors to bias sampled configurations
  * towards an externally-defined distribution.
  *
- * The potential \f$\Phi(Q) \f$ is a functional of selected pair distances
+ * The potential is a functional of selected pair distances
  * evaluated
  */
 class RouxRestraint : public RestraintPotential

@@ -59,6 +59,8 @@ SORT_BY_SCOPE_NAME     = YES
 ALPHABETICAL_INDEX     = YES
 HTML_DYNAMIC_SECTIONS  = YES
 GENERATE_LATEX         = NO
+# Since interaction is hidden by CMake, don't pause on errors in typesetting.
+LATEX_BATCHMODE        = YES
 # Setting this to NO has a side effect to hide undocumented headers from the
 # file list, which makes it generally look nicer.
 VERBATIM_HEADERS       = NO

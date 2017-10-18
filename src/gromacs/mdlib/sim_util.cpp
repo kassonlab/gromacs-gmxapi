@@ -283,6 +283,7 @@ static void pull_potential_wrapper(t_commrec *cr,
     wallcycle_start(wcycle, ewcPULLPOT);
     set_pbc(&pbc, pbcType, box);
     dvdl                     = 0;
+    // Note that pull_potential() has both output parameters and returns data.
     enerd->term[F_COM_PULL] +=
         pull_potential(puller, mdatoms, &pbc,
                        cr, t, lambda[efptRESTRAINT], x, f, vir_force, &dvdl);

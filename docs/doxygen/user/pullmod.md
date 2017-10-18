@@ -160,7 +160,7 @@ for `epullgDISTREF`.
                 - getRouxForce()
                 - getRouxPotential()
 
-```
+\code
 static void calc_pull_coord_force(pull_coord_work_t *pcrd, int coord_ind,
                               double dev, real lambda,
                               real *V, tensor vir, real *dVdl)
@@ -180,7 +180,38 @@ static void calc_pull_coord_force(pull_coord_work_t *pcrd, int coord_ind,
     }
     //...
 }
-```
+\endcode
+
+Example mdp file
+
+\code
+;	  gmx grompp -f mdp_files/pull_gromacs5.mdp -c opa_config_0/startup_0.gro -p topologies/topol0.top -o atom_setups/pull_0.tpr -maxwarn 1
+pull                     = yes
+pull-cylinder-r          = 1.5
+pull-constr-tol          = 1e-06
+pull-print-com1          = no
+pull-print-com2          = no
+pull-print-ref-value     = no
+pull-print-components    = no
+pull-nstxout             = 10
+pull-nstfout             = 10
+pull_ngroups = 3
+pull_ncoords = 1
+pull-group1-name = Pull_ref
+pull-group2-name = first_0
+pull-group3-name = second_0
+pull-coord1-type = roux
+pull-coord1-geometry = distance-reference
+pull-coord1-groups = 2 3 1
+pull-coord1-dim = Y Y Y
+pull-coord1-origin = 0.0 0.0 0.0
+pull-coord1-vec = 0.0 0.0 0.0
+pull-coord1-start = no
+pull-coord1-init = 0.0
+pull-coord1-rate = 0.0
+pull-coord1-k = 100.000000
+pull-coord1-kB = 0
+\endcode
 
 ## Current pull code implementation
 
@@ -250,7 +281,7 @@ Extension code inherits from base `do_pull_pot_coord()` provider that `pull_pote
 
 Python client code:
 
-```{.py}
+\code{.py}
 import numpy
 import csv
 import roux
@@ -351,11 +382,11 @@ with gmx.context.MpiEnsemble(system) as session:
     # The most performance and flexibility may be to allow RestraintPotential derivatives
     # to register or bind to one or more periodic updaters.
 
-```
+\endcode
 
 sample C++ client code
 
-```{.cpp}
+\code{.cpp}
 
 RouxPuller::Builder rouxSetup;
 rouxSetup.addHistogram(arraydata);
@@ -371,11 +402,11 @@ for (auto i=0; i < n_iter; i++)
     session->run();
     myRoux->update();
 }
-```
+\endcode
 
 Implementing a RestraintPotential derived class.
 
-```{.cpp}
+\code{.cpp}
 
 class RouxPuller : public RestraintPotential
 {
@@ -474,7 +505,7 @@ PYBIND11_MODULE(roux_, m) {
     roux_builder.def("build", &RouxBuilder::build);
 }
 
-```
+\endcode
 
 Python wrapper `roux.py`:
 

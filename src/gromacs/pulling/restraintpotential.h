@@ -34,7 +34,7 @@ using detail::vec3;
  * \brief Base class for providers of pull_potential()
  *
  * For a set of \f$n\f$ coordinates, generate a force field according to a
- * scalar potential that is a fun. \f$F_i = - \grad_{q_i} \Phi (q_0, q_1, ... q_n; t)\f$
+ * scalar potential that is a fun. \f$F_i = - \nabla_{q_i} \Phi (q_0, q_1, ... q_n; t)\f$
  *
  * Potentials implemented with these classes may be long ranged and are appropriate
  * for only a small number of particles to avoid substantial performance impact.

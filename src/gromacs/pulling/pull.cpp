@@ -1692,7 +1692,7 @@ real pull_potential(struct pull_t *pull, t_mdatoms *md, t_pbc *pbc,
                     t_commrec *cr, double t, real lambda,
                     rvec *x, rvec *f, tensor vir, real *dvdlambda)
 {
-    real V = 0;
+    real V = 0; // Potential energy contribution
 
     assert(pull != NULL);
 
