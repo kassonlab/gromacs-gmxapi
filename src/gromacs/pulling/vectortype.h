@@ -21,6 +21,7 @@
  * for convenience and strong typing of operations. Arrays of vec3 should not
  * be necessary and are probably not desirable, at least across C++ translation units.
  *
+ * \inlibraryapi
  */
 
 // TODO: It's worth taking a look at how compilers handle iterative extraction of vec3 from Nx3 data in practice.
@@ -41,17 +42,23 @@ namespace detail
  *
  * Conversions to other types with different semantics should be explicit and avoid accidental loss of precision.
  * \tparam Scalar
+ *
+ * \inlibraryapi
  */
 template<typename Scalar>
 class vec3
 {
     public:
+        /// magnitude in first dimension
         Scalar x;
+        /// magnitude in second dimension
         Scalar y;
+        /// magnitude in third dimension
         Scalar z;
 
         /*!
          * \brief Require type matching for direct construction.
+         *
          * \param X
          * \param Y
          * \param Z
@@ -60,17 +67,35 @@ class vec3
 
         vec3() : vec3{Scalar(0), Scalar(0), Scalar(0)} {};
         vec3(const vec3&) = default;
+        /*!
+         * \brief Copy assign a vec3.
+         *
+         * \return reference
+         */
         vec3& operator=(const vec3&) = default;
+        /*!
+         * \brief Move assign a vec3.
+         *
+         * \return reference
+         */
         vec3& operator=(vec3&&) noexcept = default;
 
         /*!
          * \brief Implicit non-narrowing conversion between vec3<>
+         *
          * \tparam T
-         * \return
+         * \return converted vec3 constructed from the original x, y, z members.
          */
         template<typename T>
         explicit operator vec3<T>() { return vec3<T>(x, y, z); }
 
+        /*!
+         * \brief Templated constructor.
+         *
+         * If vec3<Scalar> can be constructed from a list of three numbers of type T, construct from vec3<T>.
+         * \tparam T source vector type.
+         * \param a source vector.
+         */
         template<typename T>
         explicit vec3(const T& a) : vec3(a.x, a.y, a.z) {};
 };
@@ -85,9 +110,11 @@ class vec3
 
 /*!
  * \brief Unary negation operator
+ *
  * \tparam Scalar underlying vector type
  * \param a input vector
  * \return (-a.x, -a.y, -a.z)
+ * \inlibraryapi
  */
 template<typename Scalar>
 inline vec3<Scalar> operator-(const vec3<Scalar>& a)
@@ -95,12 +122,30 @@ inline vec3<Scalar> operator-(const vec3<Scalar>& a)
     return vec3<Scalar>(-a.x, -a.y, -a.z);
 }
 
+/*!
+ * \brief Binary addition operator.
+ *
+ * \tparam Scalar
+ * \param a first vector
+ * \param b second vector
+ * \return resulting vector
+ * \inlibraryapi
+ */
 template<typename Scalar>
 inline vec3<Scalar> operator+(const vec3<Scalar>& a, const vec3<Scalar>& b)
 {
     return vec3<Scalar>(a.x + b.x, a.y + b.y, a.z + b.z);
 };
 
+/*!
+ * \brief Binary subtraction operator.
+ *
+ * \tparam Scalar
+ * \param a first vector
+ * \param b second vector
+ * \return resulting vector
+ * \inlibraryapi
+ */
 template<typename Scalar>
 inline vec3<Scalar> operator-(const vec3<Scalar>& a, const vec3<Scalar>& b)
 {
@@ -117,6 +162,7 @@ inline vec3<Scalar> operator-(const vec3<Scalar>& a, const vec3<Scalar>& b)
  * \return (a.x, a.y, a.z) * s
  *
  * Note that input scalar may be implicitly narrowed if higher precision than input vector.
+ * \inlibraryapi
  */
 template<typename T1, typename T2>
 inline vec3<T1> operator*(const vec3<T1>& a, const T2& s)
@@ -133,10 +179,11 @@ inline vec3<T1> operator*(const T2& s, const vec3<T1>& a)
  * \brief Vector division by scalar
  * \tparam Scalar underlying vector type
  * \param a input vector
- * \param b input scalar
+ * \param s input scalar
  * \return
  *
  * Note that input scalar may be implicitly narrowed if higher precision than input vector.
+ * \inlibraryapi
  */
 template<typename T1, typename T2>
 inline vec3<T1> operator/(const vec3<T1>& a, const T2& s)
@@ -152,6 +199,7 @@ inline vec3<T1> operator/(const vec3<T1>& a, const T2& s)
  * \param a first vector
  * \param b second vector
  * \return (a.x * b.x) + (a.y * b.y) + (a.z * b.z)
+ * \inlibraryapi
  */
 template<typename Scalar>
 inline Scalar dot(const vec3<Scalar>& a, const vec3<Scalar>& b)
@@ -166,11 +214,13 @@ inline Scalar dot(const vec3<Scalar>& a, const vec3<Scalar>& b)
  * \return magnitude of v
  * To specify the precision of the calculation and result, choose the output type template parameter.
  *
- * \Example
+ * Example
  *
  *     constexpr vec3<float> v{1,0,0};
  *     float magnitude = norm(v);
  *     double magnitude = norm<double>(v);
+ *
+ * \inlibraryapi
  */
 template<typename Scalar, typename Tout = Scalar>
 inline Tout norm(const vec3<Scalar>& v)
@@ -184,10 +234,12 @@ inline Tout norm(const vec3<Scalar>& v)
 
 /*!
  * \brief Equality comparison operator
+ *
  * \tparam Scalar
  * \param a
  * \param b
  * \return true if all elements of vectors are arithmetically equal.
+ * \inlibraryapi
  */
 template<typename S1, typename S2>
 bool operator==(const vec3<S1>& a, const vec3<S2>& b)
@@ -199,6 +251,15 @@ bool operator==(const vec3<S1>& a, const vec3<S2>& b)
 // Conversions
 //
 
+/*!
+ * \brief Convert to RVec
+ *
+ * \tparam Scalar
+ * \param v input vector.
+ * \return Copy to new array.
+ * TODO: Look into safe optimizations avoiding copies.
+ * \inlibraryapi
+ */
 template<typename Scalar>
 inline gmx::RVec as_Rvec(const vec3<Scalar>& v)
 {
@@ -223,6 +284,7 @@ inline gmx::RVec as_Rvec(const vec3<Scalar>& v)
  *
  * Helper function allows narrowing and mismatched types. Constructs a vec3<Scalar> from any x, y, and z that can be
  * implicitly converted to type Scalar.
+ * \inlibraryapi
  */
 template<typename Scalar, typename T1, typename T2, typename T3>
 inline constexpr vec3<Scalar> make_vec3(T1 x, T2 y, T3 z)

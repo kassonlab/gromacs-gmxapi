@@ -5,6 +5,12 @@
 #ifndef GMX_PULLING_RESTRAINTPOTENTIAL_H
 #define GMX_PULLING_RESTRAINTPOTENTIAL_H
 
+/*! \file
+ * \defgroup modules_pulling
+ * \brief Declare generic interface for restraint implementations.
+ *
+ */
+
 #include "vectortype.h"
 
 #include <memory>
@@ -88,7 +94,7 @@ class IRestraintPotential
          * \param r1 position of first site
          * \param r2 position of second site
          * \param t simulation time in picoseconds
-         * \return force vector to be applied by calling code.
+         * \return force vector and potential energy to be applied by calling code.
          */
         virtual PotentialPointData evaluate(vec3<real> r1,
                               vec3<real> r2,
@@ -154,7 +160,7 @@ class LegacyPuller : public IRestraintPotential
 } // end namespace gmx
 
 /*!
- * \brief Hold an arbitrary number of PullPotential objects.
+ * \brief Hold an arbitrary number of gmx::IRestraintPotential objects.
  */
 class PotentialContainer
 {
