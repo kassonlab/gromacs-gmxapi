@@ -8,14 +8,19 @@
 /*! \file
  * \brief Template header for 3D vector types and operations.
  *
- * Two reasons:
+ * Why?
  *
  * 1. Make data types and precision explicit and unambiguous.
  * 2. Provide an abstraction from storage method.
+ * 3. Avoid pointer dereferencing.
+ * 4. Avoid indexing and bounds-checking.
  *
  * These types should map easily to float3 (or float4) as in CUDA and other libraries,
  * as well as to arrays or even non-contiguous structures, at least insofar as
- * the compiler should be able to optimize away copies.
+ * the compiler should be able to optimize away copies. When it can't,
+ * a reinterpret_cast<>() in an inline helper function should do the trick.
+ * But the template nature of the type and inline operators should generally
+ * optimize away.
  *
  * Along these lines, the structures are intended to be short-lived handles
  * for convenience and strong typing of operations. Arrays of vec3 should not
@@ -250,21 +255,6 @@ bool operator==(const vec3<S1>& a, const vec3<S2>& b)
 //
 // Conversions
 //
-
-/*!
- * \brief Convert to RVec
- *
- * \tparam Scalar
- * \param v input vector.
- * \return Copy to new array.
- * TODO: Look into safe optimizations avoiding copies.
- * \inlibraryapi
- */
-template<typename Scalar>
-inline gmx::RVec as_Rvec(const vec3<Scalar>& v)
-{
-    return {v.x, v.y, v.z};
-}
 
 //
 // Helpers
