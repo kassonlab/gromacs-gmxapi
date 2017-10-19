@@ -75,6 +75,9 @@ PotentialPointData LegacyPuller::evaluate(vec3<real> r1,
                                           vec3<real> r2,
                                           double t)
 {
+    (void)(r1);
+    (void)(r2);
+    (void)(t);
     return {};
 }
 
