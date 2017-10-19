@@ -26,6 +26,7 @@
 // TODO: It's worth taking a look at how compilers handle iterative extraction of vec3 from Nx3 data in practice.
 
 #include <cmath>
+#include <cassert>
 #include "gromacs/math/vectypes.h"
 
 namespace gmx
@@ -160,11 +161,21 @@ inline Scalar dot(const vec3<Scalar>& a, const vec3<Scalar>& b)
 
 /*!
  * \brief Norm or magnitude of vector
+ *
+ * \param v input vector
+ * \return magnitude of v
+ * To specify the precision of the calculation and result, choose the output type template parameter.
+ *
+ * \Example
+ *
+ *     constexpr vec3<float> v{1,0,0};
+ *     float magnitude = norm(v);
+ *     double magnitude = norm<double>(v);
  */
-template<typename Scalar, typename Tout = double>
-inline Tout norm(const vec3<Scalar>& a)
+template<typename Scalar, typename Tout = Scalar>
+inline Tout norm(const vec3<Scalar>& v)
 {
-    return sqrt(dot(vec3<Tout>(a), vec3<Tout>(a)));
+    return sqrt(dot(vec3<Tout>(v), vec3<Tout>(v)));
 }
 
 //
