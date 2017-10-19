@@ -47,6 +47,9 @@ set(PULLING_SOURCES
     )
 set(LIBGROMACS_SOURCES ${LIBGROMACS_SOURCES} ${PULLING_SOURCES} PARENT_SCOPE)
 
+gmx_install_headers(restraintpotential.h
+                    vectortype.h)
+
 if (BUILD_TESTING)
     add_subdirectory(tests)
 endif()

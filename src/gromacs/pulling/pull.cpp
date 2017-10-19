@@ -47,6 +47,7 @@
 #include <string.h>
 
 #include <algorithm>
+#include <iostream>
 #include "gromacs/compat/make_unique.h"
 
 #include "gromacs/commandline/filenm.h"
@@ -67,6 +68,7 @@
 #include "gromacs/mdtypes/mdatom.h"
 #include "gromacs/pbcutil/pbc.h"
 #include "gromacs/pulling/pull_internal.h"
+#include "gromacs/pulling/restraintpotential.h"
 #include "gromacs/topology/mtop_lookup.h"
 #include "gromacs/topology/topology.h"
 #include "gromacs/utility/cstringutil.h"
@@ -1707,6 +1709,12 @@ real pull_potential(struct pull_t *pull, t_mdatoms *md, t_pbc *pbc,
         real dVdl = 0;
 
         pull_calc_coms(cr, pull, md, pbc, t, x, nullptr);
+
+        int counter = 0;
+        for (auto&& potential : *pull->container)
+        {
+            std::cout << counter++;
+        }
 
         for (int c = 0; c < pull->ncoord; c++)
         {

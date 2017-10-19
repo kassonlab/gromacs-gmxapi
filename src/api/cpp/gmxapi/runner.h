@@ -93,7 +93,7 @@ class IMDRunner
          */
         virtual std::shared_ptr<IMDRunner> initialize(std::shared_ptr<Context> context) = 0;
 
-        virtual void setRestraint(std::shared_ptr<gmx::RestraintPotential> puller) { (void)puller; throw ProtocolError("setRestraint not implemented for this class."); };
+        virtual void setRestraint(std::shared_ptr<gmx::IRestraintPotential> puller) { (void)puller; throw ProtocolError("setRestraint not implemented for this class."); };
 };
 
 /*!
@@ -152,7 +152,7 @@ class RunnerProxy : public IMDRunner, public std::enable_shared_from_this<Runner
 
         void setState(std::shared_ptr<IMDRunner> state);
 
-        void setRestraint(std::shared_ptr<gmx::RestraintPotential> puller) override;
+        void setRestraint(std::shared_ptr<gmx::IRestraintPotential> puller) override;
 
     private:
         /// bound task, if any

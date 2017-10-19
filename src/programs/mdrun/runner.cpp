@@ -1592,17 +1592,16 @@ int Mdrunner::mdrunner()
         // wrapped up in gmx::LegacyPullPack can be used.
         if (inputrec->bPull)
         {
-            // Only add the puller the first time the runner is invoked.
-            if (pullers_ == nullptr)
-            {
-                /* Initialize pull code structures */
-                inputrec->pull_work =
-                    init_pull(fplog, inputrec->pull, inputrec, nfile, fnm,
-                              mtop, cr, oenv, real(inputrec->fepvals->init_lambda),
-                              EI_DYNAMICS(inputrec->eI) && MASTER(cr), Flags.to_ulong());
-                auto legacyPullers = gmx::compat::make_unique<gmx::LegacyPullingPack>(inputrec->pull_work);
-                this->pullers_->addPotential(std::move(legacyPullers));
-            }
+            // TODO: move to constructor
+            /* Initialize pull code structures */
+            auto pull_work =
+                init_pull(fplog, inputrec->pull, inputrec, nfile, fnm,
+                          mtop, cr, oenv, real(inputrec->fepvals->init_lambda),
+                          EI_DYNAMICS(inputrec->eI) && MASTER(cr), Flags.to_ulong());
+            auto legacyPullers = gmx::compat::make_unique<gmx::LegacyPuller>(pull_work);
+            this->pullers_->addPotential(std::move(legacyPullers));
+            pull_work->container = this->pullers_.get();
+            inputrec->pull_work = pull_work;
         }
         // If we need an initialization hook, we can put it here.
         //pullers_->startRun();
@@ -1718,7 +1717,9 @@ int Mdrunner::mdrunner()
     return rc;
 }
 
-Mdrunner::Mdrunner()
+Mdrunner::Mdrunner() :
+    pullers_{std::make_shared<PotentialContainer>()}
+
 {
     cr = init_commrec();
     // oenv initialized by parse_commond_args
@@ -1789,7 +1790,7 @@ void Mdrunner::setTpx(std::shared_ptr<gmx::TpxState> newState)
     tpxState_ = std::move(newState);
 }
 
-void Mdrunner::addPullPotential(std::shared_ptr<gmx::RestraintPotential> puller)
+void Mdrunner::addPullPotential(std::shared_ptr<gmx::IRestraintPotential> puller)
 {
     pullers_->addPotential(std::move(puller));
 }

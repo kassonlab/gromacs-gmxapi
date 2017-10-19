@@ -70,7 +70,7 @@ namespace gmx
 {
 
 class TpxState; // defined in mdtypes/TpxState.h
-class RestraintPotential; // defined in pulling/pullpotential.h
+class IRestraintPotential; // defined in pulling/pullpotential.h
 
 /*! \libinternal \brief Runner object for supporting setup and execution of mdrun.
  *
@@ -258,7 +258,7 @@ class Mdrunner
          *
          * \param puller GROMACS-provided or custom pulling potential
          */
-        void addPullPotential(std::shared_ptr<gmx::RestraintPotential> puller);
+        void addPullPotential(std::shared_ptr<gmx::IRestraintPotential> puller);
 
         //! Called when thread-MPI spawns threads.
         t_commrec *spawnThreads(int numThreadsToLaunch);

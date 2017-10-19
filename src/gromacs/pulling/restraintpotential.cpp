@@ -13,13 +13,23 @@
 class PotentialContainer::Impl
 {
     public:
-        std::vector<std::shared_ptr<gmx::RestraintPotential>> pullers_;
+        std::vector<std::shared_ptr<gmx::IRestraintPotential>> pullers_;
 };
 
-void PotentialContainer::addPotential(std::shared_ptr<gmx::RestraintPotential> puller) noexcept
+void PotentialContainer::addPotential(std::shared_ptr<gmx::IRestraintPotential> puller) noexcept
 {
     assert(impl_ != nullptr);
     impl_->pullers_.emplace_back(std::move(puller));
+}
+
+PotentialContainer::RestraintIterator PotentialContainer::begin()
+{
+    return impl_->pullers_.begin();
+}
+
+PotentialContainer::RestraintIterator PotentialContainer::end()
+{
+    return impl_->pullers_.end();
 }
 
 PotentialContainer::PotentialContainer() :
@@ -32,34 +42,40 @@ PotentialContainer &PotentialContainer::operator=(PotentialContainer &&) noexcep
 
 PotentialContainer::PotentialContainer(PotentialContainer&&) noexcept = default;
 
-gmx::LegacyPullingPack::LegacyPullingPack(pull_t *pullWorkPointer) : pullWorkPointer_(pullWorkPointer)
+namespace gmx
+{
+
+LegacyPuller::LegacyPuller(pull_t *pullWorkPointer) : pullWorkPointer_(pullWorkPointer)
 {};
 
-gmx::LegacyPullingPack::LegacyPullingPack(const gmx::LegacyPullingPack &source) : LegacyPullingPack(source.pullWorkPointer_)
+LegacyPuller::LegacyPuller(const LegacyPuller &source) : LegacyPuller(source.pullWorkPointer_)
 {
 
 }
 
-gmx::LegacyPullingPack &gmx::LegacyPullingPack::operator=(const gmx::LegacyPullingPack &source)
+LegacyPuller &LegacyPuller::operator=(const LegacyPuller &source)
 {
     this->pullWorkPointer_ = source.pullWorkPointer_;
     return *this;
 }
 
-gmx::LegacyPullingPack::LegacyPullingPack(gmx::LegacyPullingPack &&old) noexcept : LegacyPullingPack(old.pullWorkPointer_)
+LegacyPuller::LegacyPuller(LegacyPuller &&old) noexcept : LegacyPuller(old.pullWorkPointer_)
 {
     old.pullWorkPointer_ = nullptr;
 }
 
-gmx::LegacyPullingPack &gmx::LegacyPullingPack::operator=(gmx::LegacyPullingPack &&old) noexcept
+LegacyPuller &LegacyPuller::operator=(LegacyPuller &&old) noexcept
 {
     this->pullWorkPointer_ = old.pullWorkPointer_;
     old.pullWorkPointer_ = nullptr;
     return *this;
 }
 
-gmx::vec3<real> gmx::RestraintPotential::calculateForce(gmx_unused gmx::vec3<real> r1,
-                                                        gmx_unused gmx::vec3<real> r2)
+PotentialPointData LegacyPuller::evaluate(vec3<real> r1,
+                                          vec3<real> r2,
+                                          double t)
 {
-    return gmx::vec3<real>();
+    return {};
 }
+
+} // end namespace gmx

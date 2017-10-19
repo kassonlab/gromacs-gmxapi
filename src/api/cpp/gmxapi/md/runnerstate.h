@@ -125,7 +125,7 @@ class RunningMDRunnerState : public IMDRunner
 
         };
 
-        void setRestraint(std::shared_ptr<gmx::RestraintPotential> puller) override;
+        void setRestraint(std::shared_ptr<gmx::IRestraintPotential> puller) override;
 
     private:
         RunningMDRunnerState();

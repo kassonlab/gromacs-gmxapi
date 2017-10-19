@@ -8,6 +8,7 @@
 #include "vectortype.h"
 
 #include <memory>
+#include <vector>
 
 #include "gromacs/math/vectypes.h"
 //#include "gromacs/mdtypes/pull-params.h"
@@ -31,7 +32,40 @@ namespace gmx
 using detail::vec3;
 
 /*!
- * \brief Base class for providers of pull_potential()
+ * \brief Typed unitless time in GROMACS.
+ *
+ * It may be helpful to explicitly specify the units of time.
+ *
+ * Example:
+ *
+ *     gmx_time time;
+ *     // float t = time; // error: no implicit conversion because units are ambiguous.
+ *     using gmx::time::ps;
+ *     float t = time * ps;
+ *
+ * TODO: If this persists, it will be moved from this header.
+ */
+struct gmx_time
+{
+    using float_type = real;
+    float_type t;
+};
+
+/*!
+ * \brief Structure to hold the results of IRestraintPotential::evaluate().
+ */
+class PotentialPointData
+{
+    public:
+        vec3<real> force{};
+        real energy{0.0};
+};
+
+/*!
+ * \brief Interface for Restraint potentials.
+ *
+ * Derive from this interface class to implement a restraint potential. The derived class
+ * must implement the evaluate() member function that produces a PotentialPointData instance.
  *
  * For a set of \f$n\f$ coordinates, generate a force field according to a
  * scalar potential that is a fun. \f$F_i = - \nabla_{q_i} \Phi (q_0, q_1, ... q_n; t)\f$
@@ -41,22 +75,24 @@ using detail::vec3;
  * The atom indices appearing in the potential are provided by the user before the
  * simulation is run. The potential function is evaluated with a time argument
  * and can be updated during the simulation.
- *
  */
-class RestraintPotential
+class IRestraintPotential
 {
     public:
-        virtual ~RestraintPotential() = default;
+        virtual ~IRestraintPotential() = default;
 
         /*!
-         * \brief Calculate a force vector according to two input positions.
+         * \brief Calculate a force vector according to two input positions at a given time.
          *
          * If not overridden by derived class, returns a zero vector.
          * \param r1 position of first site
          * \param r2 position of second site
+         * \param t simulation time in picoseconds
          * \return force vector to be applied by calling code.
          */
-        virtual vec3<real> calculateForce(vec3<real> r1, vec3<real> r2);
+        virtual PotentialPointData evaluate(vec3<real> r1,
+                              vec3<real> r2,
+                              double t) = 0;
 };
 
 /*!
@@ -66,47 +102,52 @@ class RestraintPotential
  * schemes into a single pulling class. If the input record indicates a pulling protocol,
  * the RestraintPotential may use the associated resources (pull_t, pull_params_t, ...).
  */
-class LegacyPullingPack final : public RestraintPotential
+class LegacyPuller : public IRestraintPotential
 {
     public:
-        ~LegacyPullingPack() override = default;
+        PotentialPointData evaluate(vec3<real> r1,
+                                    vec3<real> r2,
+                                    double t) override;
+
+        ~LegacyPuller() = default;
 
         /*!
          * \brief Copy the metadata, but manage the same internals.
          *
          * \param source object to copy
          */
-        LegacyPullingPack(const LegacyPullingPack& source);
+        LegacyPuller(const LegacyPuller& source);
 
         /*!
          * \brief Copy the metadata, but manage the same internals.
          *
          * \param source object to copy
          */
-        LegacyPullingPack& operator=(const LegacyPullingPack& source);
+        LegacyPuller& operator=(const LegacyPuller& source);
 
         /*!
          * \brief Move ownership of pull code manager.
          *
          * \param old object to move from.
          */
-        LegacyPullingPack(LegacyPullingPack&& old) noexcept;
+        LegacyPuller(LegacyPuller&& old) noexcept;
 
         /*!
          * \brief Move ownership of pull code manager.
          *
          * \param old move ownership from rhs of operation.
          */
-        LegacyPullingPack& operator=(LegacyPullingPack&& old) noexcept;
+        LegacyPuller& operator=(LegacyPuller&& old) noexcept;
 
         /*!
          * \brief Construct manager for legacy pulling code.
          *
          * \param pullWorkPointer pointer to struct created by init_pull() and managed by caller.
          */
-        explicit LegacyPullingPack(pull_t* pullWorkPointer);
+        explicit LegacyPuller(pull_t* pullWorkPointer);
 
     private:
+        // borrow access to pull_t owned by calling code.
         struct pull_t* pullWorkPointer_;
 };
 
@@ -136,7 +177,12 @@ class PotentialContainer
          *
          * \param puller GROMACS-provided or custom pulling potential
          */
-        void addPotential(std::shared_ptr<gmx::RestraintPotential> puller) noexcept;
+        void addPotential(std::shared_ptr<gmx::IRestraintPotential> puller) noexcept;
+
+        using RestraintIterator = std::vector<std::shared_ptr<gmx::IRestraintPotential>>::iterator;
+        RestraintIterator begin();
+        RestraintIterator end();
+
     private:
         /// Private implementation class.
         class Impl;

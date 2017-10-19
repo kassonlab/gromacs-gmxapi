@@ -169,6 +169,8 @@ typedef struct {
 }
 pull_comm_t;
 
+
+class PotentialContainer;
 /*!
  * \brief Pull work struct
  */
@@ -209,6 +211,8 @@ struct pull_t
     int                numUnregisteredExternalPotentials;
     /*! \brief counter... */
     int                numExternalPotentialsStillToBeAppliedThisStep;
+
+    PotentialContainer* container; /*!< \brief Set by runner, which owns the container */
 };
 
 /*! \endcond */
