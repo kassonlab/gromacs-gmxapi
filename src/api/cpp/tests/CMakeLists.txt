@@ -16,10 +16,12 @@ configure_file(data/topol.tpr topol.tpr COPYONLY)
 configure_file(test_runner.in.cpp test_runner.cpp)
 
 gmx_add_unit_test(GmxapiExternalInterfaceTests gmxapi-test
+                  moduletest.cpp
                   test_md.cpp
                   test_runner.cpp
+                  test_setup.cpp
                   test_status.cpp
-                  test_system.cpp
+#                  test_system.cpp
                   test_version_helpers.cpp
                   )
 

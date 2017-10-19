@@ -1,14 +1,14 @@
+#include "gmxapi/context.h"
 #include "gmxapi/runner.h"
 #include "gmxapi/md/runnerstate.h"
 #include "gmxapi/md.h"
+#include "gmxapi/system.h"
 
 #include "gromacs/compat/make_unique.h"
 #include "gromacs/mdtypes/TpxState.h"
+#include "gromacs/pulling/restraintpotential.h"
 
-#include "gmxapi/system.h"
-#include "gmxapi/context.h"
 #include <gtest/gtest.h>
-#include <gromacs/pulling/restraintpotential.h>
 
 namespace
 {
