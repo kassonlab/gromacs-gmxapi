@@ -14,6 +14,8 @@
  * 2. Provide an abstraction from storage method.
  * 3. Avoid pointer dereferencing.
  * 4. Avoid indexing and bounds-checking.
+ * 5. Avoid confusion for C++ novices accustomed to zero-based indexing.
+ * 6. Allow more compiler optimizations.
  *
  * These types should map easily to float3 (or float4) as in CUDA and other libraries,
  * as well as to arrays or even non-contiguous structures, at least insofar as

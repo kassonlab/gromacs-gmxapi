@@ -41,6 +41,12 @@ namespace gmx
 {
 
 /*!
+ * \brief Provide a vector type name with a more stable interface than RVec and a more stable
+ * implementation than vec3<>.
+ */
+using Vector = ::gmx::detail::vec3<real>;
+
+/*!
  * \brief Typed unitless time in GROMACS.
  *
  * It may be helpful to explicitly specify the units of time.
@@ -69,13 +75,10 @@ struct gmx_time
 class PotentialPointData
 {
     public:
-
-        using detail::vec3;
-
         /*!
          * \brief Force vector calculated for first position.
          */
-        vec3<real> force;
+        Vector force;
         /*!
          * \brief Potential energy calculated for this interaction.
          */
@@ -85,7 +88,7 @@ class PotentialPointData
         /*!
          * \brief Initialize a new data structure.
          */
-        PotentialPointData() : PotentialPointData{vec3<real>(), real(0.0)}
+        PotentialPointData() : PotentialPointData{Vector(), real(0.0)}
         {};
 
         /*!
@@ -98,7 +101,7 @@ class PotentialPointData
          * If this calculation is in a subclass of gmx::RestraintPotential,
          * you should be able to use the make_force_vec() helper function.
          */
-        PotentialPointData(const vec3<real>& f, const real e) :
+        PotentialPointData(const Vector& f, const real e) :
                 force{f},
                 energy{e}
         {};
@@ -141,8 +144,6 @@ class PotentialPointData
 class IRestraintPotential
 {
     public:
-        using detail::vec3;
-
         virtual ~IRestraintPotential() = default;
 
         /*!
@@ -154,8 +155,8 @@ class IRestraintPotential
          * \param t simulation time in picoseconds
          * \return force vector and potential energy to be applied by calling code.
          */
-        virtual PotentialPointData evaluate(vec3<real> r1,
-                              vec3<real> r2,
+        virtual PotentialPointData evaluate(Vector r1,
+                              Vector r2,
                               double t) = 0;
 };
 
@@ -180,8 +181,8 @@ class RestraintPotential : public IRestraintPotential
     public:
 
         /// template interface
-        PotentialPointData calculate(vec3 <real> r1,
-                                     vec3 <real> r2,
+        PotentialPointData calculate(Vector r1,
+                                     Vector r2,
                                      double t);
         /*! \cond internal
          * \brief IRestraintPotential interface
@@ -190,8 +191,8 @@ class RestraintPotential : public IRestraintPotential
          * is necessarily in the template header, this interface is less stable
          * and restraint potentials should be coded using the public interface as described.
          */
-        PotentialPointData evaluate(vec3<real> r1,
-                                    vec3<real> r2,
+        PotentialPointData evaluate(Vector r1,
+                                    Vector r2,
                                     double t) override;
         /*! \endcond */
 
@@ -218,16 +219,16 @@ class RestraintPotential : public IRestraintPotential
  * \ingroup module_restraint
  */
 template<class T>
-PotentialPointData RestraintPotential<T>::evaluate(vec3<real> r1,
-                                                vec3<real> r2,
+PotentialPointData RestraintPotential<T>::evaluate(Vector r1,
+                                                Vector r2,
                                                 double t)
 {
     return static_cast<T&>(*this).calculate(r1, r2, t);
 }
 
 template<class T>
-PotentialPointData RestraintPotential<T>::calculate(vec3 <real> r1,
-                                                    vec3 <real> r2,
+PotentialPointData RestraintPotential<T>::calculate(Vector r1,
+                                                    Vector r2,
                                                     double t)
 {
     (void)(r1);
@@ -237,7 +238,7 @@ PotentialPointData RestraintPotential<T>::calculate(vec3 <real> r1,
 }
 
 template <class T>
-vec3<real> RestraintPotential<T>::force(double t) const
+Vector RestraintPotential<T>::force(double t) const
 {
     (void)(t);
     return data_.force;
@@ -262,8 +263,8 @@ real RestraintPotential<T>::energy(double t) const
 class LegacyPuller : public IRestraintPotential
 {
     public:
-        PotentialPointData evaluate(vec3<real> r1,
-                                    vec3<real> r2,
+        PotentialPointData evaluate(Vector r1,
+                                    Vector r2,
                                     double t) override;
 
         ~LegacyPuller() = default;
