@@ -17,10 +17,10 @@ struct gmx_mtop_t;
 namespace gmx
 {
 
-class tpx_state final
+class TpxState final
 {
     private:
-        // tpx_state is currently always file-backed.
+        // TpxState is currently always file-backed.
         std::string filename_;
         std::shared_ptr<t_inputrec>      inputrecInstance_;
         std::shared_ptr<t_state>         stateInstance_;
@@ -29,23 +29,23 @@ class tpx_state final
         std::atomic<bool>                      dirty_;
         mutable std::mutex                              exclusive_;
     public:
-        tpx_state();
-        ~tpx_state();
+        TpxState();
+        ~TpxState();
 
         // Copy semantics TBD. In addition to unclear copy semantics of members, probably need to use setters to allow
         // for notifications of data changs.
-        tpx_state(const tpx_state&) = delete;
-        tpx_state& operator=(const tpx_state&) = delete;
+        TpxState(const TpxState&) = delete;
+        TpxState& operator=(const TpxState&) = delete;
 
         // Move should be okay
-        tpx_state(tpx_state&& old) noexcept;
-        tpx_state& operator=(tpx_state&&) noexcept;
+        TpxState(TpxState&& old) noexcept;
+        TpxState& operator=(TpxState&&) noexcept;
 
-        static std::unique_ptr<tpx_state> initializeFromFile(const char* filename);
-        static std::unique_ptr<tpx_state> initializeFromFile(const std::string& filename);
+        static std::unique_ptr<TpxState> initializeFromFile(const char* filename);
+        static std::unique_ptr<TpxState> initializeFromFile(const std::string& filename);
 
         // Takes ownership of arguments to be members of new object.
-        static std::unique_ptr<tpx_state>
+        static std::unique_ptr<TpxState>
         initializeFromWrappers(std::unique_ptr<t_inputrec> inputRecord,
                                std::unique_ptr<t_state> state,
                                std::unique_ptr<gmx_mtop_t> mtop);

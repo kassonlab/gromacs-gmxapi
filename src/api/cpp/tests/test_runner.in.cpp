@@ -5,7 +5,7 @@
 #include "gmxapi/system.h"
 
 #include "gromacs/compat/make_unique.h"
-#include "gromacs/mdtypes/TpxState.h"
+#include "gromacs/mdtypes/tpxstate.h"
 #include "gromacs/restraint/restraintpotential.h"
 
 #include <gtest/gtest.h>

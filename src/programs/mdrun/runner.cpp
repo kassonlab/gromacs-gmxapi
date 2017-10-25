@@ -103,7 +103,7 @@
 #include "gromacs/mdtypes/observableshistory.h"
 #include "gromacs/mdtypes/state.h"
 #include "gromacs/mdtypes/swaphistory.h"
-#include "gromacs/mdtypes/TpxState.h"
+#include "gromacs/mdtypes/tpxstate.h"
 #include "gromacs/pbcutil/pbc.h"
 #include "gromacs/pulling/pull.h"
 #include "gromacs/restraint/restraintpotential.h"

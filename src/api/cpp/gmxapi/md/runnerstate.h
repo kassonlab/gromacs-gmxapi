@@ -15,7 +15,7 @@
 //    class TpxState;
 //}
 // For now, I prefer the compiler type-checking of the coupled code.
-#include "gromacs/mdtypes/TpxState.h"
+#include "gromacs/mdtypes/tpxstate.h"
 
 namespace gmxapi
 {

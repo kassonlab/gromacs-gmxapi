@@ -9,7 +9,7 @@
 #include "gromacs/utility.h"
 #include "programs/mdrun/runner.h"
 #include "gromacs/compat/make_unique.h"
-#include "gromacs/mdtypes/TpxState.h"
+#include "gromacs/mdtypes/tpxstate.h"
 #include "gromacs/mdtypes/inputrec.h"
 
 #include "gmxapi/exceptions.h"
