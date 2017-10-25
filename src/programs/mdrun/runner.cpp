@@ -53,6 +53,7 @@
 #include <string>
 
 #include <algorithm>
+#include <gromacs/restraint/manager.h>
 #include "gromacs/utility/arraysize.h"
 #include "gromacs/mdrunutility/handlerestart.h"
 
@@ -1437,8 +1438,6 @@ int Mdrunner::mdrunner()
         /* Initiate forcerecord */
         fr                 = mk_forcerec();
         fr->forceProviders = mdModules.initForceProviders();
-        // TODO: revisit this...
-        fr->pullPotentialContainerPointer_ = static_cast<void*>(pullers_.get());
         init_forcerec(fplog, mdlog, fr, fcd,
                       inputrec, mtop, cr, box,
                       opt2fn("-table", nfile, fnm),
@@ -1592,16 +1591,15 @@ int Mdrunner::mdrunner()
         // wrapped up in gmx::LegacyPullPack can be used.
         if (inputrec->bPull)
         {
-            // TODO: move to constructor
+            // TODO: move to constructor when initializing runner is decoupled from reading TPR.
             /* Initialize pull code structures */
             auto pull_work =
                 init_pull(fplog, inputrec->pull, inputrec, nfile, fnm,
                           mtop, cr, oenv, real(inputrec->fepvals->init_lambda),
                           EI_DYNAMICS(inputrec->eI) && MASTER(cr), Flags.to_ulong());
             auto legacyPullers = gmx::compat::make_unique<gmx::LegacyPuller>(pull_work);
-//            this->pullers_->addPotential(std::move(legacyPullers));
-            pull_work->container = this->pullers_.get();
-            inputrec->pull_work = pull_work;
+            auto restraints = gmx::restraint::Manager::instance();
+            restraints->add(std::move(legacyPullers), "old");
         }
         // If we need an initialization hook, we can put it here.
         //pullers_->startRun();
@@ -1653,7 +1651,8 @@ int Mdrunner::mdrunner()
 
         if (inputrec->bPull)
         {
-            finish_pull(inputrec->pull_work);
+            auto puller = gmx::restraint::Manager::instance();
+            puller->finish();
         }
 
     }
@@ -1717,10 +1716,10 @@ int Mdrunner::mdrunner()
     return rc;
 }
 
-Mdrunner::Mdrunner() :
-    pullers_{std::make_shared<PotentialContainer>()}
-
+Mdrunner::Mdrunner()
 {
+    restraintManager_ = ::gmx::restraint::Manager::instance();
+
     cr = init_commrec();
     // oenv initialized by parse_commond_args
 
@@ -1790,9 +1789,11 @@ void Mdrunner::setTpx(std::shared_ptr<gmx::TpxState> newState)
     tpxState_ = std::move(newState);
 }
 
-void Mdrunner::addPullPotential(std::shared_ptr<gmx::IRestraintPotential> puller)
+void Mdrunner::addPullPotential(std::shared_ptr<gmx::IRestraintPotential> puller,
+                                std::string name)
 {
-    pullers_->addPotential(std::move(puller));
+    assert(restraintManager_ != nullptr);
+    restraintManager_->add(std::move(puller), name);
 }
 
 } // namespace gmx

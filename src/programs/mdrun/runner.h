@@ -69,6 +69,12 @@ class PotentialContainer; // // defined in pulling/pullpotential.h
 namespace gmx
 {
 
+// Todo: move to forward declaration headers...
+namespace restraint
+{
+class Manager;
+}
+
 class TpxState; // defined in mdtypes/TpxState.h
 class IRestraintPotential; // defined in pulling/pullpotential.h
 
@@ -199,8 +205,7 @@ class Mdrunner
         //! Handle to communication data structure.
         t_commrec                       *cr;
 
-        std::shared_ptr<PotentialContainer> pullers_;
-
+        std::shared_ptr<restraint::Manager> restraintManager_{nullptr};
         std::shared_ptr<TpxState>       tpxState_{nullptr};
 //        mutable std::mutex            stateAccess;
 
@@ -257,8 +262,10 @@ class Mdrunner
          * \brief Add a pulling potential to be evaluated during integration.
          *
          * \param puller GROMACS-provided or custom pulling potential
+         * \param name User-friendly plain-text name to uniquely identify the puller
          */
-        void addPullPotential(std::shared_ptr<gmx::IRestraintPotential> puller);
+        void addPullPotential(std::shared_ptr<gmx::IRestraintPotential> puller,
+                              std::string name);
 
         //! Called when thread-MPI spawns threads.
         t_commrec *spawnThreads(int numThreadsToLaunch);

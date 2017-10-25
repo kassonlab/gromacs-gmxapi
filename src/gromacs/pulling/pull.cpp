@@ -192,7 +192,9 @@ static void pull_print_coord_dr(FILE *out, const pull_coord_work_t *pcrd,
     }
 }
 
-static void pull_print_x(FILE *out, struct pull_t *pull, double t)
+static void pull_print_x(FILE *out,
+                         const pull_t *pull,
+                         double t)
 {
     int c;
 
@@ -228,7 +230,9 @@ static void pull_print_x(FILE *out, struct pull_t *pull, double t)
     fprintf(out, "\n");
 }
 
-static void pull_print_f(FILE *out, struct pull_t *pull, double t)
+static void pull_print_f(FILE *out,
+                         const pull_t *pull,
+                         double t)
 {
     int c;
 
@@ -241,7 +245,9 @@ static void pull_print_f(FILE *out, struct pull_t *pull, double t)
     fprintf(out, "\n");
 }
 
-void pull_print_output(struct pull_t *pull, gmx_int64_t step, double time)
+void pull_print_output(const pull_t *pull,
+                       gmx_int64_t step,
+                       double time)
 {
     GMX_ASSERT(pull->numExternalPotentialsStillToBeAppliedThisStep == 0, "pull_print_output called before all external pull potentials have been applied");
 

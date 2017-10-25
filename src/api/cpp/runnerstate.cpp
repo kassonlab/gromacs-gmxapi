@@ -229,7 +229,8 @@ void RunningMDRunnerState::registerMDBuilder(std::unique_ptr<MDBuilder> builder)
 
 void RunningMDRunnerState::setRestraint(std::shared_ptr<gmx::IRestraintPotential> puller)
 {
-    impl_->runner_->addPullPotential(puller);
+    impl_->runner_->addPullPotential(puller,
+                                     std::string());
 }
 
 

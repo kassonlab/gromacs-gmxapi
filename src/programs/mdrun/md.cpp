@@ -50,6 +50,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <gromacs/restraint/manager.h>
 
 #include "thread_mpi/threads.h"
 
@@ -1676,7 +1677,8 @@ double gmx::do_md(FILE *fplog, t_commrec *cr, const gmx::MDLogger &mdlog,
 
             if (ir->bPull)
             {
-                pull_print_output(ir->pull_work, step, t);
+                ::gmx::restraint::Manager::instance()->print(step, t);
+                //pull_print_output(ir->pull_work, step, t);
             }
 
             if (do_per_step(step, ir->nstlog))

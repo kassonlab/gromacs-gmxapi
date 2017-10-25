@@ -62,6 +62,7 @@
 #include "gromacs/mdtypes/state.h"
 #include "gromacs/pbcutil/pbc.h"
 #include "gromacs/pulling/pull.h"
+#include "gromacs/restraint/manager.h"
 #include "gromacs/topology/mtop_util.h"
 #include "gromacs/utility/arraysize.h"
 #include "gromacs/utility/fatalerror.h"
@@ -274,7 +275,8 @@ t_mdebin *init_mdebin(ener_file_t       fp_ene,
         }
         else if (i == F_COM_PULL)
         {
-            md->bEner[i] = (ir->bPull && pull_have_potential(ir->pull_work));
+            auto puller = gmx::restraint::Manager::instance();
+            md->bEner[i] = (ir->bPull && puller->contributesEnergy());
         }
         else if (i == F_ECONSERVED)
         {

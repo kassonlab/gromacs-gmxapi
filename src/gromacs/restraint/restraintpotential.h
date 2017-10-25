@@ -331,6 +331,9 @@ class LegacyPuller
          */
         explicit LegacyPuller(pull_t* pullWorkPointer);
 
+        struct pull_t* getRaw();
+        const struct pull_t* getRaw() const;
+
     private:
         // borrow access to pull_t owned by calling code.
         struct pull_t* pullWorkPointer_;

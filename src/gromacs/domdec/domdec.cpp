@@ -47,6 +47,7 @@
 #include <string.h>
 
 #include <algorithm>
+#include <gromacs/restraint/manager.h>
 
 #include "gromacs/domdec/domdec_network.h"
 #include "gromacs/domdec/ga2la.h"
@@ -9737,7 +9738,8 @@ void dd_partition_system(FILE                *fplog,
     if (ir->bPull)
     {
         /* Update the local pull groups */
-        dd_make_local_pull_groups(cr, ir->pull_work, mdatoms);
+        gmx::restraint::Manager::instance()->makeLocalGroups(cr, mdatoms);
+//        dd_make_local_pull_groups(cr, ir->pull_work, mdatoms);
     }
 
     if (ir->bRot)

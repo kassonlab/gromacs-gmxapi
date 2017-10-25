@@ -356,7 +356,6 @@ struct t_inputrec
     /* COM pulling data */
     gmx_bool              bPull;             /* Do we do COM pulling?                        */
     struct pull_params_t *pull;              /* The data for center of mass pulling          */
-    struct pull_t        *pull_work;         /* The COM pull force calculation data structure; TODO this pointer should live somewhere else */
 
     /* Enforced rotation data */
     gmx_bool                 bRot;           /* Calculate enforced rotation potential(s)?    */

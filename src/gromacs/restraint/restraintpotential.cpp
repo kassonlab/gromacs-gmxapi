@@ -89,4 +89,14 @@ PotentialPointData LegacyPuller::calculate(Vector r1,
     return {};
 }
 
+struct pull_t *LegacyPuller::getRaw()
+{
+    return pullWorkPointer_;
+}
+
+const struct pull_t *LegacyPuller::getRaw() const
+{
+    return pullWorkPointer_;
+}
+
 } // end namespace gmx

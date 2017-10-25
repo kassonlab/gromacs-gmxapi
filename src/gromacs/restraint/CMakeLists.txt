@@ -35,7 +35,7 @@
 add_library(restraint OBJECT
             restraintpotential.h
             restraintpotential.cpp
-            vectortype.h)
+            vectortype.h manager.cpp manager.h)
 
 set(LIBGROMACS_SOURCES ${LIBGROMACS_SOURCES} $<TARGET_OBJECTS:restraint> PARENT_SCOPE)
 

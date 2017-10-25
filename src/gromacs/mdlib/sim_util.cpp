@@ -93,6 +93,7 @@
 #include "gromacs/pbcutil/pbc.h"
 #include "gromacs/pulling/pull.h"
 #include "gromacs/pulling/pull_rotation.h"
+#include "gromacs/restraint/manager.h"
 #include "gromacs/timing/cyclecounter.h"
 #include "gromacs/timing/gpu_timing.h"
 #include "gromacs/timing/wallcycle.h"
@@ -269,9 +270,9 @@ static void pull_potential_wrapper(t_commrec *cr,
                                    real *lambda,
                                    double t,
                                    gmx_wallcycle_t wcycle,
-                                   int pbcType,
-                                   pull_t *puller)
+                                   int pbcType)
 {
+    pull_t* puller = gmx::restraint::Manager::instance()->getRaw();
     t_pbc  pbc;
     real   dvdl;
 
@@ -1148,10 +1149,11 @@ void do_force_cutsVERLET(FILE *fplog, t_commrec *cr,
         clear_rvec(fr->vir_diag_posres);
     }
 
-    if (inputrec->bPull && pull_have_constraint(inputrec->pull_work))
+    if (inputrec->bPull)
     {
-        clear_pull_forces(inputrec->pull_work);
+        gmx::restraint::Manager::instance()->clearConstraintForces();
     }
+    gmx::restraint::Manager::instance()->clearConstraintForces();
     // Do we need a RestraintPotential hook here?
 
     /* We calculate the non-bonded forces, when done on the CPU, here.
@@ -1419,13 +1421,12 @@ void do_force_cutsVERLET(FILE *fplog, t_commrec *cr,
         }
     }
 
-    if (inputrec->bPull && pull_have_potential(inputrec->pull_work))
+    if (inputrec->bPull && gmx::restraint::Manager::instance()->contributesEnergy())
     {
         /* Since the COM pulling is always done mass-weighted, no forces are
          * applied to vsites and this call can be done after vsite spreading.
          */
-        pull_potential_wrapper(cr, box, x, f, vir_force, mdatoms, enerd, lambda, t, wcycle, inputrec->ePBC,
-                               inputrec->pull_work);
+        pull_potential_wrapper(cr, box, x, f, vir_force, mdatoms, enerd, lambda, t, wcycle, inputrec->ePBC);
     }
 
     /* Add the forces from enforced rotation potentials (if any) */
@@ -1715,9 +1716,9 @@ void do_force_cutsGROUP(FILE *fplog, t_commrec *cr,
 
         clear_rvec(fr->vir_diag_posres);
     }
-    if (inputrec->bPull && pull_have_constraint(inputrec->pull_work))
+    if (inputrec->bPull)
     {
-        clear_pull_forces(inputrec->pull_work);
+        gmx::restraint::Manager::instance()->clearConstraintForces();
     }
 
     /* update QMMMrec, if necessary */
@@ -1802,10 +1803,9 @@ void do_force_cutsGROUP(FILE *fplog, t_commrec *cr,
         }
     }
 
-    if (inputrec->bPull && pull_have_potential(inputrec->pull_work))
+    if (inputrec->bPull && gmx::restraint::Manager::instance()->contributesEnergy())
     {
-        pull_potential_wrapper(cr, box, x, f, vir_force, mdatoms, enerd, lambda, t, wcycle, inputrec->ePBC,
-                               inputrec->pull_work);
+        pull_potential_wrapper(cr, box, x, f, vir_force, mdatoms, enerd, lambda, t, wcycle, inputrec->ePBC);
     }
 
     /* Add the forces from enforced rotation potentials (if any) */
