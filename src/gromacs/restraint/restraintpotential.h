@@ -2,8 +2,8 @@
 // Created by Eric Irrgang on 9/23/17.
 //
 
-#ifndef GMX_PULLING_RESTRAINTPOTENTIAL_H
-#define GMX_PULLING_RESTRAINTPOTENTIAL_H
+#ifndef GROMACS_RESTRAINT_RESTRAINTPOTENTIAL_H
+#define GROMACS_RESTRAINT_RESTRAINTPOTENTIAL_H
 
 /*!
  * \defgroup module_restraint MD restraints
@@ -20,10 +20,9 @@
 
 #include <memory>
 #include <vector>
+#include <functional>
 
 #include "gromacs/math/vectypes.h"
-//#include "gromacs/mdtypes/pull-params.h"
-//#include "gromacs/pulling/pull_internal.h"
 #include "gromacs/utility/basedefinitions.h"
 #include "gromacs/utility/real.h"
 
@@ -43,6 +42,11 @@ namespace gmx
 /*!
  * \brief Provide a vector type name with a more stable interface than RVec and a more stable
  * implementation than vec3<>.
+ *
+ * \ingroup module_restraint
+ *
+ * \internal
+ * Type alias is used at namespace level
  */
 using Vector = ::gmx::detail::vec3<real>;
 
@@ -53,7 +57,7 @@ using Vector = ::gmx::detail::vec3<real>;
  *
  * Example:
  *
- *     gmx_time time;
+ *     Time time;
  *     // float t = time; // error: no implicit conversion because units are ambiguous.
  *     using gmx::time::ps;
  *     float t = time * ps;
@@ -61,7 +65,7 @@ using Vector = ::gmx::detail::vec3<real>;
  * TODO: If this persists, it will be moved from this header.
  * \ingroup module_restraint
  */
-struct gmx_time
+struct Time
 {
     using float_type = real;
     float_type t;
@@ -107,7 +111,39 @@ class PotentialPointData
         {};
 };
 
+/*! \libinternal
+ * \brief Library interface for Restraint potentials.
+ *
+ * Classes implementing IRestraint allow Restraints to be registered with the MD simulation.
+ * To implement the interface, a class provides a `getEvaluator()` method that returns a
+ * function object for a call signature `std::function<PotentialPointData(Vector, Vector, Time)>`.
+ *
+ * This interface is a library detail. Code providing Restraint potentials should not implement
+ * IRestraintPotential directly, but should specialize the RestraintPotential template with an
+ * overload of the calculate() method.
+ * \ingroup module_restraint
+ */
+class IRestraint
+{
+    public:
+        /// \cond
+        virtual ~IRestraint() = default;
+        /// \endcond
 
+        /// \cond internal
+        /*!
+         * \brief Provide a function object to evaluate a pairwise restraint.
+         *
+         * Defines the library-level interface between the restraint management code and restraint classes.
+         * Restraint potentials themselves should be implemented with the more
+         * stable interface defined by gmx::Restraint.
+         *
+         * \return Function object to call when evaluating each restraint.
+         *
+         */
+        virtual std::function<PotentialPointData(const Vector&, const Vector&, Time)> getEvaluator() = 0;
+        /// \endcond
+};
 
 /*!
  * \brief Interface for Restraint potentials.
@@ -160,96 +196,87 @@ class IRestraintPotential
                               double t) = 0;
 };
 
-
 /*!
- * \brief Allow easy implementation of restraint potentials
+ * \brief Allow stable implementation of restraint potentials.
  *
  * \tparam T implementation type
  *
- * Implementation of type T uses RestraintPotential<T> as a mix-in. E.g.
+ * Implementation of a potential is encapsulated in class T. This template
+ * then serves to "mix in from below" the functionality to serve as a Restraint
+ * in the MD code.
  *
- *     class MyRestraint : public RestraintPotential<T>
- *     {
- *         // ...
- *     }
+ * To implement a restraint,
+ *
+ * 1. Write a class with a member function called `calculate` that returns a PotentialPointData object and that uses one of the supported parameter lists.
+ * 2. Instantiate the RestraintPotential template specialization for the class
+ *    by registering or exporting it for access by a user.
+ *
+ * The most complete call signature available for a `calculate` function is
+ *
+ *     PotentialPointData calculate(const Vector& position1, const Vector& position2, Time t);
+ *
+ * Internally, template matching is used to derive type traits with which to
+ * tag the restraint class so that an appropriate function call can be dispatched.
  *
  * \ingroup module_restraint
  */
 template<class T>
-class RestraintPotential : public IRestraintPotential
+class RestraintPotential : public IRestraint, public T
 {
     public:
+        std::function<PotentialPointData(const Vector &,
+                                         const Vector &,
+                                         Time)> getEvaluator() override;
 
-        /// template interface
-        PotentialPointData calculate(Vector r1,
-                                     Vector r2,
-                                     double t);
-        /*! \cond internal
-         * \brief IRestraintPotential interface
-         *
-         * Implements the interface for MD force evaluation. Though the definition
-         * is necessarily in the template header, this interface is less stable
-         * and restraint potentials should be coded using the public interface as described.
-         */
-        PotentialPointData evaluate(Vector r1,
-                                    Vector r2,
-                                    double t) override;
-        /*! \endcond */
 
-    private:
-        /*! \cond internal
-         * \brief Allow construction only by the specific class T
-         *
-         * This avoids potentially hair-pulling behavior, say, in the event of
-         * typos that use RestraintPotential<T> where RestraintPotential<U> was intended, such as the following.
-         *
-         *     class RestraintB : public RestraintPotential<A> {
-         *     //...
-         *     };
-         * \{
-         */
-        friend class T;
-        RestraintPotential() = default;
-        /*! \} \endcond */
 };
-
-/*!
- * The obvious ways to resolve which method to call would be with SFINAE or some sort of static dispatch.
+/*! \fn PotentialPointData RestraintPotential<T>::calculate(Vector r1, Vector r2, Time t);
+ * \brief The most complete call signature available for a RestraintPotential.
+ *
+ * \param r1 First position to consider for the restraint pair.
+ * \param r2 Second position to consider for the restraint pair.
+ * \param t Simulation time in picoseconds.
+ * \return Energy and force vector, relative to the first member of the pair.
  *
  * \ingroup module_restraint
  */
-template<class T>
-PotentialPointData RestraintPotential<T>::evaluate(Vector r1,
-                                                Vector r2,
-                                                double t)
-{
-    return static_cast<T&>(*this).calculate(r1, r2, t);
-}
+//        PotentialPointData calculate(Vector r1,
+//                                     Vector r2,
+//                                     Time t);
 
-template<class T>
-PotentialPointData RestraintPotential<T>::calculate(Vector r1,
-                                                    Vector r2,
-                                                    double t)
-{
-    (void)(r1);
-    (void)(r2);
-    (void)(t);
-    data_ = PotentialPointData{};
-}
+/*! \fn PotentialPointData calculate(Vector r1, Vector r2)
+ * \brief
+ *
+ * \param r1 First position to consider for the restraint pair.
+ * \param r2 Second position to consider for the restraint pair.
+ * \return Energy and force vector, relative to the first member of the pair.
+ *
+ * \ingroup module_restraint
+ */
+//        PotentialPointData calculate(Vector r1,
+//                                     Vector r2);
 
-template <class T>
-Vector RestraintPotential<T>::force(double t) const
-{
-    (void)(t);
-    return data_.force;
-}
+/*! \fn PotentialPointData calculate(real distance, Time t);
+ * \brief
+ *
+ * \param distance
+ * \param t Simulation time in picoseconds.
+ * \return Energy and force vector, relative to the first member of the pair.
+ *
+ * \ingroup module_restraint
+ */
+//        PotentialPointData calculate(real distance,
+//                                     Time t);
 
-template <class T>
-real RestraintPotential<T>::energy(double t) const
-{
-    (void)(t);
-    return data_.energy;
-}
+/*! \fn PotentialPointData calculate(real distance)
+ * \brief
+ *
+ * \param distance
+ * \return Energy and force vector, relative to the first member of the pair.
+ *
+ * \ingroup module_restraint
+ */
+//        PotentialPointData calculate(real distance);
 
 /*!
  * \brief Encapsulate the old pulling schemes.
@@ -260,12 +287,12 @@ real RestraintPotential<T>::energy(double t) const
  *
  * \ingroup module_restraint
  */
-class LegacyPuller : public IRestraintPotential
+class LegacyPuller
 {
     public:
-        PotentialPointData evaluate(Vector r1,
+        PotentialPointData calculate(Vector r1,
                                     Vector r2,
-                                    double t) override;
+                                    Time t);
 
         ~LegacyPuller() = default;
 

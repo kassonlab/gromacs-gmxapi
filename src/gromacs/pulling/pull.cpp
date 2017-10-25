@@ -68,7 +68,7 @@
 #include "gromacs/mdtypes/mdatom.h"
 #include "gromacs/pbcutil/pbc.h"
 #include "gromacs/pulling/pull_internal.h"
-#include "gromacs/pulling/restraintpotential.h"
+#include "gromacs/restraint/restraintpotential.h"
 #include "gromacs/topology/mtop_lookup.h"
 #include "gromacs/topology/topology.h"
 #include "gromacs/utility/cstringutil.h"

@@ -6,7 +6,7 @@
 
 #include "gromacs/compat/make_unique.h"
 #include "gromacs/mdtypes/TpxState.h"
-#include "gromacs/pulling/restraintpotential.h"
+#include "gromacs/restraint/restraintpotential.h"
 
 #include <gtest/gtest.h>
 
@@ -66,8 +66,8 @@ TEST(ApiRunner, MdAndPlugin)
 
         auto session = runner->initialize(context);
 
-        auto puller = std::make_shared<gmx::RestraintPotential>();
-        session->setRestraint(puller);
+//        auto puller = std::make_shared<gmx::RestraintPotential>();
+//        session->setRestraint(puller);
 
         gmxapi::Status status;
         ASSERT_NO_THROW(status = session->run());

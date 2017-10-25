@@ -9,7 +9,7 @@
 
 #include <memory>
 #include <string>
-#include <gromacs/pulling/restraintpotential.h>
+#include <gromacs/restraint/restraintpotential.h>
 
 #include "gmxapi/gmxapi.h"
 #include "gmxapi/system.h"

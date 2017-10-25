@@ -106,7 +106,7 @@
 #include "gromacs/mdtypes/TpxState.h"
 #include "gromacs/pbcutil/pbc.h"
 #include "gromacs/pulling/pull.h"
-#include "gromacs/pulling/restraintpotential.h"
+#include "gromacs/restraint/restraintpotential.h"
 #include "gromacs/pulling/pull_rotation.h"
 #include "gromacs/timing/wallcycle.h"
 #include "gromacs/topology/mtop_util.h"
@@ -1599,7 +1599,7 @@ int Mdrunner::mdrunner()
                           mtop, cr, oenv, real(inputrec->fepvals->init_lambda),
                           EI_DYNAMICS(inputrec->eI) && MASTER(cr), Flags.to_ulong());
             auto legacyPullers = gmx::compat::make_unique<gmx::LegacyPuller>(pull_work);
-            this->pullers_->addPotential(std::move(legacyPullers));
+//            this->pullers_->addPotential(std::move(legacyPullers));
             pull_work->container = this->pullers_.get();
             inputrec->pull_work = pull_work;
         }

@@ -2,8 +2,8 @@
 // Created by Eric Irrgang on 10/13/17.
 //
 
-#ifndef GROMACS_VECTORTYPE_H
-#define GROMACS_VECTORTYPE_H
+#ifndef GROMACS_RESTRAINT_VECTORTYPE_H
+#define GROMACS_RESTRAINT_VECTORTYPE_H
 
 /*! \file
  * \brief Template header for 3D vector types and operations.
@@ -72,7 +72,10 @@ class vec3
          */
         constexpr explicit vec3(const Scalar& X, const Scalar& Y, const Scalar& Z) : x{X}, y{Y}, z{Z} {};
 
+        /// \brief Default construct a zero-vector.
         vec3() : vec3{Scalar(0), Scalar(0), Scalar(0)} {};
+
+        /// \brief Default copy construct from another vector.
         vec3(const vec3&) = default;
         /*!
          * \brief Copy assign a vec3.

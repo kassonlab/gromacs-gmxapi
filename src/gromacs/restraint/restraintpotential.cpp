@@ -36,6 +36,14 @@ PotentialContainer::PotentialContainer() :
         impl_{gmx::compat::make_unique<PotentialContainer::Impl>()}
 {}
 
+template<typename T>
+std::function<gmx::PotentialPointData(const gmx::Vector &,
+                                           const gmx::Vector &,
+                                           gmx::Time)> gmx::RestraintPotential<T>::getEvaluator()
+{
+    return nullptr;
+}
+
 PotentialContainer::~PotentialContainer() = default;
 
 PotentialContainer &PotentialContainer::operator=(PotentialContainer &&) noexcept = default;
@@ -71,9 +79,9 @@ LegacyPuller &LegacyPuller::operator=(LegacyPuller &&old) noexcept
     return *this;
 }
 
-PotentialPointData LegacyPuller::evaluate(vec3<real> r1,
-                                          vec3<real> r2,
-                                          double t)
+PotentialPointData LegacyPuller::calculate(Vector r1,
+                                          Vector r2,
+                                          Time t)
 {
     (void)(r1);
     (void)(r2);
