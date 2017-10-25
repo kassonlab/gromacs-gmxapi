@@ -2,7 +2,7 @@
 // Created by Eric Irrgang on 8/27/17.
 //
 
-#include "TpxState.h"
+#include "tpx_state.h"
 
 #include <memory>
 #include <string>
@@ -18,7 +18,7 @@
 namespace gmx
 {
 
-TpxState::TpxState() :
+tpx_state::tpx_state() :
     filename_{},
     inputrecInstance_{std::make_shared<t_inputrec>()},
     stateInstance_{std::make_shared<t_state>()},
@@ -29,7 +29,7 @@ TpxState::TpxState() :
     snew(mtop_, 1);
 }
 
-TpxState::~TpxState()
+tpx_state::~tpx_state()
 {
     if (mtop_ != nullptr)
     {
@@ -37,16 +37,16 @@ TpxState::~TpxState()
     }
 };
 
-std::unique_ptr<TpxState> TpxState::initializeFromFile(const char* filename)
+std::unique_ptr<tpx_state> tpx_state::initializeFromFile(const char* filename)
 {
     std::string arg;
     arg = filename;
     return initializeFromFile(arg);
 }
 
-std::unique_ptr<TpxState> TpxState::initializeFromFile(const std::string &filename)
+std::unique_ptr<tpx_state> tpx_state::initializeFromFile(const std::string &filename)
 {
-    auto newState = gmx::compat::make_unique<TpxState>();
+    auto newState = gmx::compat::make_unique<tpx_state>();
     read_tpx_state(filename.c_str(), newState->inputrecInstance_.get(), newState->stateInstance_.get(), newState->mtop_);
 
     newState->filename_ = filename;
@@ -54,41 +54,41 @@ std::unique_ptr<TpxState> TpxState::initializeFromFile(const std::string &filena
     return newState;
 }
 
-t_inputrec *TpxState::getRawInputrec()
+t_inputrec *tpx_state::getRawInputrec()
 {
     dirty_ = true;
     return inputrecInstance_.get();
 }
 
-gmx_mtop_t *TpxState::getRawMtop()
+gmx_mtop_t *tpx_state::getRawMtop()
 {
     dirty_ = true;
     return mtop_;
 }
 
-t_state *TpxState::getRawState()
+t_state *tpx_state::getRawState()
 {
     dirty_ = true;
     return stateInstance_.get();
 }
 
-bool TpxState::isInitialized() const
+bool tpx_state::isInitialized() const
 {
     return initialized_;
 }
 
-std::unique_ptr<TpxState>
-TpxState::initializeFromWrappers(std::unique_ptr<t_inputrec> inputRecord, std::unique_ptr<t_state> state,
+std::unique_ptr<tpx_state>
+tpx_state::initializeFromWrappers(std::unique_ptr<t_inputrec> inputRecord, std::unique_ptr<t_state> state,
                                  std::unique_ptr<gmx_mtop_t> mtop)
 {
-    auto newState = gmx::compat::make_unique<TpxState>();
+    auto newState = gmx::compat::make_unique<tpx_state>();
     newState->inputrecInstance_ = std::move(inputRecord);
     newState->stateInstance_ = std::move(state);
     newState->mtop_ = mtop.release();
     return newState;
 }
 
-TpxState::TpxState(TpxState && source) noexcept
+tpx_state::tpx_state(tpx_state && source) noexcept
 {
     if (this != &source)
     {
@@ -108,7 +108,7 @@ TpxState::TpxState(TpxState && source) noexcept
     }
 }
 
-TpxState &TpxState::operator=(TpxState && source) noexcept
+tpx_state &tpx_state::operator=(tpx_state && source) noexcept
 {
     std::lock_guard<std::mutex> lockDestination(this->exclusive_);
     if (this != &source)
@@ -132,17 +132,17 @@ TpxState &TpxState::operator=(TpxState && source) noexcept
     return *this;
 }
 
-bool TpxState::isDirty() const
+bool tpx_state::isDirty() const
 {
     return dirty_;
 }
 
-void TpxState::markClean()
+void tpx_state::markClean()
 {
     dirty_ = false;
 }
 
-const char* TpxState::filename() const
+const char* tpx_state::filename() const
 {
     return filename_.c_str();
 }
