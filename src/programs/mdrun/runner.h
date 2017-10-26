@@ -233,8 +233,8 @@ class Mdrunner
         Mdrunner& operator=(const Mdrunner&) = delete;
 
         // Allow move
-        Mdrunner(Mdrunner&&) noexcept = default;
-        Mdrunner& operator=(Mdrunner&&) noexcept = default;
+        Mdrunner(Mdrunner&&) noexcept;
+        Mdrunner& operator=(Mdrunner&&) noexcept;
 
         //! Set up mdrun by calling its C-style main function.
         void initFromCLI(int argc, char *argv[]);

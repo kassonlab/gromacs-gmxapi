@@ -1796,4 +1796,8 @@ void Mdrunner::addPullPotential(std::shared_ptr<gmx::IRestraintPotential> puller
     restraintManager_->add(std::move(puller), name);
 }
 
+Mdrunner &Mdrunner::operator=(Mdrunner &&) noexcept = default;
+
+Mdrunner::Mdrunner(Mdrunner &&) noexcept = default;
+
 } // namespace gmx
