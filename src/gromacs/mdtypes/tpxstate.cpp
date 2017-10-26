@@ -2,7 +2,7 @@
 // Created by Eric Irrgang on 8/27/17.
 //
 
-#include "TpxState.h"
+#include "tpxstate.h"
 
 #include <memory>
 #include <string>
