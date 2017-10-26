@@ -355,8 +355,11 @@ void gmx::Mdrunner::initFromAPI()
     int argc = 3;
     char arg0[] = "";
     char arg1[] = "-s";
-    char arg2[strlen(tpxState_->filename())];
+    const auto stringLength = strlen(tpxState_->filename()) + 1;
+    char arg2[stringLength];
     strcpy(arg2, tpxState_->filename());
+    // Add terminating null character
+    arg2[stringLength - 1] = 0;
     char* argv[3];
     argv[0] = &arg0[0];
     argv[1] = &arg1[0];
