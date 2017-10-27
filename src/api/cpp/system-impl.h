@@ -17,7 +17,7 @@ class System::Impl
         ~Impl();
 //        std::unique_ptr<Atoms> atoms();
 //        void setAtoms(const Atoms& atoms);
-        std::shared_ptr<MDEngine> md();
+        std::shared_ptr<MDProxy> md();
         void md(std::shared_ptr<MDEngine> md);
 
         std::shared_ptr<IMDRunner> & runner();

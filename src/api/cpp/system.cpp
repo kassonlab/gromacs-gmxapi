@@ -38,10 +38,12 @@ System::Impl::Impl() :
 
 System::Impl::~Impl() = default;
 
-std::shared_ptr<MDEngine> System::Impl::md()
+std::shared_ptr<MDProxy> System::Impl::md()
 {
     assert(md_ != nullptr);
-    return md_;
+    auto md = std::make_shared<MDProxy>();
+    md->setState(md_);
+    return md;
 }
 
 void System::Impl::md(std::shared_ptr<MDEngine> md)
@@ -68,7 +70,7 @@ System::System() :
 
 System::~System() = default;
 
-std::shared_ptr<MDEngine> System::md()
+std::shared_ptr<MDProxy> System::md()
 {
     assert(impl_ != nullptr);
     return impl_->md();

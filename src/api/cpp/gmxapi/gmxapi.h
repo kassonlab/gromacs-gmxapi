@@ -79,6 +79,10 @@
 namespace gmxapi
 {
 
+// Forward declare common classes.
+class System;
+class MDEngine;
+
 /*! \brief Container for results of API operations.
  *
  * \internal

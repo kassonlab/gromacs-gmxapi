@@ -8,6 +8,7 @@
 
 #include <exception>
 #include <string>
+#include <utility>
 
 namespace gmxapi
 {

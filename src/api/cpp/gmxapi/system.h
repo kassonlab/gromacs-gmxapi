@@ -13,7 +13,7 @@ namespace gmxapi
 {
 
 class Atoms;
-class MDEngine;
+class MDProxy;
 class IMDRunner;
 
 /// Container for molecular model and simulation parameters.
@@ -55,7 +55,7 @@ class System
 //        std::unique_ptr<Atoms> atoms();
 
         /// Get a handle to bound MD engine.
-        std::shared_ptr<MDEngine> md();
+        std::shared_ptr<MDProxy> md();
 
         /// Set the MD engine
         void md(std::shared_ptr<MDEngine> md);

@@ -9,7 +9,13 @@
  *  Defines a class Version in the gmxapi namespace providing static methods
  *  for use by API client code at compile time and run time.
  *
+ * Goals: do better than compiler error, build time linker errors, and run time linker errors.
+ *
  *  Todo: provide versioning for headers and library so clients can do abstract comparison of build versus runtime.
+ *
+ *  Todo: Provide better boilerplate (at least) for client self-test of API version compatibility at build time.
+ *
+ *  Todo: Add compatibility test/warning at module load when client was compiled against a different libgmxapi.
  *  \ingroup gmxapi
  */
 
@@ -23,7 +29,7 @@ namespace gmxapi
 static constexpr unsigned int GMXAPI_MAJOR   = @GMXAPI_MAJOR@;
 static constexpr unsigned int GMXAPI_MINOR   = @GMXAPI_MINOR@;
 static constexpr unsigned int GMXAPI_PATCH   = @GMXAPI_PATCH@;
-static const std::string  GMXAPI_RELEASE = "@GMXAPI_RELEASE@";
+static const char GMXAPI_RELEASE[] = "@GMXAPI_RELEASE@";
 
 /*!
  * \brief Provide API library version information for client code.
