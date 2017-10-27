@@ -1716,12 +1716,6 @@ real pull_potential(struct pull_t *pull, t_mdatoms *md, t_pbc *pbc,
 
         pull_calc_coms(cr, pull, md, pbc, t, x, nullptr);
 
-        int counter = 0;
-        for (auto&& potential : *pull->container)
-        {
-            std::cout << counter++;
-        }
-
         for (int c = 0; c < pull->ncoord; c++)
         {
             /* For external potential the force is assumed to be given by an external module by a call to
