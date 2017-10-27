@@ -7,8 +7,13 @@
 
 /*!
  * \defgroup module_restraint MD restraints
- * \ingroup group_mdrun
- * Apply restraints during MD integration.
+ * \ingroup publicapi
+ * \brief Apply restraints during MD integration.
+ *
+ * More conceptual overview is in the \ref page_pullcodeextension "full documentation".
+ *
+ * The classes here are available through the public API, but only gmx::RestraintPotential
+ * is necessary to implement a restraint plugin.
  */
 /*! \file
  * \brief Declare generic interface for restraint implementations.
@@ -101,9 +106,10 @@ class PotentialPointData
          * \param f Force vector.
          * \param e Energy value.
          *
-         * Note that if force was calculated as a scalar, it needs to be multiplied by a unit vector in the direction to which it should be applied.
+         * Note that if force was calculated as a scalar, it needs to be multiplied by a unit
+         * vector in the direction to which it should be applied.
          * If this calculation is in a subclass of gmx::RestraintPotential,
-         * you should be able to use the make_force_vec() helper function.
+         * you should be able to use the make_force_vec() helper function (not yet implemented).
          */
         PotentialPointData(const Vector& f, const real e) :
                 force{f},
@@ -218,16 +224,55 @@ class IRestraintPotential
  * Internally, template matching is used to derive type traits with which to
  * tag the restraint class so that an appropriate function call can be dispatched.
  *
+ * Note that the floating point type definition `real` from real.h should be used if your code
+ * can flexibly use both double precision and single precision (depending on how GROMACS was compiled).
+ *
+ * Example:
+ * \code
+ * #include "gromacs/restraint/restraintpotential.h"
+ * #include "gromacs/restraint/vectortype.h"
+ *
+ * class MyRestraint
+ * {
+ * public:
+ *      gmx::PotentialPointData calculate(real[3] position1, real[3] position2, real t);
+ * };
+ *
+ * gmx::PotentialPointData::calculate(const Vector& r1, const Vector& r2)
+ * {
+ *      // Apply constant harmonic force between the two sites
+ *      real k = 1.0;
+ *      real R0 = 1.0;
+ *
+ *      // Use some vector helper functions
+ *      auto diff = norm(r2 - r1) - R0;
+ *      auto unitvec = (r2 - r1)/norm(r2 - r1);
+ *
+ *      auto force = -k * diff * unitvec;
+ *      auto energy = 0.5 * k * diff**2;
+ *
+ *      return {force, energy};
+ * }
+ *
+ * \endcode
+ * Todo: explain registration
+ *
  * \ingroup module_restraint
  */
 template<class T>
 class RestraintPotential : public IRestraint, public T
 {
     public:
+        /// \cond libapi
+        /*!
+         * \brief Implement gmx::IRestraint interface
+         *
+         * \return function object with the appropriate call signature for the library.
+         */
         std::function<PotentialPointData(const Vector &,
                                          const Vector &,
                                          Time)> getEvaluator() override;
-
+        /// \endcond
 
 };
 /*! \fn PotentialPointData RestraintPotential<T>::calculate(Vector r1, Vector r2, Time t);

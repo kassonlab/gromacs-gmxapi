@@ -28,7 +28,6 @@
  * for convenience and strong typing of operations. Arrays of vec3 should not
  * be necessary and are probably not desirable, at least across C++ translation units.
  *
- * \inlibraryapi
  */
 
 // TODO: It's worth taking a look at how compilers handle iterative extraction of vec3 from Nx3 data in practice.

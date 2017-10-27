@@ -1,6 +1,10 @@
 Extensibility of pull code {#page_pullcodeextension}
 ==========================
 
+\tableofcontents
+
+External restraint forces can be added to \Gromacs through the <a href="group__module__restraint.xhtml">restraint</a> framework.
+
 Historically, bias potentials have been applied by patching \Gromacs at the pull code.
 
 This approach introduces an immediate difficulty in staying up to date with other
@@ -8,7 +12,7 @@ developments in \Gromacs and leaves many problems for the researcher, such as ho
 get user input into the additional code and how to transfer data in and out of the
 extension code.
 
-## Case study
+\section case_study Case study
 
 
 2015 \Gromacs fork adding an ensemble biasing scheme after Roux, dx.doi.org/10.1021/jp3110369
@@ -47,7 +51,7 @@ This sort of dependency certainly should not need to be satisfied in the `libgro
 Second, note that many of these changes can be separated into a separate unrelated change
 for `epullgDISTREF`.
 
-### Roux inputs
+\subsection roux_inputs Roux inputs
 
     // method parameters
     bin_width = 0.1
@@ -65,7 +69,7 @@ for `epullgDISTREF`.
 
 
 
-### Globals modified
+\subsection globals Globals modified
 
 
 `gmxlib/names.cpp`
@@ -78,7 +82,7 @@ for `epullgDISTREF`.
 * add `epullROUX`
 * add `epullgDISTREF`
 
-### Functions modified
+\subsection functions_modified Functions modified
 
 
 `fileio/tpxio.cpp`
@@ -134,20 +138,20 @@ for `epullgDISTREF`.
 * `struct pull_t * init_pull()`
   * extend scope of calculations to an additional case `epullgDISTREF`
   
-### Functions added
+\subsection functinos_added Functions added
 
 
 * `double getRouxForce(double dev, int coord_ind, double K)`
 * `double getRouxPotential(double dev, int coord_ind, double K)`
 
-### Other
+\subsection other Other
 
 
 * `md.cpp` uses `step_rel` instead of `step` to determine whether this is a neighbor search step.
 * Additional input: environment variable provides a filename that is opened and
   parsed by additional code in the extension.
 
-## Old implementation
+\section old_implementation Old implementation
 
 
 - do_md()
@@ -213,7 +217,7 @@ pull-coord1-k = 100.000000
 pull-coord1-kB = 0
 \endcode
 
-## Current pull code implementation
+\subsection current_gromacs Current pull code implementation
 
 
 Relevant types:
@@ -257,8 +261,9 @@ call `pull_print_output(ir->pull_work, step, t)` in simulation loop.
             - `calc_pull_coord_vector_force(pcrd);`
 
 
-## Strategy
+\section strategy Strategy
 
+Remove `pull_t` from input record. Available restraints are instantiated separately and available through a manager.
 
 Reimplement `init_pull()` and refactor `pull_t`. Allow client code to provide alternatives.
 
@@ -270,13 +275,11 @@ A custom `RestraintPotential` class may (re)implement `calc_pull_coord_scalar_fo
 
 Note that `pull_potential()` is the lowest public function in this hierarchy and is passed a pull_t from the inputrec.
 
-## Usage
+\section usage Usage
 
+Extension code provides a new class that implements a `calculate()` function as described at  gmx::RestraintPotential
 
-Instantiate a modified `do_md()` integrator with a builder for the plugin to replace `init_pull()`
-
-Extension code inherits from base `do_pull_pot_coord()` provider that `pull_potential()` will call. Override `calc_...()` method (or submethod).
-
+The new class must then be registered and exposed to external access.
 
 
 Python client code:
@@ -302,7 +305,7 @@ puller.nbins = 50
 # Load system configuration, topology, simulation and run parameters
 system = gmx.system.from_tpr('topol.tpr')
 # Note: input record does not indicate the custom code
-system.md.addPotential(puller)
+system.md.add_potential(puller)
 
 
 def update(session):
