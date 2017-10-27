@@ -13,7 +13,7 @@
 # Copy test files to test directory
 configure_file(data/topol.tpr topol.tpr COPYONLY)
 
-configure_file(test_runner.in.cpp test_runner.cpp)
+configure_file(testingconfiguration.in.h testingconfiguration.h)
 
 gmx_add_unit_test(GmxapiExternalInterfaceTests gmxapi-test
                   moduletest.cpp
@@ -21,7 +21,7 @@ gmx_add_unit_test(GmxapiExternalInterfaceTests gmxapi-test
                   test_runner.cpp
                   test_setup.cpp
                   test_status.cpp
-#                  test_system.cpp
+                  test_system.cpp
                   test_version_helpers.cpp
                   )
 

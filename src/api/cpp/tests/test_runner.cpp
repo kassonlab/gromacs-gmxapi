@@ -1,3 +1,5 @@
+#include "testingconfiguration.h"
+
 #include "gmxapi/context.h"
 #include "gmxapi/runner.h"
 #include "gmxapi/md/runnerstate.h"
@@ -12,6 +14,8 @@
 
 namespace
 {
+
+const auto filename = sample_tprfilename;
 
 class DummyMD : public gmxapi::MDEngine
 {
@@ -33,8 +37,6 @@ TEST(ApiRunner, Build)
 
 TEST(ApiRunner, BasicMD)
 {
-    // Need to set up a test fixture...
-    const std::string filename = "${CMAKE_CURRENT_BINARY_DIR}/topol.tpr";
 
     auto system = gmxapi::fromTprFile(filename);
 
@@ -55,8 +57,6 @@ TEST(ApiRunner, BasicMD)
 
 TEST(ApiRunner, MdAndPlugin)
 {
-    // TODO: Need to set up a test fixture...
-    const std::string filename = "${CMAKE_CURRENT_BINARY_DIR}/topol.tpr";
 
     auto system = gmxapi::fromTprFile(filename);
 
