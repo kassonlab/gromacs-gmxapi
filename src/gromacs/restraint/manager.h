@@ -53,7 +53,7 @@ class Manager final
         Manager& operator=(Manager&&) = delete;
 
         void add(std::shared_ptr<LegacyPuller> puller, std::string name);
-        void add(std::shared_ptr<gmx::IRestraintPotential> puller, std::string name);
+//        void add(std::shared_ptr<gmx::IRestraintPotential> puller, std::string name);
 
         void print(gmx_int64_t step, double time);
 

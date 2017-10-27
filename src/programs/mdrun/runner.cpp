@@ -1796,7 +1796,7 @@ void Mdrunner::addPullPotential(std::shared_ptr<gmx::IRestraintPotential> puller
                                 std::string name)
 {
     assert(restraintManager_ != nullptr);
-    restraintManager_->add(std::move(puller), name);
+//    restraintManager_->add(std::move(puller), name);
 }
 
 Mdrunner &Mdrunner::operator=(Mdrunner &&) noexcept = default;

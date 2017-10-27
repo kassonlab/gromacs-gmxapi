@@ -145,12 +145,12 @@ void Manager::add(std::shared_ptr<LegacyPuller> puller, std::string name)
     impl_->addLegacy(std::move(puller), std::move(name));
 }
 
-void Manager::add(std::shared_ptr<gmx::IRestraintPotential> puller,
-                  std::string name)
-{
-    (void)puller;
-    (void)name;
-}
+//void Manager::add(std::shared_ptr<gmx::IRestraintPotential> puller,
+//                  std::string name)
+//{
+//    (void)puller;
+//    (void)name;
+//}
 
 } // end namespace restraint
 } // end namespace gmx
