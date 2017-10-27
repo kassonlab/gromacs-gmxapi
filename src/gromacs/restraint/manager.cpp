@@ -83,7 +83,12 @@ void Manager::print(gmx_int64_t step,
 
 void Manager::finish()
 {
-    finish_pull(impl_->getLegacy()->getRaw());
+    assert(impl_ != nullptr);
+    auto puller = impl_->getLegacy();
+    if (puller)
+    {
+        finish_pull(impl_->getLegacy()->getRaw());
+    }
 }
 
 pull_t *Manager::getRaw()
@@ -105,7 +110,7 @@ void Manager::makeLocalGroups(t_commrec *cr,
     {
         if(auto pull_work = puller->getRaw())
         {
-            dd_make_local_pull_groups(cr, impl_->getLegacy()->getRaw(), mdatoms);
+            dd_make_local_pull_groups(cr, pull_work, mdatoms);
         }
     }
 }
@@ -118,7 +123,7 @@ bool Manager::contributesEnergy()
     {
         if (auto pull_work = puller->getRaw())
         {
-            energetic = bool(pull_have_potential(impl_->getLegacy()->getRaw()));
+            energetic = bool(pull_have_potential(pull_work));
         }
     }
     return energetic;
