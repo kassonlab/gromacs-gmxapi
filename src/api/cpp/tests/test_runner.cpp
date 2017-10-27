@@ -15,7 +15,7 @@
 namespace
 {
 
-const auto filename = sample_tprfilename;
+const auto filename = gmxapi::testing::sample_tprfilename;
 
 class DummyMD : public gmxapi::MDEngine
 {
@@ -28,11 +28,6 @@ TEST(ApiRunner, Build)
     runnerBuilder.mdEngine(md);
     runnerBuilder.tpxState(std::make_shared<gmx::TpxState>());
     auto runner = runnerBuilder.build();
-//    auto session = runner->initialize(gmxapi::defaultContext());
-//    ASSERT_TRUE(session != nullptr);
-//    auto status = session->run();
-    // Just make sure we made it this far...
-//    ASSERT_TRUE(!status.success());
 }
 
 TEST(ApiRunner, BasicMD)
@@ -77,4 +72,4 @@ TEST(ApiRunner, MdAndPlugin)
 
 }
 
-}
+} // end anonymous namespace

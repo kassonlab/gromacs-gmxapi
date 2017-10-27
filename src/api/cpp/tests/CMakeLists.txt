@@ -25,6 +25,9 @@ gmx_add_unit_test(GmxapiExternalInterfaceTests gmxapi-test
                   test_version_helpers.cpp
                   )
 
+target_include_directories(gmxapi-test PRIVATE
+                           ${CMAKE_CURRENT_BINARY_DIR})
+
 set_tests_properties(GmxapiExternalInterfaceTests PROPERTIES
                      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 
