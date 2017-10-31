@@ -1440,7 +1440,6 @@ void do_force_cutsVERLET(FILE *fplog, t_commrec *cr,
                 inputrec->ePBC,
                 box);
         real   dvdl{0};
-        real energy{0};
         // Note that pull_potential() has both output parameters and returns data.
         enerd->term[F_COM_PULL] +=
             pull_potential(puller,
