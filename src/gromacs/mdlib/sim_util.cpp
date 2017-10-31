@@ -1426,7 +1426,46 @@ void do_force_cutsVERLET(FILE *fplog, t_commrec *cr,
         /* Since the COM pulling is always done mass-weighted, no forces are
          * applied to vsites and this call can be done after vsite spreading.
          */
-        pull_potential_wrapper(cr, box, x, f, vir_force, mdatoms, enerd, lambda, t, wcycle, inputrec->ePBC);
+        auto restraints = restraint::Manager::instance();
+        pull_t* puller = restraints->getRaw();
+
+        /* Calculate the center of mass forces, this requires communication,
+             * which is why pull_potential is called close to other communication.
+             * The virial contribution is calculated directly,
+             * which is why we call pull_potential after calc_virial.
+             */
+        wallcycle_start(wcycle, ewcPULLPOT);
+        t_pbc  pbc;
+        set_pbc(&pbc,
+                inputrec->ePBC,
+                box);
+        real   dvdl{0};
+        real energy{0};
+        // Note that pull_potential() has both output parameters and returns data.
+        enerd->term[F_COM_PULL] +=
+            pull_potential(puller,
+                           mdatoms, &pbc,
+                           cr,
+                           t, lambda[efptRESTRAINT],
+                           x,
+                           f,
+                           vir_force, &dvdl);
+        // restraints->setAtomsSource(mdatoms);
+        // restraints->setBoundaryConditionsSource(pbc);
+        // restraints->setLambdaSource(lambda[efptRESTRAINT]);
+        // restraints->setPositionsSource(x);
+        // restraints->setForceOwner(f);
+        // restraints->setVirialOwner(vir_force);
+        // auto restraintContribution = restraints->calculate(t);
+//        enerd->term[F_COM_PULL] += restraintContribution->energy();
+//        enerd->dvdl_lin[efptRESTRAINT] += restraintContribution->work();
+        enerd->dvdl_lin[efptRESTRAINT] += dvdl;
+
+
+        wallcycle_stop(wcycle, ewcPULLPOT);
+
+        // Replace pull_potential_wrapper() with call to the restraints manager.
+        //
     }
 
     /* Add the forces from enforced rotation potentials (if any) */

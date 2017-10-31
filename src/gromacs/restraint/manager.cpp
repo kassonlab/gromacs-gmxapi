@@ -12,9 +12,14 @@
 
 #include <cassert>
 #include <memory>
-#include <gromacs/utility/basedefinitions.h>
-#include <gromacs/pulling/pull.h>
+#include <map>
+
+#include "restraintfunctor-impl.h"
+
+#include "gromacs/utility/basedefinitions.h"
+#include "gromacs/pulling/pull.h"
 #include "gromacs/compat/make_unique.h"
+#include "restraintcalculation-impl.h"
 
 namespace gmx
 {
@@ -28,6 +33,7 @@ namespace restraint
 std::shared_ptr<Manager> Manager::instance_{nullptr};
 std::mutex Manager::initializationMutex_{};
 
+
 /*!
  * \brief Implementation class for restraint manager.
  */
@@ -36,9 +42,75 @@ class ManagerImpl
     public:
         void addLegacy(std::shared_ptr<LegacyPuller> puller, std::string name);
         std::shared_ptr<LegacyPuller> getLegacy();
+        std::tuple<double, real> energy(double time) const noexcept;
+        std::tuple<double, real> work(double time) const noexcept;
+
+        void currentTime(double currentTime)
+        {
+            currentTime_ = currentTime;
+        }
+
+        void previousTime(double previousTime)
+        {
+            previousTime_ = previousTime;
+        }
+
+        void atoms(const t_mdatoms *atoms)
+        {
+            atoms_ = atoms;
+        }
+
+        void pbc(const t_pbc *pbc)
+        {
+            pbc_ = pbc;
+        }
+
+        void lambda(real lambda)
+        {
+            lambda_ = lambda;
+        }
+
+        void positions(rvec const *positions)
+        {
+            positions_ = positions;
+        }
+
+        void forces(rvec *forces)
+        {
+            forces_ = forces;
+        }
+
+        void virial(tensor *virial)
+        {
+            virial_ = virial;
+        }
+
+        std::shared_ptr<ICalculation> calculate(double t);
+
     private:
+        double currentTime_{0};
+        double previousTime_{0};
+
+        const t_mdatoms* atoms_{nullptr};
+        const t_pbc* pbc_{nullptr};
+        real lambda_{0};
+        const rvec* positions_{nullptr};
+        rvec* forces_{nullptr};
+        tensor* virial_{nullptr};
+
         std::shared_ptr<LegacyPuller> puller_;
 };
+
+std::shared_ptr<ICalculation> ManagerImpl::calculate(double t)
+{
+    auto calculation = std::make_shared<Calculation>(t, *atoms_, *pbc_, lambda_, positions_, forces_, virial_);
+    if (calculation != nullptr)
+    {
+        previousTime_ = currentTime_;
+        currentTime_ = t;
+    }
+    return calculation;
+}
 
 void ManagerImpl::addLegacy(std::shared_ptr<LegacyPuller> puller,
                             std::string name)
@@ -148,6 +220,48 @@ void Manager::add(std::shared_ptr<LegacyPuller> puller, std::string name)
 {
     assert(impl_ != nullptr);
     impl_->addLegacy(std::move(puller), std::move(name));
+}
+
+std::shared_ptr<ICalculation> Manager::calculate(double t)
+{
+    // Disambiguate the input and output parameters of the old pull_potential by
+    // constructing a functor and then applying it.
+//    auto restraints = ::gmx::restraint::RestraintFunctor(t, const t_mdatoms& md, const t_pbc& pbc, real lambda);
+//    restraints.calculate();
+
+    assert(impl_ != nullptr);
+    auto calculation = impl_->calculate(t);
+    return calculation;
+}
+
+void Manager::setAtomsSource(const t_mdatoms &atoms)
+{
+    impl_->atoms(&atoms);
+}
+
+void Manager::setBoundaryConditionsSource(const t_pbc &pbc)
+{
+    impl_->pbc(&pbc);
+}
+
+void Manager::setPositionsSource(const rvec &x)
+{
+    impl_->positions(&x);
+}
+
+void Manager::setForceOwner(rvec *f)
+{
+    impl_->forces(f);
+}
+
+void Manager::setVirialOwner(tensor *virial_force)
+{
+    impl_->virial(virial_force);
+}
+
+void Manager::setLambdaSource(real lambda)
+{
+    impl_->lambda(lambda);
 }
 
 //void Manager::add(std::shared_ptr<gmx::IRestraintPotential> puller,

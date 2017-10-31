@@ -170,7 +170,7 @@ void clear_pull_forces(struct pull_t *pull);
  * \param[in]     t      Time.
  * \param[in]     lambda The value of lambda in FEP calculations.
  * \param[in]     x      Positions.
- * \param[in]     f      Forces.
+ * \param[in,out] f      Forces.
  * \param[in,out] vir    The virial, which, if != NULL, gets a pull correction.
  * \param[out] dvdlambda Pull contribution to dV/d(lambda).
  *

@@ -1712,6 +1712,7 @@ real pull_potential(struct pull_t *pull, t_mdatoms *md, t_pbc *pbc,
 
     if (pull->comm.bParticipate)
     {
+        // Accumulate work due to restraint
         real dVdl = 0;
 
         pull_calc_coms(cr, pull, md, pbc, t, x, nullptr);
