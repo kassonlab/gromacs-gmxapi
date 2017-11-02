@@ -176,9 +176,9 @@ void clear_pull_forces(struct pull_t *pull);
  *
  * \returns The pull potential energy.
  */
-real pull_potential(struct pull_t *pull, t_mdatoms *md, struct t_pbc *pbc,
+real pull_potential(struct pull_t *pull, const t_mdatoms *md, const struct t_pbc *pbc,
                     const t_commrec *cr, double t, real lambda,
-                    rvec *x, rvec *f, tensor vir, real *dvdlambda);
+                    const rvec *x, rvec *f, tensor vir, real *dvdlambda);
 
 
 /*! \brief Constrain the coordinates xp in the directions in x
@@ -259,7 +259,7 @@ void pull_print_output(const pull_t *pull,
 /*! \brief Calculates centers of mass all pull groups.
  *
  * \param[in] cr       Struct for communication info.
- * \param[in] pull     The pull data structure.
+ * \param[in,out] pull     The pull data structure.
  * \param[in] md       All atoms.
  * \param[in] pbc      Information struct about periodicity.
  * \param[in] t        Time, only used for cylinder ref.
@@ -267,12 +267,12 @@ void pull_print_output(const pull_t *pull,
  * \param[in,out] xp   Updated x, can be NULL.
  *
  */
-void pull_calc_coms(const t_commrec        *cr,
+void pull_calc_coms(const t_commrec  *cr,
                     struct pull_t    *pull,
-                    t_mdatoms        *md,
-                    struct t_pbc     *pbc,
+                    const t_mdatoms  *md,
+                    const struct t_pbc     *pbc,
                     double            t,
-                    rvec              x[],
+                    const rvec              x[],
                     rvec             *xp);
 
 

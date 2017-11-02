@@ -141,7 +141,7 @@ static void pull_reduce_double(const t_commrec   *cr,
 }
 
 static void pull_set_pbcatom(const t_commrec *cr, pull_group_work_t *pgrp,
-                             rvec *x,
+                             const rvec *x,
                              rvec x_pbc)
 {
     int a;
@@ -164,7 +164,7 @@ static void pull_set_pbcatom(const t_commrec *cr, pull_group_work_t *pgrp,
 }
 
 static void pull_set_pbcatoms(const t_commrec *cr, struct pull_t *pull,
-                              rvec *x,
+                              const rvec *x,
                               rvec *x_pbc)
 {
     int g, n;
@@ -193,8 +193,8 @@ static void pull_set_pbcatoms(const t_commrec *cr, struct pull_t *pull,
     }
 }
 
-static void make_cyl_refgrps(const t_commrec *cr, struct pull_t *pull, t_mdatoms *md,
-                             t_pbc *pbc, double t, rvec *x)
+static void make_cyl_refgrps(const t_commrec *cr, struct pull_t *pull, const t_mdatoms *md,
+                             const t_pbc *pbc, double t, const rvec *x)
 {
     /* The size and stride per coord for the reduction buffer */
     const int       stride = 9;
@@ -550,8 +550,8 @@ static void sum_com_part_cosweight(const pull_group_work_t *pgrp,
 
 /* calculates center of mass of selection index from all coordinates x */
 void pull_calc_coms(const t_commrec *cr,
-                    struct pull_t *pull, t_mdatoms *md, t_pbc *pbc, double t,
-                    rvec x[], rvec *xp)
+                    struct pull_t *pull, const t_mdatoms *md, const t_pbc *pbc, double t,
+                    const rvec x[], rvec *xp)
 {
     int          g;
     real         twopi_box = 0;

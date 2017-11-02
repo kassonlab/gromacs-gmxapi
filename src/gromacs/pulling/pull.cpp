@@ -1674,7 +1674,7 @@ void apply_external_pull_coord_force(struct pull_t *pull,
 }
 
 /* Calculate the pull potential and scalar force for a pull coordinate */
-static void do_pull_pot_coord(struct pull_t *pull, int coord_ind, t_pbc *pbc,
+static void do_pull_pot_coord(struct pull_t *pull, int coord_ind, const t_pbc *pbc,
                               double t, real lambda,
                               real *V, tensor vir, real *dVdl)
 {
@@ -1696,9 +1696,9 @@ static void do_pull_pot_coord(struct pull_t *pull, int coord_ind, t_pbc *pbc,
     add_virial_coord(vir, pcrd);
 }
 
-real pull_potential(struct pull_t *pull, t_mdatoms *md, t_pbc *pbc,
+real pull_potential(struct pull_t *pull, const t_mdatoms *md, const t_pbc *pbc,
                     const t_commrec *cr, double t, real lambda,
-                    rvec *x, rvec *f, tensor vir, real *dvdlambda)
+                    const rvec *x, rvec *f, tensor vir, real *dvdlambda)
 {
     real V = 0; // Potential energy contribution
 
