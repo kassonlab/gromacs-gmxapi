@@ -11,14 +11,17 @@ namespace restraint
 {
 
 Calculation::Calculation(double time,
+                         const t_commrec &commRec,
                          const t_mdatoms &atoms,
                          const t_pbc &pbc,
                          real lambda,
                          const rvec *positions,
+                         pull_t *puller,
                          rvec *forces,
-                         tensor *virial) :
+                         tensor virial) :
     time_{time}
 {
+//    energy_ = pull_potential(puller, atoms, pbc, commRec, time, lambda, positions, forces, virial, &work_);
 }
 
 real Calculation::energy() const noexcept

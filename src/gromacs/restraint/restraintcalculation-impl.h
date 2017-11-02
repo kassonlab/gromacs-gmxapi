@@ -27,7 +27,15 @@ class Calculation : public ICalculation
 {
     public:
         Calculation() = delete;
-        Calculation(double time, const t_mdatoms& atoms, const t_pbc& pbc, real lambda, const rvec* positions, rvec* forces, tensor* virial);
+        Calculation(double time,
+                            const t_commrec &commRec,
+                            const t_mdatoms &atoms,
+                            const t_pbc &pbc,
+                            real lambda,
+                            const rvec *positions,
+                            pull_t *puller,
+                            rvec *forces,
+                            tensor virial);
 
         /*!
          * \brief Get energy calculated for current time.

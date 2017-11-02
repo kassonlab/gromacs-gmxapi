@@ -94,6 +94,7 @@
 #include "gromacs/pulling/pull.h"
 #include "gromacs/pulling/pull_rotation.h"
 #include "gromacs/restraint/manager.h"
+#include "gromacs/restraint/restraintcalculation.h"
 #include "gromacs/timing/cyclecounter.h"
 #include "gromacs/timing/gpu_timing.h"
 #include "gromacs/timing/wallcycle.h"
@@ -1449,13 +1450,16 @@ void do_force_cutsVERLET(FILE *fplog, t_commrec *cr,
                            x,
                            f,
                            vir_force, &dvdl);
-        // restraints->setAtomsSource(mdatoms);
-        // restraints->setBoundaryConditionsSource(pbc);
-        // restraints->setLambdaSource(lambda[efptRESTRAINT]);
-        // restraints->setPositionsSource(x);
-        // restraints->setForceOwner(f);
-        // restraints->setVirialOwner(vir_force);
-        // auto restraintContribution = restraints->calculate(t);
+
+//        restraints->setAtomsSource(*mdatoms);
+//        restraints->setBoundaryConditionsSource(pbc);
+//        restraints->setCommunicator(cr);
+//        restraints->setLambdaSource(lambda[efptRESTRAINT]);
+//        restraints->setPositionsSource(*x);
+//        restraints->setForceOwner(f);
+//        restraints->setVirialOwner(vir_force);
+//        auto restraintContribution = restraints->calculate(t);
+
 //        enerd->term[F_COM_PULL] += restraintContribution->energy();
 //        enerd->dvdl_lin[efptRESTRAINT] += restraintContribution->work();
         enerd->dvdl_lin[efptRESTRAINT] += dvdl;

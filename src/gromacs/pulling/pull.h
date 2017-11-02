@@ -177,7 +177,7 @@ void clear_pull_forces(struct pull_t *pull);
  * \returns The pull potential energy.
  */
 real pull_potential(struct pull_t *pull, t_mdatoms *md, struct t_pbc *pbc,
-                    t_commrec *cr, double t, real lambda,
+                    const t_commrec *cr, double t, real lambda,
                     rvec *x, rvec *f, tensor vir, real *dvdlambda);
 
 
@@ -267,7 +267,7 @@ void pull_print_output(const pull_t *pull,
  * \param[in,out] xp   Updated x, can be NULL.
  *
  */
-void pull_calc_coms(t_commrec        *cr,
+void pull_calc_coms(const t_commrec        *cr,
                     struct pull_t    *pull,
                     t_mdatoms        *md,
                     struct t_pbc     *pbc,

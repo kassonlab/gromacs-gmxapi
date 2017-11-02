@@ -42,8 +42,6 @@ class ManagerImpl
     public:
         void addLegacy(std::shared_ptr<LegacyPuller> puller, std::string name);
         std::shared_ptr<LegacyPuller> getLegacy();
-        std::tuple<double, real> energy(double time) const noexcept;
-        std::tuple<double, real> work(double time) const noexcept;
 
         void currentTime(double currentTime)
         {
@@ -80,9 +78,14 @@ class ManagerImpl
             forces_ = forces;
         }
 
-        void virial(tensor *virial)
+        void virial(tensor virial)
         {
             virial_ = virial;
+        }
+
+        void communicator(const t_commrec& commRec)
+        {
+            communicator_ = &commRec;
         }
 
         std::shared_ptr<ICalculation> calculate(double t);
@@ -96,14 +99,16 @@ class ManagerImpl
         real lambda_{0};
         const rvec* positions_{nullptr};
         rvec* forces_{nullptr};
-        tensor* virial_{nullptr};
+        rvec* virial_{nullptr};
+
+        const t_commrec* communicator_{nullptr};
 
         std::shared_ptr<LegacyPuller> puller_;
 };
 
 std::shared_ptr<ICalculation> ManagerImpl::calculate(double t)
 {
-    auto calculation = std::make_shared<Calculation>(t, *atoms_, *pbc_, lambda_, positions_, forces_, virial_);
+    auto calculation = std::make_shared<Calculation>(t, *communicator_, *atoms_, *pbc_, lambda_, positions_, getLegacy()->getRaw(), forces_, virial_);
     if (calculation != nullptr)
     {
         previousTime_ = currentTime_;
@@ -236,32 +241,44 @@ std::shared_ptr<ICalculation> Manager::calculate(double t)
 
 void Manager::setAtomsSource(const t_mdatoms &atoms)
 {
+    assert(impl_ != nullptr);
     impl_->atoms(&atoms);
 }
 
 void Manager::setBoundaryConditionsSource(const t_pbc &pbc)
 {
+    assert(impl_ != nullptr);
     impl_->pbc(&pbc);
 }
 
 void Manager::setPositionsSource(const rvec &x)
 {
+    assert(impl_ != nullptr);
     impl_->positions(&x);
 }
 
 void Manager::setForceOwner(rvec *f)
 {
+    assert(impl_ != nullptr);
     impl_->forces(f);
 }
 
-void Manager::setVirialOwner(tensor *virial_force)
+void Manager::setVirialOwner(tensor virial_force)
 {
+    assert(impl_ != nullptr);
     impl_->virial(virial_force);
 }
 
 void Manager::setLambdaSource(real lambda)
 {
+    assert(impl_ != nullptr);
     impl_->lambda(lambda);
+}
+
+void Manager::setCommunicator(const t_commrec &commRec)
+{
+    assert(impl_ != nullptr);
+    impl_->communicator(commRec);
 }
 
 //void Manager::add(std::shared_ptr<gmx::IRestraintPotential> puller,

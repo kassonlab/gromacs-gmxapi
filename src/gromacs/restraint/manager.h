@@ -96,6 +96,19 @@ class Manager final
         void setBoundaryConditionsSource(const t_pbc& pbc);
 
         /*!
+         * \brief Provide restraints with the current communicator handle.
+         *
+         * Until additional factoring and clarification, restraints manager has no way to know if
+         * the previously used pointer is valid or who to ask for it, so a raw pointer must be provided
+         * to the communcation record. At the very least, there could be an object
+         * from which the restraints manager _requests_ a fresh handle with access controls, but right now the raw pointer
+         * is all we have.
+         *
+         * \param commRec communications record
+         */
+        void setCommunicator(const t_commrec& commRec);
+
+        /*!
          * \brief Provide restraints with a source of atomic coordinates.
          *
          * Until additional factoring and clarification, restraints manager has no way to know if
@@ -128,7 +141,7 @@ class Manager final
          * is all we have.
          * \param virial_force read/write handle with which to correct for the virial contribution.
          */
-        void setVirialOwner(tensor* virial_force);
+        void setVirialOwner(tensor virial_force);
 
         /*!
          * \brief Provide restraints with a source of current lambda value.
