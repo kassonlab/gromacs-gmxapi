@@ -73,6 +73,12 @@ TEST_F(GromppTest, MdpFileWorks)
 {
     runner_.useStringAsMdpFile(theMdpFile);
     runGrompp();
+}
+
+TEST_F(GromppTest, RunPull)
+{
+    runner_.useStringAsMdpFile(theMdpFile);
+    runGrompp();
     runMD();
 }
 

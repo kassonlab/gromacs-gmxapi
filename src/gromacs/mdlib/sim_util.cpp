@@ -1453,13 +1453,13 @@ void do_force_cutsVERLET(FILE *fplog, t_commrec *cr,
 
 //        restraints->setAtomsSource(*mdatoms);
 //        restraints->setBoundaryConditionsSource(pbc);
-//        restraints->setCommunicator(cr);
+//        restraints->setCommunicator(*cr);
 //        restraints->setLambdaSource(lambda[efptRESTRAINT]);
 //        restraints->setPositionsSource(*x);
 //        restraints->setForceOwner(f);
 //        restraints->setVirialOwner(vir_force);
 //        auto restraintContribution = restraints->calculate(t);
-
+//
 //        enerd->term[F_COM_PULL] += restraintContribution->energy();
 //        enerd->dvdl_lin[efptRESTRAINT] += restraintContribution->work();
         enerd->dvdl_lin[efptRESTRAINT] += dvdl;

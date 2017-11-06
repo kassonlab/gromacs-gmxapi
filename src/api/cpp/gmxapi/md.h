@@ -138,6 +138,15 @@ class MDBuilder
  */
 std::unique_ptr<MDProxy> mdFromTpr(const std::string filename);
 
+
+/*!
+ * \brief Base class for computational components of MD containers.
+ *
+ *
+ */
+class MDModule
+{};
+
 }      // end namespace gmxapi
 
 #endif // header guard
