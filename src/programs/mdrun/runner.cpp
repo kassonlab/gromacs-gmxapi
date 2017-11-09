@@ -929,7 +929,7 @@ int Mdrunner::mdrunner()
 
     /* CAUTION: threads may be started later on in this function, so
        cr doesn't reflect the final parallel state right now */
-    gmx::MDModules mdModules;
+//    gmx::MDModules mdModules;
 
     bool doMembed = opt2bSet("-membed", nfile, fnm);
     bool doRerun  = Flags.test(rerun);
@@ -1111,7 +1111,7 @@ int Mdrunner::mdrunner()
         gmx_bcast_sim(sizeof(tryUsePhysicalGpu), &tryUsePhysicalGpu, cr);
     }
     // TODO: Error handling
-    mdModules.assignOptionsToModules(*inputrec->params, nullptr);
+    mdModules->assignOptionsToModules(*inputrec->params, nullptr);
 
     if (fplog != nullptr)
     {
@@ -1440,7 +1440,7 @@ int Mdrunner::mdrunner()
 
         /* Initiate forcerecord */
         fr                 = mk_forcerec();
-        fr->forceProviders = mdModules.initForceProviders();
+        fr->forceProviders = mdModules->initForceProviders();
         init_forcerec(fplog, mdlog, fr, fcd,
                       inputrec, mtop, cr, box,
                       opt2fn("-table", nfile, fnm),
@@ -1636,7 +1636,7 @@ int Mdrunner::mdrunner()
                                      oenv, bVerbose,
                                      nstglobalcomm,
                                      vsite, constr,
-                                     nstepout, mdModules.outputProvider(),
+                                     nstepout, mdModules->outputProvider(),
                                      inputrec, mtop,
                                      fcd, state, &observablesHistory,
                                      mdatoms, nrnb, wcycle, fr,
@@ -1719,7 +1719,8 @@ int Mdrunner::mdrunner()
     return rc;
 }
 
-Mdrunner::Mdrunner()
+Mdrunner::Mdrunner() :
+    mdModules{std::make_shared<gmx::MDModules>()}
 {
     restraintManager_ = ::gmx::restraint::Manager::instance();
 
@@ -1797,6 +1798,12 @@ void Mdrunner::addPullPotential(std::shared_ptr<gmx::IRestraintPotential> puller
 {
     assert(restraintManager_ != nullptr);
 //    restraintManager_->add(std::move(puller), name);
+}
+
+void Mdrunner::addModule(std::shared_ptr<gmx::IMDModule> module)
+{
+    assert(mdModules != nullptr);
+    mdModules->add(module);
 }
 
 Mdrunner &Mdrunner::operator=(Mdrunner &&) noexcept = default;

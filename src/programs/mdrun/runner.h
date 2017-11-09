@@ -55,6 +55,7 @@
 #include "gromacs/hardware/hw_info.h"
 #include "gromacs/math/vec.h"
 #include "gromacs/mdlib/main.h"
+#include "gromacs/mdtypes/imdmodule.h"
 #include "gromacs/topology/topology.h"
 #include "gromacs/utility/basedefinitions.h"
 #include "gromacs/utility/real.h"
@@ -70,6 +71,8 @@ namespace gmx
 {
 
 // Todo: move to forward declaration headers...
+class MDModules;
+
 namespace restraint
 {
 class Manager;
@@ -207,6 +210,8 @@ class Mdrunner
 
         std::shared_ptr<restraint::Manager> restraintManager_{nullptr};
         std::shared_ptr<TpxState>       tpxState_{nullptr};
+
+        std::shared_ptr<gmx::MDModules> mdModules;
 //        mutable std::mutex            stateAccess;
 
     public:
@@ -266,6 +271,8 @@ class Mdrunner
          */
         void addPullPotential(std::shared_ptr<gmx::IRestraintPotential> puller,
                               std::string name);
+
+        void addModule(std::shared_ptr<gmx::IMDModule> module);
 
         //! Called when thread-MPI spawns threads.
         t_commrec *spawnThreads(int numThreadsToLaunch);

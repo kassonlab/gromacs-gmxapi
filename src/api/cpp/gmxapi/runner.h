@@ -10,6 +10,7 @@
 #include <memory>
 #include <string>
 #include <gromacs/restraint/restraintpotential.h>
+#include <gromacs/mdtypes/imdmodule.h>
 
 #include "gmxapi/gmxapi.h"
 #include "gmxapi/system.h"
@@ -93,7 +94,18 @@ class IMDRunner
          */
         virtual std::shared_ptr<IMDRunner> initialize(std::shared_ptr<Context> context) = 0;
 
-        virtual void setRestraint(std::shared_ptr<gmx::IRestraintPotential> puller) { (void)puller; throw ProtocolError("setRestraint not implemented for this class."); };
+        virtual void setRestraint(std::shared_ptr<gmx::IRestraintPotential> puller)
+        {
+            (void)puller;
+            throw ProtocolError("setRestraint not implemented for this class.");
+        };
+
+        virtual void addModule(std::shared_ptr<gmx::IMDModule> module)
+        {
+            (void) module;
+            throw ProtocolError("setRestraint not implemented for this class.");
+        };
+
 };
 
 /*!

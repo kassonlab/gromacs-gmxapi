@@ -58,6 +58,7 @@ class IKeyValueTreeErrorHandler;
 class IKeyValueTreeTransformRules;
 class IMDOutputProvider;
 class KeyValueTreeObject;
+class IMDModule;
 
 /*! \libinternal \brief
  * Manages the collection of all modules used for mdrun.
@@ -143,6 +144,16 @@ class MDModules
          * Returns an object for computing forces from the modules.
          */
         ForceProviders *initForceProviders();
+
+        /*!
+         * \brief Add a module to the container
+         *
+         * Adding a module breaks some assumptions in the protocol of the other member
+         * functions. This should be removed to a builder class.
+         *
+         * \param module implements some sort of modular functionality for MD.
+         */
+        void add(std::shared_ptr<gmx::IMDModule> module);
 
     private:
         class Impl;

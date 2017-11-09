@@ -235,6 +235,13 @@ void RunningMDRunnerState::setRestraint(std::shared_ptr<gmx::IRestraintPotential
                                      std::string());
 }
 
+void RunningMDRunnerState::addModule(std::shared_ptr<gmx::IMDModule> module)
+{
+    assert(impl_ != nullptr);
+    assert(impl_->runner_ != nullptr);
+    impl_->runner_->addModule(module);
+}
+
 
 RunningMDRunnerState::Builder::Builder() :
     runner_{nullptr}

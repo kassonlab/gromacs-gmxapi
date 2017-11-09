@@ -93,14 +93,14 @@ class IMdpOptionProvider
          * internal key-value tree), and there is no longer any need for
          * backward compatibility with old files.
          */
-        virtual void initMdpTransform(IKeyValueTreeTransformRules *transform) = 0;
+        virtual void initMdpTransform(IKeyValueTreeTransformRules *transform) {};
         /*! \brief
          * Initializes options that declare input (mdp) parameters for this
          * module.
          */
-        virtual void initMdpOptions(IOptionsContainerWithSections *options) = 0;
+        virtual void initMdpOptions(IOptionsContainerWithSections *options) {};
         //! Prepares to write a flat key-value tree like an mdp file.
-        virtual void buildMdpOutput(KeyValueTreeObjectBuilder *builder) const = 0;
+        virtual void buildMdpOutput(KeyValueTreeObjectBuilder *builder) const {};
 
     protected:
         ~IMdpOptionProvider() {}

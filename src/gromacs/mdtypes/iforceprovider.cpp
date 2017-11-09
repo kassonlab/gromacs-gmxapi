@@ -44,6 +44,7 @@
 #include "iforceprovider.h"
 
 #include <vector>
+#include <cassert>
 
 #include "gromacs/utility/arrayref.h"
 
@@ -90,6 +91,7 @@ void ForceProviders::calculateForces(const t_commrec          *cr,
 {
     for (auto provider : impl_->withVirialContribution_)
     {
+        assert(provider != nullptr);
         provider->calculateForces(cr, mdatoms, box, t, x, force);
     }
     for (auto provider : impl_->withoutVirialContribution_)

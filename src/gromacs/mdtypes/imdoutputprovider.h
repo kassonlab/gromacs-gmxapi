@@ -83,10 +83,10 @@ class IMDOutputProvider
          * \param[in] oenv  The output environment for xvg files
          */
         virtual void initOutput(FILE *fplog, int nfile, const t_filenm fnm[],
-                                bool bAppendFiles, const gmx_output_env_t *oenv) = 0;
+                                bool bAppendFiles, const gmx_output_env_t *oenv) {};
 
         //! Finalizes output from a simulation run.
-        virtual void finishOutput() = 0;
+        virtual void finishOutput() {};
 
     protected:
         ~IMDOutputProvider() {}
