@@ -259,8 +259,64 @@ class IRestraintPotential
  *
  * \ingroup module_restraint
  */
+
+//template<class T>
+//class RestraintForceProvider : public gmx::IForceProvider
+//{
+//    public:
+//        void calculateForces(const t_commrec *cr,
+//                             const t_mdatoms *mdatoms,
+//                             const matrix box,
+//                             double t,
+//                             const rvec *x,
+//                             gmx::ArrayRef<gmx::RVec> force)
+//        override
+//        {
+////                T::calculate();
+//                force_called++;
+//        };
+//
+//        unsigned int force_called{0};
+//};
+
+//template<class T>
+//class RestraintMDModule final : public gmx::IMDModule, public T
+//{
+//    private:
+//        class OptionProvider : public gmx::IMdpOptionProvider
+//        {};
+//        std::shared_ptr<OptionProvider> optionprovider{std::make_shared<OptionProvider>()};
+//
+//        class OutputProvider : public gmx::IMDOutputProvider
+//        {};
+//        std::shared_ptr<OutputProvider> outputprovider{std::make_shared<OutputProvider>()};
+//
+//        std::shared_ptr<RestraintForceProvider<T>> forceprovider{std::make_shared<RestraintForceProvider<T>>()};
+//
+//        gmx::IForceProvider* getForceProvider()
+//        {
+//                return forceprovider.get();
+//        };
+//    public:
+//        gmx::IMdpOptionProvider *mdpOptionProvider() override
+//        {
+//                return optionprovider.get();
+//        }
+//
+//        gmx::IMDOutputProvider *outputProvider() override
+//        {
+//                return outputprovider.get();
+//        }
+//
+//        void initForceProviders(ForceProviders *forceProviders) override
+//        {
+//                forceProviders->addForceProvider(getForceProvider());
+//        }
+//
+//        unsigned int force_called() { return forceprovider->force_called; };
+//};
 template<class T>
-class RestraintPotential : public IRestraint, public T
+class RestraintPotential : public IRestraint, public IRestraintPotential, public T
 {
     public:
         /// \cond libapi
@@ -274,7 +330,48 @@ class RestraintPotential : public IRestraint, public T
                                          Time)> getEvaluator() override;
         /// \endcond
 
+        static std::shared_ptr<RestraintPotential> create();
+    private:
+        /// Private constructor (use create() method).
+        RestraintPotential() = default;
+
+        /// Allow interfaces to keep this alive.
+        std::weak_ptr<RestraintPotential<T>> self_;
 };
+//
+//std::shared_ptr<RestraintPotential> RestraintPotential::create()
+//{
+//        auto newObject = std::make_shared<RestraintPotential>();
+//        newObject->self_ = newObject;
+//        return newObject;
+//}
+//
+//template<class T>
+//std::shared_ptr<::gmx::IMDModule> RestraintPotential<T>::getModuleInterface()
+//{
+//        class Container : public IMDModule
+//        {
+//            public:
+//                IMdpOptionProvider *mdpOptionProvider() override
+//                {
+//                        return nullptr;
+//                }
+//
+//                IMDOutputProvider *outputProvider() override
+//                {
+//                        return nullptr;
+//                }
+//
+//                void initForceProviders(ForceProviders *forceProviders) override
+//                {
+//
+//                }
+//        };
+//        std::shared_ptr<RestraintPotential<T>> self = self_.lock();
+//        auto interface = std::make_shared<Container>();
+//        return interface;
+//}
+
 /*! \fn PotentialPointData RestraintPotential<T>::calculate(Vector r1, Vector r2, Time t);
  * \brief The most complete call signature available for a RestraintPotential.
  *

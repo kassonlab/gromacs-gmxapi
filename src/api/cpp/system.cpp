@@ -20,6 +20,7 @@
 #include "gromacs/mdrunutility/mdmodules.h"
 #include "gromacs/mdtypes/commrec.h"
 #include "gromacs/mdtypes/inputrec.h"
+#include "gromacs/mdtypes/tpxstate.h"
 #include "gromacs/utility/futil.h"
 #include "gromacs/utility/keyvaluetree.h"
 #include "gromacs/utility/smalloc.h"

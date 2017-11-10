@@ -36,13 +36,13 @@ PotentialContainer::PotentialContainer() :
         impl_{gmx::compat::make_unique<PotentialContainer::Impl>()}
 {}
 
-template<typename T>
-std::function<gmx::PotentialPointData(const gmx::Vector &,
-                                           const gmx::Vector &,
-                                           gmx::Time)> gmx::RestraintPotential<T>::getEvaluator()
-{
-    return nullptr;
-}
+//template<typename T>
+//std::function<gmx::PotentialPointData(const gmx::Vector &,
+//                                           const gmx::Vector &,
+//                                           gmx::Time)> gmx::RestraintPotential<T>::getEvaluator()
+//{
+//    return nullptr;
+//}
 
 PotentialContainer::~PotentialContainer() = default;
 

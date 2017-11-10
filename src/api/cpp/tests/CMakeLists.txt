@@ -18,6 +18,7 @@ configure_file(testingconfiguration.in.h testingconfiguration.h)
 gmx_add_unit_test(GmxapiExternalInterfaceTests gmxapi-test
                   moduletest.cpp
                   test_md.cpp
+                  test_restraint.cpp
                   test_runner.cpp
                   test_setup.cpp
                   test_status.cpp

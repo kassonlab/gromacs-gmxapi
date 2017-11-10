@@ -1,7 +1,10 @@
 #include "testingconfiguration.h"
 
+#include <memory>
+
 #include "gmxapi/context.h"
 #include "gmxapi/runner.h"
+#include "gmxapi/md/mdmodule.h"
 #include "gmxapi/md/runnerstate.h"
 #include "gmxapi/md.h"
 #include "gmxapi/system.h"
@@ -108,32 +111,6 @@ TEST(ApiRunner, BasicMD)
 //        ASSERT_NO_THROW(session->run(1000));
         ASSERT_TRUE(status.success());
     }
-}
-
-TEST(ApiRunner, MdAndPlugin)
-{
-
-    auto system = gmxapi::fromTprFile(filename);
-
-    {
-        std::shared_ptr<gmxapi::Context> context = gmxapi::defaultContext();
-        auto runner = system->runner();
-
-        auto session = runner->initialize(context);
-
-        auto module = std::make_shared<DummyMDModule>();
-        session->addModule(module);
-
-//        auto puller = std::make_shared<gmx::RestraintPotential>();
-//        session->setRestraint(puller);
-
-        gmxapi::Status status;
-        ASSERT_NO_THROW(status = session->run());
-        ASSERT_TRUE(module->force_called() > 0);
-//        ASSERT_NO_THROW(session->run(1000));
-        ASSERT_TRUE(status.success());
-    }
-
 }
 
 } // end anonymous namespace

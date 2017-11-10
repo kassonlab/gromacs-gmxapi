@@ -8,6 +8,7 @@
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/gmxapi)
 configure_file(gmxapi/context.h gmxapi)
 configure_file(gmxapi/exceptions.h gmxapi)
+configure_file(gmxapi/gromacsfwd.h gmxapi)
 configure_file(gmxapi/gmxapi.h gmxapi)
 configure_file(gmxapi/md.h gmxapi)
 configure_file(gmxapi/runner.h gmxapi)
@@ -16,6 +17,7 @@ configure_file(gmxapi/version.in.h gmxapi/version.h)
 
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/gmxapi/md)
 configure_file(gmxapi/md/runnerstate.h gmxapi/md)
+configure_file(gmxapi/md/mdmodule.h gmxapi/md)
 
 # Add to install target: copy the public API headers from the source directory
 # into the gmxapi header subdirectory.
@@ -94,7 +96,7 @@ install(EXPORT gmxapi
 add_library(Gromacs::gmxapi ALIAS gmxapi )
 
 include(CMakePackageConfigHelpers)
-# TODO: NEED TO MAKE A GmxapiConfig.cmake or gmxapi-config.cmake script, and maybe FindGmxapi.cmake
+
 write_basic_package_version_file(
     "${CMAKE_CURRENT_BINARY_DIR}/cmake/gmxapi-version.cmake"
     VERSION ${GMXAPI_RELEASE}
@@ -119,9 +121,3 @@ install(
 if(BUILD_TESTING)
     add_subdirectory(tests)
 endif()
-# These include directories were not getting set right in the tests directory...
-#target_include_directories( test_impl PRIVATE
-#                            ${CMAKE_CURRENT_SOURCE_DIR}
-#                            $<TARGET_PROPERTY:gmxapi,INCLUDE_DIRECTORIES>
-#                            ${CMAKE_CURRENT_BINARY_DIR}
-#                            )

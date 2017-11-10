@@ -15,6 +15,7 @@
 #include "gmxapi/exceptions.h"
 #include "gmxapi/md.h"
 #include "gmxapi/md/runnerstate.h"
+#include "gmxapi/md/mdmodule.h"
 
 namespace gmxapi
 {
@@ -54,9 +55,10 @@ std::shared_ptr<IMDRunner> RunnerProxy::initialize(std::shared_ptr<Context> cont
     return instanceState_;
 }
 
-void RunnerProxy::setRestraint(std::shared_ptr<gmx::IRestraintPotential> puller)
+void RunnerProxy::setRestraint(std::shared_ptr<gmxapi::MDModule> restraint)
 {
-    instanceState_->setRestraint(std::move(puller));
+    assert(instanceState_ != nullptr);
+    instanceState_->setRestraint(std::move(restraint));
 }
 
 void EmptyMDRunnerState::registerMDBuilder(std::unique_ptr<MDBuilder> builder)
@@ -227,20 +229,22 @@ void RunningMDRunnerState::registerMDBuilder(std::unique_ptr<MDBuilder> builder)
     // implement the runner--mdengine binding protocol
 }
 
-void RunningMDRunnerState::setRestraint(std::shared_ptr<gmx::IRestraintPotential> puller)
+void RunningMDRunnerState::setRestraint(std::shared_ptr<gmxapi::MDModule> module)
 {
     assert(impl_ != nullptr);
     assert(impl_->runner_ != nullptr);
-    impl_->runner_->addPullPotential(puller,
+    auto restraint = module->getRestraint();
+    assert(restraint != nullptr);
+    impl_->runner_->addPullPotential(restraint,
                                      std::string());
 }
 
-void RunningMDRunnerState::addModule(std::shared_ptr<gmx::IMDModule> module)
-{
-    assert(impl_ != nullptr);
-    assert(impl_->runner_ != nullptr);
-    impl_->runner_->addModule(module);
-}
+//void RunningMDRunnerState::addModule(std::shared_ptr<gmx::IMDModule> module)
+//{
+//    assert(impl_ != nullptr);
+//    assert(impl_->runner_ != nullptr);
+//    impl_->runner_->addModule(module);
+//}
 
 
 RunningMDRunnerState::Builder::Builder() :

@@ -9,8 +9,6 @@
 
 #include <memory>
 #include <string>
-#include <gromacs/restraint/restraintpotential.h>
-#include <gromacs/mdtypes/imdmodule.h>
 
 #include "gmxapi/gmxapi.h"
 #include "gmxapi/system.h"
@@ -19,6 +17,7 @@ namespace gmxapi
 {
 class MDProxy;
 class Context;
+class MDModule;
 
 class MDBuilder;
 
@@ -94,17 +93,17 @@ class IMDRunner
          */
         virtual std::shared_ptr<IMDRunner> initialize(std::shared_ptr<Context> context) = 0;
 
-        virtual void setRestraint(std::shared_ptr<gmx::IRestraintPotential> puller)
+        virtual void setRestraint(std::shared_ptr<gmxapi::MDModule> restraint)
         {
-            (void)puller;
+            (void)restraint;
             throw ProtocolError("setRestraint not implemented for this class.");
         };
 
-        virtual void addModule(std::shared_ptr<gmx::IMDModule> module)
-        {
-            (void) module;
-            throw ProtocolError("setRestraint not implemented for this class.");
-        };
+//        virtual void addModule(std::shared_ptr<gmx::IMDModule> module)
+//        {
+//            (void) module;
+//            throw ProtocolError("setRestraint not implemented for this class.");
+//        };
 
 };
 
@@ -164,7 +163,7 @@ class RunnerProxy : public IMDRunner, public std::enable_shared_from_this<Runner
 
         void setState(std::shared_ptr<IMDRunner> state);
 
-        void setRestraint(std::shared_ptr<gmx::IRestraintPotential> puller) override;
+        void setRestraint(std::shared_ptr<gmxapi::MDModule> restraint) override;
 
     private:
         /// bound task, if any

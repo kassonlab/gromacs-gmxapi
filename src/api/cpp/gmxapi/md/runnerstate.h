@@ -6,6 +6,7 @@
 #define GROMACS_RUNNERPROXY_H
 
 #include "gmxapi/runner.h"
+#include "gmxapi/gromacsfwd.h"
 #include <memory>
 
 // Declaring classes from other namespaces is iffy and turns compile errors into linking errors
@@ -15,7 +16,7 @@
 //    class TpxState;
 //}
 // For now, I prefer the compiler type-checking of the coupled code.
-#include "gromacs/mdtypes/tpxstate.h"
+//#include "gromacs/mdtypes/tpxstate.h"
 
 namespace gmxapi
 {
@@ -125,9 +126,9 @@ class RunningMDRunnerState : public IMDRunner
 
         };
 
-        void setRestraint(std::shared_ptr<gmx::IRestraintPotential> puller) override;
+        void setRestraint(std::shared_ptr<gmxapi::MDModule> restraint) override;
 
-        void addModule(std::shared_ptr<gmx::IMDModule> module) override;
+//        void addModule(std::shared_ptr<gmx::IMDModule> module) override;
 
     private:
         RunningMDRunnerState();
