@@ -13,10 +13,10 @@
 #include <cassert>
 #include <memory>
 #include <map>
+#include <iostream>
 
 #include "restraintfunctor-impl.h"
 
-#include "gromacs/utility/basedefinitions.h"
 #include "gromacs/pulling/pull.h"
 #include "gromacs/compat/make_unique.h"
 #include "restraintcalculation-impl.h"
@@ -42,6 +42,8 @@ class ManagerImpl
     public:
         void addLegacy(std::shared_ptr<LegacyPuller> puller, std::string name);
         std::shared_ptr<LegacyPuller> getLegacy();
+
+        void add(std::shared_ptr<::gmx::IRestraintPotential> restraint, std::string name);
 
         void currentTime(double currentTime)
         {
@@ -90,6 +92,9 @@ class ManagerImpl
 
         std::shared_ptr<ICalculation> calculate(double t);
 
+        std::shared_ptr<LegacyPuller> puller_;
+        std::shared_ptr<::gmx::IRestraintPotential> restraint_;
+
     private:
         double currentTime_{0};
         double previousTime_{0};
@@ -103,17 +108,25 @@ class ManagerImpl
 
         const t_commrec* communicator_{nullptr};
 
-        std::shared_ptr<LegacyPuller> puller_;
 };
 
 std::shared_ptr<ICalculation> ManagerImpl::calculate(double t)
 {
+    assert(communicator_ != nullptr);
+    assert(atoms_ != nullptr);
+    assert(pbc_ != nullptr);
+    assert(getLegacy() != nullptr);
+    assert(getLegacy()->getRaw() != nullptr);
+    assert(forces_ != nullptr);
+    assert(virial_ != nullptr);
+
     auto calculation = std::make_shared<Calculation>(t, *communicator_, *atoms_, *pbc_, lambda_, positions_, getLegacy()->getRaw(), forces_, virial_);
     if (calculation != nullptr)
     {
         previousTime_ = currentTime_;
         currentTime_ = t;
     }
+    std::cout << "Manager calculating at time " << t << std::endl;
     return calculation;
 }
 
@@ -128,6 +141,12 @@ std::shared_ptr<LegacyPuller> ManagerImpl::getLegacy()
 {
     return puller_;
 }
+
+void ManagerImpl::add(std::shared_ptr<::gmx::IRestraintPotential> restraint, std::string name)
+{
+
+}
+
 
 Manager::Manager() : impl_(gmx::compat::make_unique<ManagerImpl>()) {};
 
@@ -203,6 +222,10 @@ bool Manager::contributesEnergy()
             energetic = bool(pull_have_potential(pull_work));
         }
     }
+    if (impl_->restraint_ != nullptr)
+    {
+        energetic = true;
+    };
     return energetic;
 }
 
@@ -221,11 +244,6 @@ void Manager::clearConstraintForces()
 
 }
 
-void Manager::add(std::shared_ptr<LegacyPuller> puller, std::string name)
-{
-    assert(impl_ != nullptr);
-    impl_->addLegacy(std::move(puller), std::move(name));
-}
 
 std::shared_ptr<ICalculation> Manager::calculate(double t)
 {
@@ -279,6 +297,19 @@ void Manager::setCommunicator(const t_commrec &commRec)
 {
     assert(impl_ != nullptr);
     impl_->communicator(commRec);
+}
+
+void Manager::add(std::shared_ptr<LegacyPuller> puller, std::string name)
+{
+    assert(impl_ != nullptr);
+    impl_->addLegacy(std::move(puller), std::move(name));
+}
+
+void Manager::add(std::shared_ptr<gmx::IRestraintPotential> puller,
+                  std::string name)
+{
+    assert(impl_ != nullptr);
+    impl_->add(std::move(puller), name);
 }
 
 //void Manager::add(std::shared_ptr<gmx::IRestraintPotential> puller,

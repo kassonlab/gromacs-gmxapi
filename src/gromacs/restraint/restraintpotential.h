@@ -26,6 +26,7 @@
 #include <memory>
 #include <vector>
 #include <functional>
+#include <ostream>
 
 #include "gromacs/math/vectypes.h"
 #include "gromacs/utility/basedefinitions.h"
@@ -54,6 +55,7 @@ namespace gmx
  * Type alias is used at namespace level
  */
 using Vector = ::gmx::detail::vec3<real>;
+
 
 /*!
  * \brief Typed unitless time in GROMACS.

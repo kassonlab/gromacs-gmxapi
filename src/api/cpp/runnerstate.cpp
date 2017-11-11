@@ -235,8 +235,7 @@ void RunningMDRunnerState::setRestraint(std::shared_ptr<gmxapi::MDModule> module
     assert(impl_->runner_ != nullptr);
     auto restraint = module->getRestraint();
     assert(restraint != nullptr);
-    impl_->runner_->addPullPotential(restraint,
-                                     std::string());
+    impl_->runner_->addPullPotential(restraint, module->name());
 }
 
 //void RunningMDRunnerState::addModule(std::shared_ptr<gmx::IMDModule> module)

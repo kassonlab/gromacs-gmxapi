@@ -35,7 +35,17 @@
 add_library(restraint OBJECT
             restraintpotential.h
             restraintpotential.cpp
-            vectortype.h manager.cpp manager.h restraintfunctor-impl.cpp restraintfunctor-impl.h restraintcalculation.h restraintcalculation.cpp restraintcalculation-impl.cpp restraintcalculation-impl.h)
+            vectortype.h
+            manager.cpp
+            manager.h
+            restraintfunctor-impl.cpp
+            restraintfunctor-impl.h
+            restraintcalculation.h
+            restraintcalculation.cpp
+            restraintcalculation-impl.h
+            restraintmdmodule.h
+            restraintmdmodule.cpp
+            restraintmdmodule-impl.h)
 set_target_properties(restraint PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 set(LIBGROMACS_SOURCES ${LIBGROMACS_SOURCES} $<TARGET_OBJECTS:restraint> PARENT_SCOPE)

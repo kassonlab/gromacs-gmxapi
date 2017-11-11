@@ -211,7 +211,7 @@ class Mdrunner
         std::shared_ptr<restraint::Manager> restraintManager_{nullptr};
         std::shared_ptr<TpxState>       tpxState_{nullptr};
 
-        std::shared_ptr<gmx::MDModules> mdModules;
+        std::shared_ptr<gmx::MDModules> mdModules{nullptr};
 //        mutable std::mutex            stateAccess;
 
     public:

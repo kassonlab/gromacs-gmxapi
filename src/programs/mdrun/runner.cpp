@@ -51,6 +51,7 @@
 #include <csignal>
 #include <cstdlib>
 #include <string>
+#include <iostream>
 
 #include <algorithm>
 #include <gromacs/restraint/manager.h>
@@ -108,6 +109,7 @@
 #include "gromacs/pbcutil/pbc.h"
 #include "gromacs/pulling/pull.h"
 #include "gromacs/restraint/restraintpotential.h"
+#include "gromacs/restraint/restraintmdmodule.h"
 #include "gromacs/pulling/pull_rotation.h"
 #include "gromacs/timing/wallcycle.h"
 #include "gromacs/topology/mtop_util.h"
@@ -162,6 +164,8 @@ namespace gmx
 std::unique_ptr<Mdrunner> Mdrunner::cloneOnSpawnedThread() const
 {
     auto newRunner = gmx::compat::make_unique<Mdrunner>();
+
+    // Todo: how to handle the restraint manager or parameters not in inputrec?
 
     newRunner->hw_opt = hw_opt;
     // TODO This duplication is formally necessary if any thread might
@@ -1441,6 +1445,9 @@ int Mdrunner::mdrunner()
         /* Initiate forcerecord */
         fr                 = mk_forcerec();
         fr->forceProviders = mdModules->initForceProviders();
+        // Threads have been launched and DD initialized
+        // Todo: restraintManager can provide a proper IMDModule interface later.
+//        fr->forceProviders->addForceProvider(restraintManager_);
         init_forcerec(fplog, mdlog, fr, fcd,
                       inputrec, mtop, cr, box,
                       opt2fn("-table", nfile, fnm),
@@ -1592,7 +1599,7 @@ int Mdrunner::mdrunner()
 
         // If old MDP traditional MDP pulling options were used, the pull code
         // wrapped up in gmx::LegacyPullPack can be used.
-        if (inputrec->bPull)
+        if (inputrec->bPull && inputrec->pull != nullptr)
         {
             // TODO: move to constructor when initializing runner is decoupled from reading TPR.
             /* Initialize pull code structures */
@@ -1797,7 +1804,19 @@ void Mdrunner::addPullPotential(std::shared_ptr<gmx::IRestraintPotential> puller
                                 std::string name)
 {
     assert(restraintManager_ != nullptr);
-//    restraintManager_->add(std::move(puller), name);
+    assert(mdModules != nullptr);
+    std::cout << "Registering restraint named " << name << std::endl;
+    assert(tpxState_ != nullptr);
+    assert(tpxState_->getRawInputrec() != nullptr);
+    auto& enablePull = tpxState_->getRawInputrec()->bPull;
+    // We can't activate the pull code path without having params with which to
+    // initialize the pull code. We'll work on that.
+//    enablePull = true;
+
+    // When multiple restraints are used, it may be wasteful to register them separately.
+    // Maybe instead register a Restraint Manager as a force provider.
+    auto module = ::gmx::RestraintMDModule::create(puller);
+    mdModules->add(std::move(module));
 }
 
 void Mdrunner::addModule(std::shared_ptr<gmx::IMDModule> module)

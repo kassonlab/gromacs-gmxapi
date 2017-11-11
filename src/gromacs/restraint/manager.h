@@ -34,6 +34,19 @@ namespace restraint
 class ManagerImpl;
 class ICalculation;
 
+//class ManagedForceProvider : public IForceProvider
+//{
+//        void calculateForces(const t_commrec *cr,
+//                             const t_mdatoms *mdatoms,
+//                             const real[3]
+//
+//        * box,
+//        double t,
+//        const rvec *x, gmx::ArrayRef<gmx::RVec>
+//        force)
+//        override;
+//};
+
 /*!
  * \brief Manage the Restraint potentials available for Molecular Dynamics.
  *
@@ -58,6 +71,7 @@ class Manager final
 {
     public:
         ~Manager();
+
         /// Get a shared reference to the global manager.
         static std::shared_ptr<Manager> instance();
 
@@ -67,7 +81,7 @@ class Manager final
         Manager& operator=(Manager&&) = delete;
 
         void add(std::shared_ptr<LegacyPuller> puller, std::string name);
-//        void add(std::shared_ptr<gmx::IRestraintPotential> puller, std::string name);
+        void add(std::shared_ptr<gmx::IRestraintPotential> puller, std::string name);
 
         /*!
          * \brief Provide restraints with a source of atom information.

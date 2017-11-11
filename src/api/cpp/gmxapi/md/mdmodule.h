@@ -5,6 +5,8 @@
 #ifndef GMXAPI_MDMODULE_H
 #define GMXAPI_MDMODULE_H
 
+#include <memory>
+
 #include "gmxapi/gromacsfwd.h"
 
 namespace gmxapi

@@ -34,6 +34,7 @@
 
 #include <cmath>
 #include <cassert>
+#include <ostream>
 #include "gromacs/math/vectypes.h"
 
 namespace gmx
@@ -286,6 +287,12 @@ inline constexpr vec3<Scalar> make_vec3(T1 x, T2 y, T3 z)
     return vec3<Scalar>(Scalar(x), Scalar(y), Scalar(z));
 };
 
+template<class T>
+std::ostream& operator<<(std::ostream& stream, const vec3<T>& vec)
+{
+    stream << "(" << vec.x << "," << vec.y << "," << vec.z << ")";
+    return stream;
+}
 
 } // end namespace gmx::detail
 } // end namespace gmx
