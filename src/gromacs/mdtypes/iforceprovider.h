@@ -92,7 +92,7 @@ class IForceProvider
                                      gmx::ArrayRef<gmx::RVec>  force) = 0;
 
     protected:
-        ~IForceProvider() {}
+        virtual ~IForceProvider() {}
 };
 
 } // namespace gmx
