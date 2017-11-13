@@ -3,7 +3,12 @@
  *
  * API clients include this header.
  *
- * \defgroup gmxapi Gromacs external C++ interface.
+ * \ingroup gmxapi
+ */
+/*!
+ * \defgroup gmxapi gmxapi
+ *
+ * \brief Provide external access to an installed GROMACS binary through the gmxapi library.
  *
  * API client code primarily operates on Proxy objects, which can be copied,
  * serialized, and configured independently of execution context, data location,

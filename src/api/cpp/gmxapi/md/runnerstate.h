@@ -4,6 +4,11 @@
 
 #ifndef GROMACS_RUNNERPROXY_H
 #define GROMACS_RUNNERPROXY_H
+/*! \file
+ * \brief Declare supporting classes for IMDRunner interface.
+ *
+ * \ingroup gmxapi_md
+ */
 
 #include "gmxapi/runner.h"
 #include "gmxapi/gromacsfwd.h"

@@ -14,6 +14,7 @@
  * more entwined with libgromacs can include headers from there.
  *
  * It would be nice to include links to the documentation for these classes, too.
+ * \ingroup gmxapi
  */
 
 namespace gmx

@@ -1,11 +1,18 @@
 #ifndef GMXAPI_MD_H
 #define GMXAPI_MD_H
-
 /*! \file
  * \brief Declare base classes and API for MD simulation engines.
  *
  * Helper functions, standard concrete classes, and implementation interfaces are in gmxapi/md/
+ * \ingroup gmxapi_md
+ */
+/*! \defgroup gmxapi_md Molecular Dynamics
+ * \brief API access to Molecular Mechanics and Molecular Dynamics calculation in GROMACS
+ *
  * \ingroup gmxapi
+ */
+/*! \dir md
+ * \brief Additional declarations for API implementation and extension.
  */
 #include "exceptions.h"
 #include <memory>

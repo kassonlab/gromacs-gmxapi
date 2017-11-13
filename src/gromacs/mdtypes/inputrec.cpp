@@ -927,7 +927,7 @@ void pr_inputrec(FILE *fp, int indent, const char *title, const t_inputrec *ir,
 
         /* COM PULLING */
         PS("pull", EBOOL(ir->bPull));
-        if (ir->bPull)
+        if (ir->bPull && ir->pull != nullptr)
         {
             pr_pull(fp, indent, ir->pull);
         }
