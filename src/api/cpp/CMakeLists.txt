@@ -48,6 +48,7 @@ target_sources(
         gmxapi.cpp
         md-impl.h
         md.cpp
+        mdmodule.cpp
         mdproxy.cpp
         runnerstate.cpp
         system.cpp

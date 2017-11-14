@@ -8,6 +8,13 @@
 /*! \file
  * \brief Provide forward declarations for symbols in the GROMACS public headers.
  *
+ * Basic API clients only need to compile
+ * and link against the gmxapi target, but some gmxapi classes use opaque pointers to
+ * library classes that are forward-declared here.
+ * To extend the API requires GROMACS library
+ * headers and possibly linking against `libgromacs`. Refer to the GROMACS developer
+ * documentation for details.
+ *
  * We don't want to include ::gmx headers if we don't have to, but we need to declare
  * some things in the ::gmx namespace somewhere. These are forward declarations for
  * opaque pointers for client code building against libgmxapi. Client code that is

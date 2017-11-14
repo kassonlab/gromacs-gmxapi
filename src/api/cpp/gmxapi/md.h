@@ -13,6 +13,10 @@
  */
 /*! \dir md
  * \brief Additional declarations for API implementation and extension.
+ *
+ * This directory contains headers that require gromacsfwd.h and that declare
+ * objects that have stronger dependencies on GROMACS to fully define or extend.
+ * \ingroup gmxapi_md
  */
 #include "exceptions.h"
 #include <memory>
@@ -21,11 +25,72 @@
 namespace gmxapi
 {
 
+/*! \addtogroup gmxapi_md
+
+ ## Extending MD with a custom restraint potential
+
+ Below, we show code that extends the GROMACS library, code that interfaces with this
+ API, and client code that calls GROMACS with the custom code.
+ Refer to the sample plugin repository for a more complete example.
+
+ \todo Move this to an example source code file that we can compile and test.
+
+ Example: In client code, extend the GROMACS library by implementing a new restraint
+ potential (see library documentation).
+
+        class NullRestraint : public gmx::IRestraintPotential
+        {
+            public:
+                gmx::PotentialPointData evaluate(gmx::Vector r1,
+                                                 gmx::Vector r2,
+                                                 double t) override
+                {
+                    return {};
+                }
+        };
+
+ Use gmxapi::Module to define an API object class that we can pass around.
+
+        class SimpleApiModule : public gmxapi::MDModule
+        {
+            public:
+                const char *name() override
+                {
+                    return "NullApiModule";
+                }
+
+                // Implement the MDModule protocol.
+                std::shared_ptr<gmx::IRestraintPotential> getRestraint() override
+                {
+                    auto restraint = std::make_shared<NullRestraint>();
+                    return restraint;
+                }
+        };
+
+ C++ client code to run an MD simulation with the custom restraint.
+
+        bool mysim() {
+                auto system = gmxapi::fromTprFile(filename);
+                std::shared_ptr<gmxapi::Context> context = gmxapi::defaultContext();
+                auto runner = system->runner();
+
+                auto session = runner->initialize(context);
+
+                auto module = std::make_shared<SimpleApiModule>();
+                session->setRestraint(module);
+
+                gmxapi::Status status;
+                status = session->run();
+                return status.success();
+        };
+*/
+
 // Forward declaration. Defined in runner.h
 class IMDRunner;
 // Forware declaration. Defined below.
 class MDBuilder;
 
+/// \cond internal
 /*!
  * \brief Base class for Molecular Dynamics engine implementations and states.
  *
@@ -40,6 +105,8 @@ class MDBuilder;
  *
  * The MDState implementation is responsible for implementing the bind() method, allowing a
  * runner proxy and MD proxy to be translated into an actual runner and MD Engine instance.
+ *
+ * \ingroup gmxapi_md
  */
 class MDEngine
 {
@@ -88,6 +155,8 @@ class MDEngine
  * proxies ought to continue to point to the same state member. Since proxy objects are not necessary
  * to manage the underlying resources, other API objects may keep alive a proxy's state member, potentially
  * issuing a new proxy for it at some point.
+ *
+ * \ingroup gmxapi_md
  */
 class MDProxy : public MDEngine
 {
@@ -123,6 +192,8 @@ class MDProxy : public MDEngine
  * build() to be called to produce a ready-to-run simulation.
  *
  * This builder is part of the MDRunner protocol and the IMDRunner interface.
+ *
+ * \ingroup gmxapi_md
  */
 class MDBuilder
 {
@@ -141,10 +212,14 @@ class MDBuilder
         // piece-by-piece construction functions
 };
 
+/// \endcond
+
 /*! \brief Get a proxy by reading a TPR file.
  *
  * \param filename TPR input file name.
  * \returns Ownership of a new simulation task proxy object.
+ *
+ * \ingroup gmxapi_md
  */
 std::unique_ptr<MDProxy> mdFromTpr(const std::string filename);
 

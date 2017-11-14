@@ -5,6 +5,30 @@
  *
  * \ingroup gmxapi
  */
+/*! \mainpage
+ * The `gmxapi` library allows GROMACS extension and client code to interact with
+ * GROMACS internals without compile-time dependence on the GROMACS source code.
+ * It is sufficient to use the headers described here and to link against `libgmxapi` (or whatever it ends up being called in your installation). CMake helpers make it
+ * easy to compile your own code against an installed copy of GROMACS.
+ *
+ * Using the `Gromacs::gmxapi` CMake target, the headers described here can be
+ * included from `gmxapi/...` and symbols in the `::gmxapi` C++ namespace can be
+ * resolved in the library by link time.
+ *
+ * For API stability and unambiguous versioning, headers in the top-level `gmxapi/`
+ * directory should not refer to the ::gmx namespace used by the core GROMACS library,
+ * except for gromacsfwd.h, which consolidates forward declarations in the ::gmx namespace
+ * required by the extension APIs in subdirectories like `gmxapi/md`.
+ * \todo gromacsfwd.h probably shouldn't be in the top level either...
+ * To reduce dependencies, headers should not depend on headers at a deeper level
+ * than themselves, where versioning and compatibility guarantees are weaker
+ * (possibly dependent on GROMACS versions).
+ *
+ * This API is developed primarily to support a Python interface to GROMACS, developed
+ * as a completely separate software repository.
+ *
+ * Refer to the <a href="modules.html">modules</a> section for a hierarchical overview of the API documentation.
+ */
 /*!
  * \defgroup gmxapi gmxapi
  *
