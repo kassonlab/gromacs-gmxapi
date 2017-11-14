@@ -11,12 +11,10 @@
 #include <string>
 
 #include "gmxapi/gmxapi.h"
-#include "gmxapi/system.h"
 
 namespace gmxapi
 {
 class MDProxy;
-class Context;
 class MDModule;
 
 class MDBuilder;
@@ -93,11 +91,8 @@ class IMDRunner
          */
         virtual std::shared_ptr<IMDRunner> initialize(std::shared_ptr<Context> context) = 0;
 
-        virtual void setRestraint(std::shared_ptr<gmxapi::MDModule> restraint)
-        {
-            (void)restraint;
-            throw ProtocolError("setRestraint not implemented for this class.");
-        };
+        virtual void setRestraint(std::shared_ptr<gmxapi::MDModule> restraint);
+
 
 //        virtual void addModule(std::shared_ptr<gmx::IMDModule> module)
 //        {

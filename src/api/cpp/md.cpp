@@ -136,4 +136,19 @@ std::unique_ptr<MDProxy> mdFromTpr(const std::string filename)
     return md;
 }
 
+std::shared_ptr<::gmxapi::MDEngine> MDHolder::getMDEngine()
+{
+    return md_;
+}
+
+const std::shared_ptr<::gmxapi::MDEngine> MDHolder::getMDEngine() const
+{
+    return md_;
+}
+
+MDHolder::MDHolder(std::shared_ptr<MDEngine> md) :
+    md_{std::move(md)}
+{}
+
+
 } //end namespace gmxapi

@@ -1,7 +1,13 @@
 /*! \file
  * \brief Header for public Gromacs C++ API
  *
- * API clients include this header.
+ * API clients include this header. It is intended to provide a minimal set of
+ * declarations to allow independently implemented API clients to make compatible
+ * references to gmxapi objects. Each client will still need to include additional
+ * headers and to link against gmxapi, but clients don't need to be completely ABI
+ * or API compatible with each other. Clients should use the gmxapi versioning utilities
+ * to check for compatibility before accessing members of an object passed by
+ * another client.
  *
  * \ingroup gmxapi
  */
@@ -92,92 +98,29 @@
 
 #include <memory>
 
-#include "gmxapi/exceptions.h"
-#include "gmxapi/version.h"
-
 /*! \brief Contains the external C++ Gromacs API.
  *
  * High-level interfaces for client code is provided in the gmxapi namespace.
- * The interface is semantically the same as the accompanying Python module,
- * though syntactically distinct to be idiomatically consistent with the language.
- *
- * A lower-level interface to implement or extend the API is in gmxapi::core.
  *
  * \ingroup gmxapi
  */
 namespace gmxapi
 {
 
-// Forward declare common classes.
-class System;
+// Forward declarations for other gmxapi classes.
 class MDEngine;
+class Context;
+class Status;
 
-/*! \brief Container for results of API operations.
- *
- * \internal
- * I'm leaning towards saying this should not be derivable, but that it
- * may contain one or more additional objects, perhaps including exceptions
- * or chains of status / exceptions. Maybe it is a stack. Maybe all
- * API objects should have a Status member that can accumulate Status
- * objects of child objects/operations.
- */
-class Status
-{
+// In order to create Python bindings, the class needs to be defined, but its members don't.
+class MDHolder {
     public:
-        /*!
-         * \brief Default constructor.
-         */
-        Status();
-        /*!
-         * \brief Copy constructor
-         * \param status
-         */
-        Status(const Status &status);
-        /*!
-         * \brief Move constructor.
-         * \param status
-         */
-        Status(Status &&status) noexcept;
-        /*!
-         * \brief Copy assignment operator.
-         * \param status
-         * \return reference to lhs.
-         */
-        Status &operator=(const Status &status);
-        /*!
-         * \brief Move assignment operator.
-         * \param status
-         * \return reference to lhs
-         */
-        Status &operator=(Status &&status) noexcept;
-        /*!
-         * \brief Converting assignment operator.
-         * \param success
-         * \return reference to lhs
-         */
-        Status &operator=(const bool &success);
+        explicit MDHolder(std::shared_ptr<MDEngine> md);
 
-        /*!
-         * \brief Converting constructor.
-         * \param success
-         */
-        explicit Status(const bool &success);
-
-        /*!
-         * \brief non-virtual destructor
-         *
-         * Do not inherit from this class.
-         */
-        ~Status();
-        /*
-         * \brief Check success status.
-         *
-         * \return true if the operation described was successful.
-         */
-        bool success() const;
+        std::shared_ptr<MDEngine> getMDEngine();
+        const std::shared_ptr<MDEngine> getMDEngine() const;
     private:
-        class Impl;
-        std::unique_ptr<Impl> impl_;
+        std::shared_ptr<MDEngine> md_;
 };
 
 }

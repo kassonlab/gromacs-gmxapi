@@ -15,6 +15,7 @@ namespace gmxapi
 class Atoms;
 class MDProxy;
 class IMDRunner;
+class MDEngine;
 
 /// Container for molecular model and simulation parameters.
 /*!

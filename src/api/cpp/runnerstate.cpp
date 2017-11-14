@@ -13,6 +13,7 @@
 #include "gromacs/mdtypes/inputrec.h"
 
 #include "gmxapi/exceptions.h"
+#include "gmxapi/status.h"
 #include "gmxapi/md.h"
 #include "gmxapi/md/runnerstate.h"
 #include "gmxapi/md/mdmodule.h"
@@ -290,5 +291,11 @@ RunningMDRunnerState::Builder &RunningMDRunnerState::Builder::tpxState(std::shar
 }
 
 RunningMDRunnerState::Builder::~Builder() = default;
+
+void IMDRunner::setRestraint(std::shared_ptr<gmxapi::MDModule> restraint)
+{
+        (void)restraint;
+        throw ::gmxapi::ProtocolError("setRestraint not implemented for this class.");
+}
 
 } // end namespace gmxapi

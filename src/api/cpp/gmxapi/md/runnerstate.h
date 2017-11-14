@@ -15,7 +15,8 @@
 #include <memory>
 
 // Declaring classes from other namespaces is iffy and turns compile errors into linking errors
-// but reduces coupling. If we go this route, TODO: consider consolidating incomplete gmx types in a single header.
+// but reduces coupling. If we go this route,
+// TODO: consider consolidating incomplete gmx types in a single header.
 //namespace gmx
 //{
 //    class TpxState;

@@ -5,6 +5,7 @@
 # for include directories and header files.
 
 # Configure / copy header files from the source to the build directory
+# high-level client headers
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/gmxapi)
 configure_file(gmxapi/context.h gmxapi)
 configure_file(gmxapi/exceptions.h gmxapi)
@@ -12,9 +13,10 @@ configure_file(gmxapi/gromacsfwd.h gmxapi)
 configure_file(gmxapi/gmxapi.h gmxapi)
 configure_file(gmxapi/md.h gmxapi)
 configure_file(gmxapi/runner.h gmxapi)
+configure_file(gmxapi/status.h gmxapi)
 configure_file(gmxapi/system.h gmxapi)
 configure_file(gmxapi/version.in.h gmxapi/version.h)
-
+# headers for API development and extension
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/gmxapi/md)
 configure_file(gmxapi/md/runnerstate.h gmxapi/md)
 configure_file(gmxapi/md/mdmodule.h gmxapi/md)
@@ -41,7 +43,22 @@ target_include_directories(gmxapi PRIVATE
                            ${CMAKE_CURRENT_SOURCE_DIR}
                            )
 
-# libgmxapi source files.
+# libgmxapi source files. The public headers are picked up automatically by CMake
+# for the build system dependencies, but since they aren't listed as sources, Cmake
+# might not get triggered by updates to the public headers. This might be reason to
+# use an INTERFACE library target, but since we call configure_file() above to get everything
+# in one place for packaging, CMake is already making sure the public headers are
+# up-to-date. However, an update to an existing public header that adds a dependency
+# on another header would _not_ be expected to trigger a rebuild of the gmxapi target
+# in the current setup. This is an argument against headers including headers, since
+# to create a target (including an INTERFACE target) that has all of the headers
+# would trigger the build of any dependent target even if it does not depend on a
+# given header in the public interface. This isn't a huge deal, and a public header
+# change probably implies an important API change, but it might also just be a result
+# of a documentation change or something that does not affect the part of the ABI
+# used by a given client. If it were easy to use the sources from an interface target
+# to install the public headers, I would think we should use it, but it is not, so
+# I won't.
 target_sources(
         gmxapi PRIVATE
         context.cpp
@@ -51,6 +68,7 @@ target_sources(
         mdmodule.cpp
         mdproxy.cpp
         runnerstate.cpp
+        status.cpp
         system.cpp
         system-builder.h
         system-impl.h

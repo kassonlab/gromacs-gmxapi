@@ -3,6 +3,8 @@
 //
 
 #include "gmxapi/gmxapi.h"
+#include "gmxapi/status.h"
+
 #include <gtest/gtest.h>
 
 namespace
