@@ -14,18 +14,10 @@
 #include "gmxapi/gromacsfwd.h"
 #include <memory>
 
-// Declaring classes from other namespaces is iffy and turns compile errors into linking errors
-// but reduces coupling. If we go this route,
-// TODO: consider consolidating incomplete gmx types in a single header.
-//namespace gmx
-//{
-//    class TpxState;
-//}
-// For now, I prefer the compiler type-checking of the coupled code.
-//#include "gromacs/mdtypes/tpxstate.h"
-
 namespace gmxapi
 {
+
+class MDEngine;
 
 /*!
  * \brief Useless placeholder state.

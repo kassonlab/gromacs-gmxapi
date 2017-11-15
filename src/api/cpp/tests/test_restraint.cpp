@@ -22,7 +22,7 @@ namespace
 
 const auto filename = gmxapi::testing::sample_tprfilename;
 
-class SimpleRestraint : public gmx::IRestraintPotential
+class NullRestraint : public gmx::IRestraintPotential
 {
     public:
         gmx::PotentialPointData evaluate(gmx::Vector r1,
@@ -43,7 +43,7 @@ class SimpleApiModule : public gmxapi::MDModule
 
         std::shared_ptr<gmx::IRestraintPotential> getRestraint() override
         {
-            auto restraint = std::make_shared<SimpleRestraint>();
+            auto restraint = std::make_shared<NullRestraint>();
             return restraint;
         }
 };

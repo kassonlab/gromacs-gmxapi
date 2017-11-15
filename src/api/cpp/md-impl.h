@@ -18,6 +18,19 @@
 namespace gmxapi
 {
 
+/*!
+ * \brief Implementation class to hide guts of MDHolder
+ *
+ * Holds the gmxapi interface for an object that can help instantiate the gmx::MdRunner
+ */
+class MDHolder::Impl
+{
+    public:
+        explicit Impl(std::shared_ptr<MDWorkSpec>&& spec);
+
+        std::shared_ptr<MDWorkSpec> spec_{nullptr};
+};
+
 // Container for MD engine input parameters.
 class MDInput
 {

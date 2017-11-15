@@ -91,7 +91,26 @@ class IMDRunner
          */
         virtual std::shared_ptr<IMDRunner> initialize(std::shared_ptr<Context> context) = 0;
 
-        virtual void setRestraint(std::shared_ptr<gmxapi::MDModule> restraint);
+        /*!
+         * \brief Execute binding protocol for restraint modules.
+         *
+         * \param module restraint module
+         *
+         * \internal
+         *
+         * Protocol to register a gmxapi::MDModule with a gmxapi::IMDRunner
+         * by passing an gmx::IRestraintPotential to a gmx::MdRunner
+         * \todo we should be registering a Spec or Factory instead of creating the IRestraint now.
+         *
+         *      // Assume an object such as this exists:
+         *      // std::shared_ptr<gmxapi::MDModule> module;
+         *      auto runner = impl_->getRunner();
+         *      auto restraint = module->getRestraint();
+         *      assert(restraint != nullptr);
+         *      runner->addPullPotential(restraint, module->name());
+         *
+         */
+        virtual void setRestraint(std::shared_ptr<gmxapi::MDModule> module);
 
 
 //        virtual void addModule(std::shared_ptr<gmx::IMDModule> module)

@@ -25,9 +25,11 @@
 namespace gmxapi
 {
 
+class MDModule;
+
 /*! \addtogroup gmxapi_md
 
- ## Extending MD with a custom restraint potential
+ # Extending MD with a custom restraint potential
 
  Below, we show code that extends the GROMACS library, code that interfaces with this
  API, and client code that calls GROMACS with the custom code.
@@ -35,8 +37,15 @@ namespace gmxapi
 
  \todo Move this to an example source code file that we can compile and test.
 
- Example: In client code, extend the GROMACS library by implementing a new restraint
+ ## Example
+
+ In client code, extend the GROMACS library by implementing a new restraint
  potential (see library documentation).
+
+ The gmxapi protocol to register a gmxapi::MDModule with a gmxapi::IMDRunner
+ by passing an gmx::IRestraintPotential to a gmx::MdRunner is described in the
+ gmxapi::IMDRunner docs. To exercise it, we need to call gmxapi::IMDRunner::setRestraint(),
+ passing a std::shared_ptr<gmxapi::MDModule> argument.
 
         class NullRestraint : public gmx::IRestraintPotential
         {
@@ -83,7 +92,46 @@ namespace gmxapi
                 status = session->run();
                 return status.success();
         };
+
 */
+
+/*!
+ * \brief Container for Molecular Dynamics simulation setup.
+ *
+ * Client code provides the specification for MD work through an object of this type and registers
+ * the object in the computing context when an execution session is launched. The contents of the
+ * MDWorkSpec are used to pass appropriate parameters to the MD runner.
+ *
+ * \ingroup gmxapi_md
+ */
+class MDWorkSpec
+{
+    public:
+        MDWorkSpec();
+        ~MDWorkSpec();
+
+        /*!
+         * \brief Grant shared ownership of a modular MD computation object
+         *
+         * \param module instance that can produce a IRestraintPotential at runtime.
+         */
+        void addModule(std::shared_ptr<gmxapi::MDModule> module);
+
+        /*!
+         * \brief Get a handle to the stored list of modules
+         *
+         * Future versions of MDWorkSpec will not directly hold and grant access to module instances.
+         * \return reference that is only valid for the life of this object.
+         */
+        std::vector<std::shared_ptr<gmxapi::MDModule>>& getModules();
+    private:
+        /// \cond internal
+        /// \brief Private implementation class
+        class Impl;
+        /// \brief Opaque pointer to implementation object.
+        std::unique_ptr<Impl> impl_{nullptr};
+        /// \endcond
+};
 
 // Forward declaration. Defined in runner.h
 class IMDRunner;

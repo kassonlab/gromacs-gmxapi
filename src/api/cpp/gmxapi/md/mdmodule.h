@@ -32,6 +32,11 @@ namespace gmxapi
  * headers and possibly linking against `libgromacs`. Refer to the GROMACS developer
  * documentation for details.
  *
+ * gmxapi::MDModule participates in the binding protocol described for gmxapi::IMDRunner.
+ *
+ * For portability, a shared_ptr to MDModule can be passed within the
+ * gmxapi::MDHolder wrapper declared in gmxapi.h
+ *
  * \ingroup gmxapi_md
  */
 class MDModule
@@ -50,7 +55,7 @@ class MDModule
          * more abstract, though I'm not sure what form that would take. We will probably
          * still need to have a general set of possible module types defined with the API,
          * in which case it does make sense to have clearly typed dispatching, and
-         * `bool hasRestraint = module->getRestraint() != nullptr;` might the simplest thing.
+         * `bool hasRestraint = module->getRestraint() != nullptr;` might be the simplest thing.
          *
          * Implementing a restraint is explained in the GROMACS developer documentation,
          * which is currently built separately from the GMXAPI documentation.

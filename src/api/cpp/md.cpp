@@ -1,4 +1,5 @@
 #include <memory>
+#include <cassert>
 
 #include "gmxapi/gmxapi.h"
 #include "gmxapi/md.h"
@@ -136,19 +137,89 @@ std::unique_ptr<MDProxy> mdFromTpr(const std::string filename)
     return md;
 }
 
-std::shared_ptr<::gmxapi::MDEngine> MDHolder::getMDEngine()
+class MDWorkSpec::Impl
 {
-    return md_;
+    public:
+        static std::unique_ptr<Impl> create();
+
+        std::vector<std::shared_ptr<gmxapi::MDModule>> modules{};
+};
+
+std::unique_ptr<MDWorkSpec::Impl> MDWorkSpec::Impl::create()
+{
+    auto newImpl = gmx::compat::make_unique<MDWorkSpec::Impl>();
+    assert(newImpl != nullptr);
+    assert(newImpl->modules.size() == 0);
+    return newImpl;
 }
 
-const std::shared_ptr<::gmxapi::MDEngine> MDHolder::getMDEngine() const
+MDWorkSpec::MDWorkSpec() :
+    impl_{Impl::create()}
 {
-    return md_;
+    assert(impl_ != nullptr);
 }
 
-MDHolder::MDHolder(std::shared_ptr<MDEngine> md) :
-    md_{std::move(md)}
-{}
+void MDWorkSpec::addModule(std::shared_ptr<gmxapi::MDModule> module)
+{
+    assert(impl_ != nullptr);
+    impl_->modules.emplace_back(std::move(module));
+}
+
+std::vector<std::shared_ptr<gmxapi::MDModule>> &MDWorkSpec::getModules()
+{
+    assert(impl_ != nullptr);
+    return impl_->modules;
+}
+
+MDWorkSpec::~MDWorkSpec() = default;
+
+std::shared_ptr<::gmxapi::MDWorkSpec> MDHolder::getSpec()
+{
+    assert(impl_ != nullptr);
+    assert(impl_->spec_ != nullptr);
+    return impl_->spec_;
+}
+
+std::shared_ptr<const ::gmxapi::MDWorkSpec> MDHolder::getSpec() const
+{
+    assert(impl_ != nullptr);
+    assert(impl_->spec_ != nullptr);
+    return impl_->spec_;
+}
+
+MDHolder::MDHolder() :
+    MDHolder{std::make_shared<MDWorkSpec>()}
+{
+    assert(impl_ != nullptr);
+    assert(impl_->spec_ != nullptr);
+}
+
+MDHolder::MDHolder(std::shared_ptr<MDWorkSpec> spec) :
+    name_{},
+    impl_{std::make_shared<MDHolder::Impl>(std::move(spec))}
+{
+    assert(impl_ != nullptr);
+    assert(impl_->spec_ != nullptr);
+}
+
+MDHolder::Impl::Impl(std::shared_ptr<MDWorkSpec>&& spec) :
+    spec_{spec}
+{
+    assert(spec_ != nullptr);
+}
+
+MDHolder::MDHolder(std::string name) :
+    MDHolder{}
+{
+    name_ = name;
+    assert(impl_ != nullptr);
+    assert(impl_->spec_ != nullptr);
+}
+
+std::string MDHolder::name() const
+{
+    return name_;
+}
 
 
 } //end namespace gmxapi

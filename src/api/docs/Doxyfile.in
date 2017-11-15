@@ -2122,6 +2122,10 @@ SKIP_FUNCTION_MACROS   = YES
 # run, you must also specify the path to the tagfile here.
 
 TAGFILES               =
+# This is not the way to cross-reference the main Gromacs developer docs. To
+# generate and include a tagfile from GROMACS would cause the inclusion of all
+# of the GROMACS docs. However, we may want to produce a tagfile for easier
+# inclusion with the GROMACS docs using GENERATE_TAGFILE.
 
 # When a file name is specified after GENERATE_TAGFILE, doxygen will create a
 # tag file that is based on the input files it reads. See section "Linking to

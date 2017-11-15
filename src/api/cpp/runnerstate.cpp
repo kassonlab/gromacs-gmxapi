@@ -188,10 +188,7 @@ RunningMDRunnerState::Impl::Impl() :
 
 Status RunningMDRunnerState::Impl::run()
 {
-    if (runner_ == nullptr)
-    {
-        throw gmxapi::ProtocolError("Runner implementation not initialized.");
-    }
+    assert(runner_ != nullptr);
     Status status{};
     // Todo: check the number of steps to run
     if (runner_->mdrunner() == 0)
@@ -230,13 +227,27 @@ void RunningMDRunnerState::registerMDBuilder(std::unique_ptr<MDBuilder> builder)
     // implement the runner--mdengine binding protocol
 }
 
+// Implement the protocol
+// protocol:
+/* void gmxapi::IMDRunner::register(std::shared_ptr<gmxapi::MDModule> module)
+ * {
+ *      auto runner = impl_->runner_;
+ *      auto restraint = module->getRestraint();
+ *      runner->addPullPotential(restraint);
+ * };
+ */
 void RunningMDRunnerState::setRestraint(std::shared_ptr<gmxapi::MDModule> module)
 {
     assert(impl_ != nullptr);
     assert(impl_->runner_ != nullptr);
+
+    // Follow the protocol to register a gmxapi::MDModule with a gmxapi::IMDRunner
+    // by passing an gmx::IRestraintPotential to a gmx::MdRunner
+    // \todo we should be registering a Spec or Factory instead of creating the IRestraint now.
+    auto runner = impl_->runner_;
     auto restraint = module->getRestraint();
     assert(restraint != nullptr);
-    impl_->runner_->addPullPotential(restraint, module->name());
+    runner->addPullPotential(restraint, module->name());
 }
 
 //void RunningMDRunnerState::addModule(std::shared_ptr<gmx::IMDModule> module)

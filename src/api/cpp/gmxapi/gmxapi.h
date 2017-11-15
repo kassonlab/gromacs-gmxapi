@@ -90,6 +90,113 @@
  * When no references remain (as via handles), the runner is destroyed (same for MDEngine).
  * In the case of complex shutdown, the Context holds the last references to the runners and manages shutdown.
  *
+ * For maximal compatibility with other libgmxapi clients (such as third-party
+ * Python modules), client code should use the wrappers and protocols in the
+ * gmxapi.h header. Note that there is a separate CMake target to build the full
+ * developer documentation for gmxapi.
+ *
+ * \internal
+ * To extend the API may require GROMACS library
+ * headers and possibly linking against `libgromacs`.
+ * Where possible, though, gmxapi public interfaces never require the instantiation
+ * of a gmx object, but instead take them as parameters. The (private) API implementation
+ * code then uses binding protocols defined in the library API to connect the
+ * GROMACS library objects (or interfaces), generally in an exchange such as the
+ * following.
+ *
+ * gmxapi client code:
+ *
+ *     MyExtension local_object;
+ *     gmxapi::SomeThinWrapper wrapper_object = gmxapi::some_function();
+ *     local_object.bind(wrapper_object);
+ *     gmxapi::some_other_function(wrapper_object);
+ *
+ * `MyExtension` implementation:
+ *
+ *     class MyExtension : public gmxapi::SomeExtensionInterface
+ *     {
+ *          void bind(gmxapi::SomeThinWrapper wrapper)
+ *          {
+ *              std::shared_ptr<gmxapi::SomeWrappedInterface> api_object = wrapper.getSpec();
+ *              api_object->register(this);
+ *          };
+ *          //...
+ *     };
+ *
+ * gmxapi protocol:
+ *
+ *     void gmxapi::SomeWrappedInterface::register(gmxapi::SomeExtensionInterface* client_object)
+ *     {
+ *          gmx::InterestingCoreLibraryClass* core_object = this->non_public_interface_function();
+ *          gmx::SomeLibraryClass* library_object = client_object->required_protocol_function();
+ *          core_object->do_something(library_object);
+ *     };
+ *
+ *
+ * Refer to GMXAPI developer docs for the protocols that map gmxapi interfaces to
+ * GROMACS library interfaces.
+ * Refer to the GROMACS developer
+ * documentation for details on library interfaces forward-declared in this header.
+ *
+ * For binding Molecular Dynamics modules into a simulation, the thin wrapper class is gmxapi::MDHolder.
+ * It provides the MD work specification that can provide and interface that an IRestraintPotential
+ * can bind to.
+ *
+ * The gmxpy Python module provides a method gmx.core.MD().add_force(force) that immediately calls
+ * force.bind(mdholder), where mdholder is an object with Python bindings to gmxapi::MDHolder. The
+ * Python interface for a restraint must have a bind() method that takes the thin wrapper. The
+ * C++ extension implementing the restraint unpacks the wrapper and provides a gmxapi::MDModule to
+ * the gmxapi::MDWorkSpec. The MDModule provided must be able to produce a gmx::IRestraintPotential
+ * when called upon later during simulation launch.
+ *
+ * external Restraint implementation:
+ *
+ *      class MyRestraintModule : public gmxapi::MDModule
+ *      {
+ *          // not a specified interface at the C++ level. Shown for Python module implementation.
+ *          void bind(gmxapi::MDHolder wrapper)
+ *          {
+ *              auto workSpec = wrapper->getSpec();
+ *              shared_ptr<gmxapi::MDModule> module = this->getModule();
+ *              workSpec->addModule(module);
+ *          }
+ *      };
+ *
+ * When the simulation is launched, the work specification is passed to the runner, which binds to
+ * the restraint module as follows. The execution session is launched with access to the work specification.
+ * For restraint modules in the work specification it passes modules to the new MD runner via IMDRunner.
+ *
+ * Possible client code
+ *
+ *      gmxapi::System system;
+ *      // System can provide an interface with which
+ *      //...
+ *      auto session = gmxapi::Session::create(system);
+ *      session.run();
+ *
+ * Possible API implementation
+ *
+ *      static std::unique_ptr<gmxapi::Session> gmxapi::Session::create(shared_ptr<gmxapi::System> system)
+ *      {
+ *          auto spec = system->getWorkSpec();
+ *          for (auto&& module : spec->getModules())
+ *          {
+ *              if (providesRestraint(module))
+ *              {
+ *                  // gmxapi restraint management protocol
+ *                  runner->setRestraint(module);
+ *              }
+ *          }
+ *
+ *      }
+ *
+ *      // gmxapi restraint management protocol
+ *      void gmxapi::IMDRunner::setRestraint(std::shared_ptr<gmxapi::MDModule> module)
+ *      {
+ *          auto runner = impl_->getRunner();
+ *          auto restraint = module->getRestraint();
+ *          runner->addPullPotential(restraint, module->name());
+ *      }
  *
  */
 
@@ -97,6 +204,7 @@
 #define GMXAPI_H
 
 #include <memory>
+#include <string>
 
 /*! \brief Contains the external C++ Gromacs API.
  *
@@ -108,21 +216,95 @@ namespace gmxapi
 {
 
 // Forward declarations for other gmxapi classes.
-class MDEngine;
+class MDWorkSpec;
+class MDModule;
 class Context;
 class Status;
 
-// In order to create Python bindings, the class needs to be defined, but its members don't.
-class MDHolder {
-    public:
-        explicit MDHolder(std::shared_ptr<MDEngine> md);
+/*!
+ * \brief API name for MDHolder struct.
+ *
+ * Any object that includes this header (translation unit) will have the const cstring embedded as
+ * defined here. The char array is not a global symbol.
+ *
+ * \todo Consider if this is in the right place.
+ *
+ * This header defines the API, but we may want to assure ABI compatibility. On the
+ * other hand, we may want to embed the API version in the structure itself and leave
+ * the higher-level name more general.
+ */
+static constexpr const char MDHolder_Name[] = "__GMXAPI_MDHolder_v1__";
 
-        std::shared_ptr<MDEngine> getMDEngine();
-        const std::shared_ptr<MDEngine> getMDEngine() const;
+/*!
+ * \brief Minimal holder for exchanging MD specifications.
+ *
+ * The interface is minimal in the hopes of backwards and forwards compatibility
+ * across build systems. This type specification can be embedded in any client code
+ * so that arbitrary client code has a robust way to exchange data, each depending
+ * only on the gmxapi library and not on each other.
+ *
+ * Objects of this type are intended to serve as wrappers used briefly to establish
+ * shared ownership of a MDWorkSpec between binary objects.
+ *
+ * \todo Consider whether/how we might use a wrapper like this to enable a C API
+ *
+ * A sufficiently simple struct can be defined for maximum forward/backward compatibility
+ * and given a name that can be used to uniquely identify Python capsules or other data
+ * members that provide a pointer to such an object for a highly compatible interface.
+ *
+ * \ingroup gmxapi_md
+ */
+class MDHolder {
+// In order to create Python bindings, the type needs to be complete, but
+// the class members don't need to be defined.
+    public:
+        static constexpr const char* api_name = MDHolder_Name;
+
+        MDHolder();
+
+        explicit MDHolder(std::string name);
+
+        /*!
+         * \brief Wrap a Molecular Dynamics work specification.
+         *
+         * The container allows portable specification of MD work to be performed.
+         * It is used when setting up and then launching the simulation.
+         *
+         * \param spec references a container with interfaces for client and library APIs
+         */
+        explicit MDHolder(std::shared_ptr<MDWorkSpec> spec);
+
+        /*!
+         * \brief Get client-provided name.
+         * \return Name as string.
+         */
+        std::string name() const;
+
+        /*! \brief Instance name.
+         */
+        std::string name_{};
+
+        /// \{
+        /*!
+         * \brief Get the wrapped work specification
+         * \return shared ownership of the api object.
+         */
+        std::shared_ptr<MDWorkSpec> getSpec();
+        /*!
+         * \brief Get the wrapped work specification
+         * \return smart pointer to const object
+         */
+        std::shared_ptr<const MDWorkSpec> getSpec() const;
+        /// \}
     private:
-        std::shared_ptr<MDEngine> md_;
+        /// \cond internal
+        /// \brief private implementation class
+        class Impl;
+        /// \brief opaque pointer to implementation
+        std::shared_ptr<Impl> impl_{nullptr};
+        /// \endcond
 };
 
-}
+} // end namespace gmxapi
 
 #endif // header guard

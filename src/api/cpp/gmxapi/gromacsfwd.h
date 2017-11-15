@@ -5,23 +5,31 @@
 #ifndef GMXAPI_GROMACSFWD_H
 #define GMXAPI_GROMACSFWD_H
 
-/*! \file
+/*! \ingroup gmxapi
+ * \file
  * \brief Provide forward declarations for symbols in the GROMACS public headers.
  *
  * Basic API clients only need to compile
  * and link against the gmxapi target, but some gmxapi classes use opaque pointers to
  * library classes that are forward-declared here.
- * To extend the API requires GROMACS library
- * headers and possibly linking against `libgromacs`. Refer to the GROMACS developer
- * documentation for details.
  *
  * We don't want to include ::gmx headers if we don't have to, but we need to declare
  * some things in the ::gmx namespace somewhere. These are forward declarations for
- * opaque pointers for client code building against libgmxapi. Client code that is
+ * opaque pointers in libgromacs for client code building against libgmxapi.
+ * Client code that is
  * more entwined with libgromacs can include headers from there.
  *
- * It would be nice to include links to the documentation for these classes, too.
- * \ingroup gmxapi
+ * For maximal compatibility with other libgmxapi clients (such as third-party
+ * Python modules), client code should use the wrappers and protocols in the
+ * gmxapi.h header. Note that there is a separate CMake target to build the full
+ * developer documentation for gmxapi.
+ *
+ * Refer to GMXAPI developer docs for the protocols that map gmxapi interfaces to
+ * GROMACS library interfaces.
+ * Refer to the GROMACS developer
+ * documentation for details on library interfaces forward-declared in this header.
+ *
+ * \todo It would be nice to include links to the documentation for these classes, too.
  */
 
 namespace gmx
