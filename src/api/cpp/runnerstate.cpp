@@ -246,8 +246,11 @@ void RunningMDRunnerState::setRestraint(std::shared_ptr<gmxapi::MDModule> module
     // \todo we should be registering a Spec or Factory instead of creating the IRestraint now.
     auto runner = impl_->runner_;
     auto restraint = module->getRestraint();
-    assert(restraint != nullptr);
-    runner->addPullPotential(restraint, module->name());
+    if(restraint != nullptr)
+    {
+        runner->addPullPotential(restraint,
+                                 module->name());
+    }
 }
 
 //void RunningMDRunnerState::addModule(std::shared_ptr<gmx::IMDModule> module)

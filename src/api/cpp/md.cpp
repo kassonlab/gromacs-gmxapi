@@ -1,12 +1,14 @@
 #include <memory>
 #include <cassert>
+#include <iostream>
 
 #include "gmxapi/gmxapi.h"
 #include "gmxapi/md.h"
+#include "md-impl.h"
+#include "gmxapi/md/mdmodule.h"
 #include "gmxapi/runner.h"
 
 #include "gromacs/compat/make_unique.h"
-#include "md-impl.h"
 #include "gromacs/fileio/tpxio.h"
 #include "gromacs/mdlib/mdrun.h"
 #include "gromacs/mdtypes/inputrec.h"
@@ -162,6 +164,7 @@ MDWorkSpec::MDWorkSpec() :
 void MDWorkSpec::addModule(std::shared_ptr<gmxapi::MDModule> module)
 {
     assert(impl_ != nullptr);
+    std::cout << "Adding module " << module->name() << " to work specification" << std::endl;
     impl_->modules.emplace_back(std::move(module));
 }
 
