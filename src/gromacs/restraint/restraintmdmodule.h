@@ -39,16 +39,38 @@ class RestraintMDModule final : public gmx::IMDModule
          * as long as those interfaces are needed (probably the duration of an MD run).
          */
         static std::unique_ptr<RestraintMDModule>
-        create(std::shared_ptr<gmx::IRestraintPotential> restraint);
+        create(std::shared_ptr<gmx::IRestraintPotential> restraint, unsigned long int site1, unsigned long int site2);
 
+        /*!
+         * \brief Implement IMDModule interface
+         *
+         * \return see gmx::IMDModule::outputProvider.
+         */
         IMdpOptionProvider *mdpOptionProvider() override;
 
+        /*!
+         * \brief Implement IMDModule interface
+         *
+         * \return see gmx::IMDModule::outputProvider.
+         */
         IMDOutputProvider *outputProvider() override;
 
+        /*!
+         * \brief Implement IMDModule interface.
+         *
+         * See gmx::IMDModule::initForceProviders()
+         * \param forceProviders manager in the force record.
+         */
         void initForceProviders(ForceProviders *forceProviders) override;
 
     private:
+        /*!
+         * \brief Private constructor used by static create() method.
+         */
         explicit RestraintMDModule(std::unique_ptr<RestraintMDModuleImpl>);
+        /*!
+         * \brief Private implementation opaque pointer.
+         */
         std::unique_ptr<RestraintMDModuleImpl> impl_;
 };
 

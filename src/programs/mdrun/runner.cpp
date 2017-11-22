@@ -1815,7 +1815,9 @@ void Mdrunner::addPullPotential(std::shared_ptr<gmx::IRestraintPotential> puller
 
     // When multiple restraints are used, it may be wasteful to register them separately.
     // Maybe instead register a Restraint Manager as a force provider.
-    auto module = ::gmx::RestraintMDModule::create(puller);
+    auto site1 = puller->sites()[0];
+    auto site2 = puller->sites()[1];
+    auto module = ::gmx::RestraintMDModule::create(puller, site1, site2);
     mdModules->add(std::move(module));
 }
 

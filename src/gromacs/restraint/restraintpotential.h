@@ -202,6 +202,12 @@ class IRestraintPotential
         virtual PotentialPointData evaluate(Vector r1,
                               Vector r2,
                               double t) = 0;
+
+        virtual /*!
+         * \brief Find out what sites this restraint is configured to act on.
+         * \return
+         */
+        std::array<unsigned long int, 2> sites() const = 0;
 };
 
 /*!

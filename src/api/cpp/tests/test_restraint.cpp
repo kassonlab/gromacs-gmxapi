@@ -31,6 +31,11 @@ class NullRestraint : public gmx::IRestraintPotential
         {
             return {};
         }
+
+        std::array<unsigned long, 2> sites() const override
+        {
+            return {0,1};
+        }
 };
 
 class SimpleApiModule : public gmxapi::MDModule

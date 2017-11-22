@@ -244,6 +244,7 @@ void RunningMDRunnerState::setRestraint(std::shared_ptr<gmxapi::MDModule> module
     // Follow the protocol to register a gmxapi::MDModule with a gmxapi::IMDRunner
     // by passing an gmx::IRestraintPotential to a gmx::MdRunner
     // \todo we should be registering a Spec or Factory instead of creating the IRestraint now.
+    // Note that thread-MPI threads have not yet been spawned at this phase as of 20 November 2017
     auto runner = impl_->runner_;
     auto restraint = module->getRestraint();
     if(restraint != nullptr)
