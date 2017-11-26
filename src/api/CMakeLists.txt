@@ -37,7 +37,7 @@
 # tracks the Gromacs release, or the LIBRARY_VERSION that annotates the shared object.
 set(GMXAPI_MAJOR 0)
 set(GMXAPI_MINOR 0)
-set(GMXAPI_PATCH 1)
+set(GMXAPI_PATCH 3)
 set(GMXAPI_RELEASE ${GMXAPI_MAJOR}.${GMXAPI_MINOR}.${GMXAPI_PATCH})
 
 # Supposedly, cmake should be able to resolve these dependencies, but we need
