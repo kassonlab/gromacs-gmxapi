@@ -18,6 +18,10 @@ class MDInput;
 
 /// Execution context.
 /*!
+ * The execution context represents computing resources and zero, one, or more
+ * workflows to execute. All API objects exist in some context, which determines
+ * how the API objects interact underneath the hood.
+ *
  * A proxy can be configured with information needed to initialize a runtime
  * environment capable of executing a work load, independently of defining the
  * work.
@@ -43,6 +47,9 @@ class MDInput;
 class Context
 {
     public:
+        /*!
+         * \brief Get a handle to a new default context object.
+         */
         Context();
         ~Context();
 
@@ -53,29 +60,6 @@ class Context
         // Allow move
         Context(Context&&) = default;
         Context& operator=(Context&&) = default;
-
-        /*! \brief Initialize execution context.
-         *
-         * After the call, the execution context will either be fully configured
-         * and running, or the status will describe why the work cannot be executed.
-         */
-//        Status initialize();
-        /*! \brief Deinitialize execution context.
-         *
-         * The context should be deinitialized after work completes. Status will
-         * describe errors and exceptions that occurred during attempts to shutdown
-         * and free resources.
-         */
-//        Status deinitialize();
-
-        /// Returns true while context is initialized / executing.
-//        bool isInitialized() const;
-
-        /// Bind to a runner.
-//        Status setRunner(std::shared_ptr<IRunner> runner);
-
-        /// Get a handle to the Runner.
-//        std::shared_ptr<IRunner> runner();
 
     private:
         class Impl;

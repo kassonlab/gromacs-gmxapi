@@ -3,13 +3,11 @@
 /*! \file
  * \brief Declare base classes and API for MD simulation engines.
  *
+ * This header allows interaction with gmxapi for basic MD simulation functionality in client code without
+ * additional dependencies.
+ *
  * Helper functions, standard concrete classes, and implementation interfaces are in gmxapi/md/
  * \ingroup gmxapi_md
- */
-/*! \defgroup gmxapi_md Molecular Dynamics
- * \brief API access to Molecular Mechanics and Molecular Dynamics calculation in GROMACS
- *
- * \ingroup gmxapi
  */
 /*! \dir md
  * \brief Additional declarations for API implementation and extension.
@@ -17,6 +15,16 @@
  * This directory contains headers that require gromacsfwd.h and that declare
  * objects that have stronger dependencies on GROMACS to fully define or extend.
  * \ingroup gmxapi_md
+ */
+
+/*! \defgroup gmxapi_md Molecular Dynamics
+ * \brief API access to Molecular Mechanics and Molecular Dynamics calculation in GROMACS
+ *
+ * At a minimum, the client code must specify the input source for a MD simulation. Helper functions allow setting up
+ * inputs from a standard GROMACS run input `.tpr` file. A System object serves as a container for a molecular system
+ * and associated computational work.
+ *
+ * \ingroup gmxapi
  */
 #include "exceptions.h"
 #include <memory>

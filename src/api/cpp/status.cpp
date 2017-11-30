@@ -61,7 +61,7 @@ Status &Status::operator=(Status &&status) noexcept
     return *this;
 }
 
-Status &Status::operator=(const bool &success)
+Status &Status::operator=(bool success)
 {
     this->impl_.reset(new Impl {success});
     return *this;
@@ -72,7 +72,7 @@ Status::Status(Status &&status) noexcept
     this->impl_ = std::move(status.impl_);
 }
 
-Status::Status(const bool &success) :
+Status::Status(bool success) :
     impl_ {gmx::compat::make_unique<Status::Impl>(success)}
 {}
 

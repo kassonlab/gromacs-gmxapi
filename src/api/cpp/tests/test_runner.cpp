@@ -7,6 +7,7 @@
 #include "gmxapi/md/mdmodule.h"
 #include "gmxapi/md/runnerstate.h"
 #include "gmxapi/md.h"
+#include "session.h"
 #include "gmxapi/status.h"
 #include "gmxapi/system.h"
 
@@ -87,11 +88,11 @@ class DummyMDModule final : public gmx::IMDModule
 
 TEST(ApiRunner, Build)
 {
-    auto md = std::make_shared<gmxapi::MDEngine>();
-    auto runnerBuilder = gmxapi::UninitializedMDRunnerState::Builder();
-    runnerBuilder.mdEngine(md);
-    runnerBuilder.tpxState(std::make_shared<gmx::TpxState>());
-    auto runner = runnerBuilder.build();
+//    auto md = std::make_shared<gmxapi::MDEngine>();
+//    auto runnerBuilder = gmxapi::UninitializedMDRunnerState::Builder();
+//    runnerBuilder.mdEngine(md);
+//    runnerBuilder.tpxState(std::make_shared<gmx::TpxState>());
+//    auto runner = runnerBuilder.build();
 }
 
 TEST(ApiRunner, BasicMD)
@@ -103,9 +104,7 @@ TEST(ApiRunner, BasicMD)
         std::shared_ptr<gmxapi::Context> context = gmxapi::defaultContext();
         ASSERT_TRUE(context != nullptr);
         ASSERT_TRUE(system != nullptr);
-        ASSERT_TRUE(system->runner() != nullptr);
-        auto runner = system->runner();
-        auto session = runner->initialize(context);
+        auto session = system->launch();
         ASSERT_TRUE(session != nullptr);
         gmxapi::Status status;
         ASSERT_NO_THROW(status = session->run());

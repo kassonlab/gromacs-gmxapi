@@ -22,7 +22,7 @@ namespace gmxapi{
  * API objects should have a Status member that can accumulate Status
  * objects of child objects/operations.
  */
-class Status
+class Status final
 {
     public:
         /*!
@@ -56,13 +56,13 @@ class Status
          * \param success
          * \return reference to lhs
          */
-        Status &operator=(const bool &success);
+        Status &operator=(bool success);
 
         /*!
          * \brief Converting constructor.
          * \param success
          */
-        explicit Status(const bool &success);
+        explicit Status(bool success);
 
         /*!
          * \brief non-virtual destructor

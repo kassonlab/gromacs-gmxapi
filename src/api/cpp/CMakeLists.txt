@@ -68,11 +68,15 @@ target_sources(
         mdmodule.cpp
         mdproxy.cpp
         runnerstate.cpp
+        session.h
+        session.cpp
         status.cpp
         system.cpp
-        system-builder.h
         system-impl.h
         version.cpp
+        workflow.h
+        workflow-impl.h
+        workflow.cpp
         )
 
 # Ref. https://cmake.org/Wiki/CMake_RPATH_handling

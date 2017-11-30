@@ -7,6 +7,7 @@
 #include "gmxapi/md/mdmodule.h"
 #include "gmxapi/md/runnerstate.h"
 #include "gmxapi/md.h"
+#include "session.h"
 #include "gmxapi/status.h"
 #include "gmxapi/system.h"
 
@@ -34,7 +35,7 @@ class NullRestraint : public gmx::IRestraintPotential
 
         std::array<unsigned long, 2> sites() const override
         {
-            return {0,1};
+            return {{0,1}};
         }
 };
 
@@ -58,13 +59,14 @@ TEST(ApiRestraint, MdAndPlugin)
 
     {
         auto system = gmxapi::fromTprFile(filename);
-        std::shared_ptr<gmxapi::Context> context = gmxapi::defaultContext();
-        auto runner = system->runner();
+//        system->setRestraint(module);
 
-        auto session = runner->initialize(context);
+        std::shared_ptr<gmxapi::Context> context = gmxapi::defaultContext();
+//        auto runner = system->runner();
+
+        auto session = system->launch(context);
 
         auto module = std::make_shared<SimpleApiModule>();
-        session->setRestraint(module);
 
 //        typedef struct{} dummystruct;
 //        auto module = std::make_shared<::gmx::RestraintMDModule<dummystruct>>();

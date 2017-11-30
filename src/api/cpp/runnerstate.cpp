@@ -39,7 +39,7 @@ void RunnerProxy::setState(std::shared_ptr<IMDRunner> state)
 
 void RunnerProxy::registerMDBuilder(std::unique_ptr<MDBuilder> builder)
 {
-
+    (void)builder;
 }
 
 Status RunnerProxy::run()
@@ -64,6 +64,7 @@ void RunnerProxy::setRestraint(std::shared_ptr<gmxapi::MDModule> restraint)
 
 void EmptyMDRunnerState::registerMDBuilder(std::unique_ptr<MDBuilder> builder)
 {
+    (void)builder;
     // nothing to bind to
     throw ProtocolError("EmptyMDRunnerState has nothing to bind to");
 }
@@ -77,6 +78,7 @@ Status EmptyMDRunnerState::run()
 
 std::shared_ptr<IMDRunner> EmptyMDRunnerState::initialize(std::shared_ptr<Context> context)
 {
+    (void)context;
     // Runner proxy should have been configured by a builder with something like UninitializedMDRunnerState
     throw ProtocolError("EmptyMDRunnerState cannot be initialized.");
     return nullptr;
@@ -99,7 +101,7 @@ Status UninitializedMDRunnerState::run()
 
 void UninitializedMDRunnerState::registerMDBuilder(std::unique_ptr<MDBuilder> builder)
 {
-
+    (void)builder;
 }
 
 std::shared_ptr<IMDRunner> UninitializedMDRunnerState::initialize(std::shared_ptr<Context> context)
@@ -217,6 +219,7 @@ Status RunningMDRunnerState::run()
 
 std::shared_ptr<IMDRunner> RunningMDRunnerState::initialize(std::shared_ptr<Context> context)
 {
+    (void)context;
     // Should we reinitialize somehow?
     throw gmxapi::NotImplementedError("Initializing a running Mdrunner is not defined.");
     return std::shared_ptr<IMDRunner>();
@@ -224,6 +227,7 @@ std::shared_ptr<IMDRunner> RunningMDRunnerState::initialize(std::shared_ptr<Cont
 
 void RunningMDRunnerState::registerMDBuilder(std::unique_ptr<MDBuilder> builder)
 {
+    (void)builder;
     // implement the runner--mdengine binding protocol
 }
 

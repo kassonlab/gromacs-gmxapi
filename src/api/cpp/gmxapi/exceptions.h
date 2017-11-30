@@ -55,7 +55,11 @@ class Exception : public std::exception
  *
  * Example:
  *
- *     class DerivedException : public BasicException<DerivedException> {};
+ *     class DerivedException : public BasicException<DerivedException>
+ *     {
+ *          public:
+ *              using BasicException::BasicException;
+ *     };
  *
  * \note Current implementation only provides constructors and no specialized or dispatched behavior.
  *
