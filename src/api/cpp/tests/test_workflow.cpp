@@ -28,16 +28,37 @@ namespace
 
 const auto filename = gmxapi::testing::sample_tprfilename;
 
+// Create a work spec, then the implementation graph, then the container
 TEST(ApiWorkflowImpl, Build)
 {
-    // Create a work spec, then the implementation graph, then the container
+    // Create work spec
     auto node = gmx::compat::make_unique<gmxapi::MDNodeSpecification>(filename);
     ASSERT_NE(node, nullptr);
+
+    // Create key
+    std::string key{"MD"};
+    key.append(filename);
+
+    // Create graph (workflow implementation object)
+    gmxapi::Workflow::Impl impl;
+    impl[key] = std::move(node);
+    ASSERT_EQ(impl.count(key), 1);
+    ASSERT_EQ(impl.size(), 1);
+
+    // Create workflow container
+    gmxapi::Workflow work{std::move(impl)};
 }
 
 TEST(ApiWorkflow, Creation)
 {
     // Create from create() method(s)
+    auto work = gmxapi::Workflow::create(filename);
+    ASSERT_NE(work, nullptr);
+}
+
+TEST(ApiWorkflow, Accessors)
+{
+
 }
 
 } // end anonymous namespace

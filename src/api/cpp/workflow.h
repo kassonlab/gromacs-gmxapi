@@ -17,6 +17,51 @@
 namespace gmxapi
 {
 
+/*!
+ * \brief Uniquely identify a workflow node in the graph.
+ *
+ * The key probably needs a human-readable aspect, some machine-decipherable encoding of roles taken by the node,
+ * and a hash to uniquely identify the output of the node (i.e. deterministic input parameters). It is probably not
+ * necessary for nodes to refer to the consumers of their output by key, but they should abstractly refer to their
+ * inputs by a key that is not dependent on a currently-running workflow.
+ *
+ * Requirements and roles:
+ *
+ * * serve as a key for use by other nodes to name their inputs
+ * * encode workflow scheduling hints (TBD)
+ * * provide robust assurance of reproducible results and restartability
+ * * allow nodes to specify only their immediately dependent nodes (inwards directed edges)
+ *
+ * Workflow specifications need to be serializeable and portable across job restarts and porting to other computing
+ * resources. The data graph manager and/or work scheduler need to be able to look at the inputs specified for a node
+ * and be able to determine that the required node or its output is available. If a node is used as the input for
+ * multiple other nodes, it should be clear how to avoid wasting resources when meeting the data requirement. If
+ * similar looking nodes have different inputs or parameters, they must not be mistaken to be equivalent.
+ *
+ * Context-dependent aspects of the workflow specification cannot be included in a hash, then, but context-independent
+ * aspects that affect the output of a node must be reflected.
+ *
+ * For example, an input filename should be included as identifying information, but the absolute path should not,
+ * though path hints or conventions should be clear in the context. The filename is sufficient as a parameter with which
+ * to construct the workflow node in an execution context, but is insufficient to uniquely identify the file since
+ * several names get reused a lot. Some sort of checksum of the file should also be included so that the inputs of the
+ * workflow at execution time can be checked against the inputs when the workflow was specified.
+ *
+ * Uniqueness of inputs could be more elaborate. For instance, a node may require the trajectory of a specific simulation
+ * as input, but flexibly handle starting from an arbitrary step in that trajectory to allow check-pointed workflows.
+ *
+ * The workflow object can have a list of keys that can be instantiated with no input dependencies, the scheduler could
+ * scan for keys that represent source nodes, or workflow containers could be turned into graphs through an additional
+ * preprocessing or clustering phase, but it will be easiest if we assert a protocol such as a node is not instantiated
+ * or activated until its inputs are ready.
+ */
+//class NodeKey final
+//{
+//    public:
+//        std::string name();
+//    private:
+//        std::string name_;
+//};
 // Type alias until more elaborate implementation is needed.
 using NodeKey = std::string;
 
@@ -81,17 +126,6 @@ class Workflow final
         Impl graph_;
 
 };
-
-/*!
- * \brief Uniquely identify a workflow node in the graph.
- */
-//class NodeKey final
-//{
-//    public:
-//        std::string name();
-//    private:
-//        std::string name_;
-//};
 
 /*!
  * \brief Portable specification to define work and inform instantiation by the library.
