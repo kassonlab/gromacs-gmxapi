@@ -13,6 +13,7 @@ configure_file(gmxapi/gromacsfwd.h gmxapi)
 configure_file(gmxapi/gmxapi.h gmxapi)
 configure_file(gmxapi/md.h gmxapi)
 configure_file(gmxapi/runner.h gmxapi)
+configure_file(gmxapi/session.h gmxapi)
 configure_file(gmxapi/status.h gmxapi)
 configure_file(gmxapi/system.h gmxapi)
 configure_file(gmxapi/version.in.h gmxapi/version.h)
@@ -68,7 +69,7 @@ target_sources(
         mdmodule.cpp
         mdproxy.cpp
         runnerstate.cpp
-        session.h
+        session-impl.h
         session.cpp
         status.cpp
         system.cpp

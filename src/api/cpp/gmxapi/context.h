@@ -15,6 +15,17 @@ namespace gmxapi
 class Status;
 class IRunner;
 class MDInput;
+class Workflow;
+class Session;
+
+/*!
+ * \brief Context implementation abstract base class.
+ *
+ * Context Implementations depend on the execution environment, hardware resources, and
+ * possibly other factors, and so are not constructed directly but by helper functions.
+ * Their details are not exposed at the high level API.
+ */
+class ContextImpl;
 
 /// Execution context.
 /*!
@@ -53,19 +64,40 @@ class Context
         Context();
         ~Context();
 
-        // Disallow copy
-        Context(const Context&) = delete;
-        Context& operator=(const Context&) = delete;
+        // Nearly trivial copy
+        Context(const Context&) = default;
+        Context& operator=(const Context&) = default;
 
         // Allow move
         Context(Context&&) = default;
         Context& operator=(Context&&) = default;
 
+        explicit Context(std::shared_ptr<ContextImpl> &&impl);
+
+        /*!
+         * \brief Launch a workflow in the current context, if possible.
+         *
+         * \param work Configured workflow to instantiate.
+         * \return Ownership of a new session or nullptr if not possible.
+         *
+         * Context maintains a weak reference to the running session and a Status object
+         * that can be examined if launch fails due to an invalid work specification or
+         * incompatible resources.
+         */
+        std::shared_ptr<Session> launch(const Workflow& work);
+
     private:
-        class Impl;
-        std::unique_ptr<Impl> impl_;
+        /*!
+         * \brief Private implementation may be shared by several interfaces.
+         */
+        std::shared_ptr<ContextImpl> impl_;
 };
 
+/*!
+ * \brief Construct a context appropriate for the current environment.
+ *
+ * \return ownership of a new context handle.
+ */
 std::unique_ptr<Context> defaultContext();
 
 }      // end namespace gmxapi

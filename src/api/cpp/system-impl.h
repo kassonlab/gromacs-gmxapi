@@ -20,9 +20,12 @@ class System::Impl final
         Impl(Impl&&) noexcept = default;
         Impl& operator=(Impl&&) noexcept = default;
 
-        explicit Impl(std::unique_ptr<gmxapi::Workflow>&& workflow);
+        explicit Impl(std::unique_ptr<gmxapi::Workflow>&& workflow) noexcept;
 
         Status status() const;
+
+        std::shared_ptr<Session> launch(std::shared_ptr<Context> context);
+        std::shared_ptr<Session> launch();
 
     private:
         std::shared_ptr<Context> context_;

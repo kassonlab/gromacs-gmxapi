@@ -30,6 +30,11 @@ MDNodeSpecification::MDNodeSpecification(std::string filename) :
     assert(!tprfilename_.empty());
 }
 
+NodeSpecification::paramsType MDNodeSpecification::params() const noexcept
+{
+    return tprfilename_;
+}
+
 Status Workflow::addNode(std::unique_ptr<NodeSpecification> &&spec) noexcept
 {
     (void)spec;
@@ -70,5 +75,28 @@ Workflow::Workflow(Workflow::Impl &&impl) :
     graph_{std::forward<Workflow::Impl>(impl)}
 {}
 
+Workflow::Impl::const_iterator
+Workflow::cbegin() const
+{
+    return graph_.cbegin();
+}
+
+Workflow::Impl::const_iterator
+Workflow::cend() const
+{
+    return graph_.cend();
+}
+
+Workflow::Impl::const_iterator
+Workflow::begin() const
+{
+    return graph_.cbegin();
+}
+
+Workflow::Impl::const_iterator
+Workflow::end() const
+{
+    return graph_.cend();
+}
 
 } // end namespace gmxapi

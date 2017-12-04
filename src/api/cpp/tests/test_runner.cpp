@@ -7,7 +7,7 @@
 #include "gmxapi/md/mdmodule.h"
 #include "gmxapi/md/runnerstate.h"
 #include "gmxapi/md.h"
-#include "session.h"
+#include "gmxapi/session.h"
 #include "gmxapi/status.h"
 #include "gmxapi/system.h"
 

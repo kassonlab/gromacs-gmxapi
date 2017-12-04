@@ -13,6 +13,7 @@
 
 #include "gmxapi/gmxapi.h"
 #include <map>
+#include <forward_list>
 
 namespace gmxapi
 {
@@ -66,6 +67,7 @@ namespace gmxapi
 using NodeKey = std::string;
 
 // Forward declarations for definitions below.
+class NodeKeyIterator;
 class NodeSpecification;
 class WorkflowKeyError;
 
@@ -74,6 +76,8 @@ class WorkflowKeyError;
  *
  * Provides a lightweight and portable container defining the nodes and edges in a workflow with enough information for
  * the workflow to be instantiated and run.
+ *
+ * \ingroup gmxapi
  */
 class Workflow final
 {
@@ -113,6 +117,29 @@ class Workflow final
         std::unique_ptr<NodeSpecification> getNode(const gmxapi::NodeKey &key) const noexcept;
 
         /*!
+         * \brief Get an iterator to the described node keys.
+         *
+         * The order in which the nodes are returned is unspecified. Only forward iterator is provided.
+         *
+         * \return iterator of keys for nodes that can be retrieved by the client if needed.
+         *
+         */
+//        NodeKey::iterator keys() noexcept;
+//        NodeKey::const_iterator keys() const noexcept;
+
+        /*!
+         * \brief Get an iterator to the node key--value pairs.
+         *
+         *
+         * The order in which the nodes are returned is unspecified. Only forward iterator is provided.
+         */
+        Impl::const_iterator cbegin() const;
+        Impl::const_iterator cend() const;
+        // Allow range based for loop to work before C++17
+        Impl::const_iterator begin() const;
+        Impl::const_iterator end() const;
+
+        /*!
          * \brief Create a new workflow.
          *
          * \param filename TPR filename accessible both to the client and library.
@@ -144,12 +171,19 @@ class Workflow final
  * Contexts, the Contexts must resolve an appropriate function pointer or raise an
  * appropriate exception indicating the specified work is not possible on the targeted
  * execution context.
+ *
+ * Different node types will have different sorts of parameters and such. Should we
+ * try to identify some sort of class hierarchy to aid control flow in looking for
+ * parameters?
  */
 class NodeSpecification
 {
     public:
         /// Base class destructor.
         virtual ~NodeSpecification();
+
+//        using paramsType = std::map<std::string, std::string>;
+        using paramsType = std::string;
 
         /*!
          * \brief Get a copy of a node.
@@ -160,6 +194,13 @@ class NodeSpecification
          * context to another.
          */
         virtual std::unique_ptr<NodeSpecification> clone() = 0;
+
+        paramsType params_{};
+
+        virtual paramsType params() const noexcept = 0;
+
+//        Node build() = 0;
+
 };
 
 } //end namespace gmxapi

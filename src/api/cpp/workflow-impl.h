@@ -30,6 +30,8 @@ class MDNodeSpecification : public NodeSpecification
 
         std::unique_ptr<NodeSpecification> clone() override;
 
+        paramsType params() const noexcept override  ;
+
     private:
         std::string tprfilename_;
 };

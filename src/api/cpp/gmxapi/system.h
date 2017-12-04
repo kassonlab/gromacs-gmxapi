@@ -66,9 +66,18 @@ class System final
          * \brief Configure the computing environment for the specified workflow.
          *
          * \return Ownership of a ready-to-run workflow or nullptr if there were errors.
+         *
+         * If errors occur, they will be stored in the context object. If run without
+         * and argument, launch() uses the current context of the System object. If a
+         * context argument is given, the system and its configured workflow are
+         * translated to the provided context and launched.
+         *
+         * \todo Policy: does System then track the (potentially remote) context or should
+         * it be considered to have "forked", and the new session object retrieved from
+         * the session handle if needed.
          */
-        std::unique_ptr<Session> launch();
-        std::unique_ptr<Session> launch(std::shared_ptr<Context> context);
+        std::shared_ptr<Session> launch();
+        std::shared_ptr<Session> launch(std::shared_ptr<Context> context);
 
         /*!
          * \brief Get the status of the last API call involving this system.
