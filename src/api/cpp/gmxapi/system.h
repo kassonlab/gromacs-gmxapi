@@ -12,21 +12,26 @@
 namespace gmxapi
 {
 
-class Atoms;
-class MDProxy;
-class IMDRunner;
-class MDEngine;
+// Forward declaration for a return type defined elsewhere.
+class Session;
 
 /// Container for molecular model and simulation parameters.
 /*!
  * \cond
  * A system instance is sort of a container of builders, and a Context is sort of a factory. together they allow a simulation to be constructed and initialized with the appropriate implementations of runner, integrator, and data objects.
+ *
+ * Ultimately, the system needs to pass serialized data sufficient to reconstruct
+ * itself as part of the workflow it contains when the work is launched.
  * \endcond
  * \ingroup gmxapi
  */
-class System
+class System final
 {
     public:
+        /*! \brief Private implementation class
+         */
+        class Impl;
+
         /// A blank system object is possible, but not yet useful.
         System();
         /// No copy.
@@ -43,51 +48,65 @@ class System
         /// Allow move.
         System &operator=(System &&) noexcept;
 
+        /*!
+         * \brief Create by taking ownership of an implementation object.
+         *
+         * \param implementation
+         */
+        explicit System(std::unique_ptr<Impl>&& implementation);
+
         /// \cond internal
         /// Destructor defined later to allow unique_ptr members of partially-defined types.
         ~System();
         /// \endcond
 
-        /// The mechanics of building a System object are deferred to the builder(s).
-        /// The Builder class(es) do not yet have a public interface.
-        class Builder;
+        Status setRestraint(std::shared_ptr<gmxapi::MDModule> module);
+        // Note there is confusing overlap in the use of these two functions that should be normalized.
+        std::shared_ptr<MDWorkSpec> getSpec();
+
+        /*!
+         * \brief Configure the computing environment for the specified workflow.
+         *
+         * \return Ownership of a ready-to-run workflow or nullptr if there were errors.
+         *
+         * If errors occur, they will be stored in the context object. If run without
+         * and argument, launch() uses the current context of the System object. If a
+         * context argument is given, the system and its configured workflow are
+         * translated to the provided context and launched.
+         *
+         * \todo Policy: does System then track the (potentially remote) context or should
+         * it be considered to have "forked", and the new session object retrieved from
+         * the session handle if needed.
+         */
+        std::shared_ptr<Session> launch();
+        std::shared_ptr<Session> launch(std::shared_ptr<Context> context);
+
+        /*!
+         * \brief Get the status of the last API call involving this system.
+         *
+         * \return copy of the most recent status.
+         */
+        Status status();
 
 //        /// Get a handle to system atoms.
 //        std::unique_ptr<Atoms> atoms();
 
-        /// Get a handle to bound MD engine.
-        std::shared_ptr<MDProxy> md();
-
-        /// Set the MD engine
-        void md(std::shared_ptr<MDEngine> md);
-
-        /// Get a handle to bound runner.
-        std::shared_ptr<IMDRunner> runner();
-
-        /// Set the runner.
-        void runner(std::shared_ptr<IMDRunner> runner);
-
-//        /// Invoke an appropriate runner, if possible.
-//        /// Equivalent to system->runner()->initialize(defaultContext())->run();
-//        Status run();
-
     private:
-        class Impl;
+        /*!
+         * \brief Opaque pointer to implementation.
+         */
         std::unique_ptr<Impl> impl_;
 };
 
 
-/// Process a TPR file into a ready-to-run system.
-/*!  Manages the mdrun module, options processing, input record, and initialization
- * to produce a ready-to-run MD simulation.
- *
- * Reads the input record to identify the appropriate MDEngine and
- * extract the appropriate System members. Returns System with bound
- * runner, mdengine, and atoms.
- *
+/// Defines an MD workflow from a TPR file.
+/*! The TPR file has sufficient information to fully specify an MD run, though
+ * various parameters are implicit until the work is launched. The TPR filename
+ * provided must refer to identical TPR files at the API client and at the
+ * master rank of the execution host.
  *
  * \param filename Filesystem path of TPR file.
- * \returns gmxapi::System with bound objects and parameters specified in TPR.
+ * \returns gmxapi::System object with the specified workflow.
  * \ingroup gmxapi
  */
 std::unique_ptr<gmxapi::System> fromTprFile(std::string filename);

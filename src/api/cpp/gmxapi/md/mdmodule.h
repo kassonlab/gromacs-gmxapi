@@ -14,12 +14,8 @@
 
 #include "gmxapi/gromacsfwd.h"
 
-
-
 namespace gmxapi
 {
-
-
 
 /*!
  * \brief Base class for computational components of MD containers.

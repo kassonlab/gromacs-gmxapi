@@ -25,11 +25,11 @@ TEST(ApiSystem, Construction)
 TEST(ApiSystem, Accessors)
 {
     auto system = gmxapi::fromTprFile(filename);
-    ASSERT_TRUE(system->md() != nullptr);
-    ASSERT_NO_THROW(system->md()->info());
-    ASSERT_STREQ("Generic MDEngine object", system->md()->info().c_str());
-
-    ASSERT_TRUE(system->runner() != nullptr);
+//    ASSERT_TRUE(system->md() != nullptr);
+//    ASSERT_NO_THROW(system->md()->info());
+//    ASSERT_STREQ("Generic MDEngine object", system->md()->info().c_str());
+//
+//    ASSERT_TRUE(system->runner() != nullptr);
 
 //    ASSERT_EQ(system->atoms()->x()->size(), 7);
 //    ASSERT_TRUE(system->atoms() != nullptr);

@@ -215,8 +215,7 @@ class Mdrunner
 //        mutable std::mutex            stateAccess;
 
     public:
-        /*! \brief C
-         * onstructor.
+        /*! \brief Constructor.
          *
          * Note that when member variables are not present in the constructor
          * member initialization list (which is true for the default constructor),

@@ -3,35 +3,28 @@
 #include <memory>
 
 #include "gmxapi/context.h"
-#include "gmxapi/runner.h"
 #include "gmxapi/md/mdmodule.h"
-#include "gmxapi/md/runnerstate.h"
 #include "gmxapi/md.h"
+#include "gmxapi/session.h"
 #include "gmxapi/status.h"
 #include "gmxapi/system.h"
 
 #include "gromacs/compat/make_unique.h"
 #include "gromacs/math/vectypes.h"
+#include "gromacs/mdtypes/iforceprovider.h"
 #include "gromacs/mdtypes/imdmodule.h"
 #include "gromacs/mdtypes/imdpoptionprovider.h"
 #include "gromacs/mdtypes/imdoutputprovider.h"
 #include "gromacs/mdtypes/tpxstate.h"
 #include "gromacs/restraint/restraintpotential.h"
-#include "gromacs/utility/classhelpers.h"
 #include "gromacs/utility/arrayref.h"
 
 #include <gtest/gtest.h>
-#include <gromacs/mdtypes/iforceprovider.h>
-#include <curses.h>
 
 namespace
 {
 
 const auto filename = gmxapi::testing::sample_tprfilename;
-
-class DummyMD : public gmxapi::MDEngine
-{
-};
 
 class DummyMDModule final : public gmx::IMDModule
 {
@@ -87,11 +80,11 @@ class DummyMDModule final : public gmx::IMDModule
 
 TEST(ApiRunner, Build)
 {
-    auto md = std::make_shared<gmxapi::MDEngine>();
-    auto runnerBuilder = gmxapi::UninitializedMDRunnerState::Builder();
-    runnerBuilder.mdEngine(md);
-    runnerBuilder.tpxState(std::make_shared<gmx::TpxState>());
-    auto runner = runnerBuilder.build();
+//    auto md = std::make_shared<gmxapi::MDEngine>();
+//    auto runnerBuilder = gmxapi::UninitializedMDRunnerState::Builder();
+//    runnerBuilder.mdEngine(md);
+//    runnerBuilder.tpxState(std::make_shared<gmx::TpxState>());
+//    auto runner = runnerBuilder.build();
 }
 
 TEST(ApiRunner, BasicMD)
@@ -103,9 +96,7 @@ TEST(ApiRunner, BasicMD)
         std::shared_ptr<gmxapi::Context> context = gmxapi::defaultContext();
         ASSERT_TRUE(context != nullptr);
         ASSERT_TRUE(system != nullptr);
-        ASSERT_TRUE(system->runner() != nullptr);
-        auto runner = system->runner();
-        auto session = runner->initialize(context);
+        auto session = system->launch();
         ASSERT_TRUE(session != nullptr);
         gmxapi::Status status;
         ASSERT_NO_THROW(status = session->run());

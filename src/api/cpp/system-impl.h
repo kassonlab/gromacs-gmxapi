@@ -6,29 +6,33 @@
 namespace gmxapi
 {
 
-class Atoms;
-class MDInput;
-class IMDRunner;
+class Workflow;
 
-class System::Impl
+class System::Impl final
 {
     public:
         Impl();
         ~Impl();
-//        std::unique_ptr<Atoms> atoms();
-//        void setAtoms(const Atoms& atoms);
-        std::shared_ptr<MDProxy> md();
-        void md(std::shared_ptr<MDEngine> md);
 
-        std::shared_ptr<IMDRunner> & runner();
+        Impl(Impl&&) noexcept = default;
+        Impl& operator=(Impl&&) noexcept = default;
 
-        void runner(std::shared_ptr<IMDRunner> runner);
+        explicit Impl(std::unique_ptr<gmxapi::Workflow>&& workflow) noexcept;
+
+        Status status() const;
+
+        std::shared_ptr<Session> launch(std::shared_ptr<Context> context);
+        std::shared_ptr<Session> launch();
+
+        Status setRestraint(std::shared_ptr<gmxapi::MDModule> module);
+        std::shared_ptr<MDWorkSpec> getSpec();
 
     private:
-        std::shared_ptr<MDEngine> md_;
-        std::shared_ptr<IMDRunner> runner_;
-//        std::unique_ptr<Atoms>  atoms_;
-
+        std::shared_ptr<Context> context_;
+        std::shared_ptr<Workflow> workflow_;
+        // \todo merge Workflow and MDWorkSpec
+        std::shared_ptr<gmxapi::MDWorkSpec> spec_;
+        std::unique_ptr<Status> status_;
 };
 
 }      // end namespace gmxapi

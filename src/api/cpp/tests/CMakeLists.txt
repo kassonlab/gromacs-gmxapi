@@ -23,6 +23,7 @@ gmx_add_unit_test(GmxapiExternalInterfaceTests gmxapi-test
                   test_setup.cpp
                   test_status.cpp
                   test_system.cpp
+                  test_workflow.cpp
                   test_version_helpers.cpp
                   )
 

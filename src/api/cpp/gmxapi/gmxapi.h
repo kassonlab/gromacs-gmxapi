@@ -95,6 +95,42 @@
  * gmxapi.h header. Note that there is a separate CMake target to build the full
  * developer documentation for gmxapi.
  *
+ * # Example
+ *
+ * Configure a system and work specification from a TPR file, configure locally-detected computing resources,
+ * and run the workflow.
+ *
+ *      std::string filename;
+ *      // ...
+ *      auto system = gmxapi::fromTprFile(filename);
+ *      auto session = system.launch();
+ *      auto status = session.run();
+ *      return status.success();
+ *
+ * Load a TPR file, extract some data, modify the workflow, then run.
+ *
+ *
+ *      auto system = gmxapi::fromTprFile(filename);
+ *      // Load some custom code:
+ *      auto potential = myplugin::MyPotential::newSpec();
+ *      // ...
+ *      auto atoms = system.atoms();
+ *      {
+ *          // Acquire read handle to global data in the current thread and/or MPI rank.
+ *          const auto scopedPositionsHandle = gmxapi::extractLocally(atoms.positions, gmxapi::readOnly());
+ *          for (auto&& position : scopedPositionsHandle)
+ *          {
+ *              // do something
+ *          }
+ *          // Release the read handle in the current code block (a shared reference may still be held elsewhere)
+ *      }
+ *      system.addPotential(potential);
+ *      auto session = system.launch();
+ *      auto status = session.run();
+ *      return status.success();
+ *
+ *
+ *
  * \internal
  * To extend the API may require GROMACS library
  * headers and possibly linking against `libgromacs`.
