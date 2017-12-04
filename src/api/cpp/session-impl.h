@@ -66,6 +66,7 @@ class SessionImpl
         static std::unique_ptr<SessionImpl> create(std::shared_ptr<ContextImpl> context,
                                                    std::unique_ptr<gmx::Mdrunner> runner);
 
+        Status setRestraint(std::shared_ptr<gmxapi::MDModule> module);
     private:
         /*!
          * \brief Private constructor for use by create()

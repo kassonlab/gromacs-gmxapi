@@ -5,6 +5,7 @@
 #include "gmxapi/session.h"
 
 #include <cassert>
+#include "gmxapi/md/mdmodule.h"
 #include "gromacs/compat/make_unique.h"
 
 #include "gmxapi/context.h"
@@ -46,7 +47,7 @@ bool isOpen<Session>(const Session& object)
 
 bool SessionImpl::isOpen() const noexcept
 {
-    return status_ == nullptr;
+    return status_ != nullptr;
 }
 
 Status SessionImpl::status() const noexcept
@@ -58,6 +59,7 @@ std::unique_ptr<Status> SessionImpl::close()
 {
     std::unique_ptr<Status> status{nullptr};
     status.swap(status_);
+    assert(status_ == nullptr);
     return status;
 }
 
@@ -82,7 +84,7 @@ std::unique_ptr<SessionImpl> SessionImpl::create(std::shared_ptr<ContextImpl> co
 
 SessionImpl::SessionImpl(std::shared_ptr<ContextImpl> context,
                          std::unique_ptr<gmx::Mdrunner> runner) :
-    status_{gmx::compat::make_unique<Status>()},
+    status_{gmx::compat::make_unique<Status>(true)},
     context_{std::make_shared<Context>(std::move(context))},
     runner_{std::move(runner)}
 {
@@ -91,11 +93,28 @@ SessionImpl::SessionImpl(std::shared_ptr<ContextImpl> context,
     assert(runner_ != nullptr);
 }
 
+Status SessionImpl::setRestraint(std::shared_ptr<gmxapi::MDModule> module)
+{
+    assert(runner_ != nullptr);
+    Status status{false};
+    if (module != nullptr)
+    {
+        auto restraint = module->getRestraint();
+        if (restraint != nullptr)
+        {
+            runner_->addPullPotential(restraint, module->name());
+            status = true;
+        }
+    }
+    return status;
+}
+
 Session::Session(std::unique_ptr<SessionImpl>&& impl) noexcept :
     impl_{std::move(impl)}
 {
     assert(impl_ != nullptr);
     assert(impl == nullptr);
+    assert(impl_->isOpen());
 }
 
 Status Session::run() noexcept
@@ -147,6 +166,14 @@ bool Session::isOpen() const noexcept
     assert(impl_ != nullptr);
     const auto result = impl_->isOpen();
     return result;
+}
+
+Status setSessionRestraint(Session *session,
+                           std::shared_ptr<gmxapi::MDModule> module)
+{
+
+    auto status = session->impl_->setRestraint(std::move(module));
+    return status;
 }
 
 std::shared_ptr<Session> launchSession(Context* context, const Workflow& work) noexcept

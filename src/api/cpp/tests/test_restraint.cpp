@@ -59,26 +59,22 @@ TEST(ApiRestraint, MdAndPlugin)
 
     {
         auto system = gmxapi::fromTprFile(filename);
-//        system->setRestraint(module);
-
-        std::shared_ptr<gmxapi::Context> context = gmxapi::defaultContext();
-//        auto runner = system->runner();
-
-        auto session = system->launch(context);
 
         auto module = std::make_shared<SimpleApiModule>();
+        auto status = system->setRestraint(module);
+        ASSERT_TRUE(status.success());
 
-//        typedef struct{} dummystruct;
-//        auto module = std::make_shared<::gmx::RestraintMDModule<dummystruct>>();
-//        session->addModule(module);
+        std::shared_ptr<gmxapi::Context> context = gmxapi::defaultContext();
 
-//        auto puller = std::make_shared<gmx::RestraintPotential>();
-//        session->setRestraint(puller);
+        auto session = system->launch(context);
+        ASSERT_TRUE(session->isOpen());
 
-        gmxapi::Status status;
         ASSERT_NO_THROW(status = session->run());
 //        ASSERT_TRUE(module->force_called() > 0);
 //        ASSERT_NO_THROW(session->run(1000));
+        ASSERT_TRUE(status.success());
+        ASSERT_TRUE(session->isOpen());
+        status = session->close();
         ASSERT_TRUE(status.success());
     }
 

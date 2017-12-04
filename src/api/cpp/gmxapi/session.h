@@ -17,6 +17,7 @@ namespace gmxapi
 {
 
 // forward declaration
+class MDModule;
 class Status;
 class Context;
 class Workflow;
@@ -107,6 +108,11 @@ class Session
         bool isOpen() const noexcept;
 
     private:
+        friend
+        Status setSessionRestraint(Session* session,
+                                   std::shared_ptr<MDModule> module);
+
+
         /// \brief opaque pointer to implementation
         std::unique_ptr<SessionImpl> impl_;
 };

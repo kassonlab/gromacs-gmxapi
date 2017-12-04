@@ -24,6 +24,9 @@ class Session;
 /*!
  * \cond
  * A system instance is sort of a container of builders, and a Context is sort of a factory. together they allow a simulation to be constructed and initialized with the appropriate implementations of runner, integrator, and data objects.
+ *
+ * Ultimately, the system needs to pass serialized data sufficient to reconstruct
+ * itself as part of the workflow it contains when the work is launched.
  * \endcond
  * \ingroup gmxapi
  */
@@ -62,6 +65,10 @@ class System final
         ~System();
         /// \endcond
 
+        Status setRestraint(std::shared_ptr<gmxapi::MDModule> module);
+        // Note there is confusing overlap in the use of these two functions that should be normalized.
+        std::shared_ptr<MDWorkSpec> getSpec();
+
         /*!
          * \brief Configure the computing environment for the specified workflow.
          *
@@ -88,22 +95,6 @@ class System final
 
 //        /// Get a handle to system atoms.
 //        std::unique_ptr<Atoms> atoms();
-
-//        /// Get a handle to bound MD engine.
-//        std::shared_ptr<MDProxy> md();
-//
-//        /// Set the MD engine
-//        void md(std::shared_ptr<MDEngine> md);
-//
-//        /// Get a handle to bound runner.
-//        std::shared_ptr<IMDRunner> runner();
-//
-//        /// Set the runner.
-//        void runner(std::shared_ptr<IMDRunner> runner);
-
-//        /// Invoke an appropriate runner, if possible.
-//        /// Equivalent to system->runner()->initialize(defaultContext())->run();
-//        Status run();
 
     private:
         /*!

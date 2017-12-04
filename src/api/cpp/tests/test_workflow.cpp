@@ -58,7 +58,9 @@ TEST(ApiWorkflow, Creation)
 
 TEST(ApiWorkflow, Accessors)
 {
-
+    auto work = gmxapi::Workflow::create(filename);
+//    work->addNode()
+//    work->getNode()
 }
 
 } // end anonymous namespace

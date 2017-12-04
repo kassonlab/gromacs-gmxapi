@@ -35,11 +35,10 @@ NodeSpecification::paramsType MDNodeSpecification::params() const noexcept
     return tprfilename_;
 }
 
-Status Workflow::addNode(std::unique_ptr<NodeSpecification> &&spec) noexcept
+NodeKey Workflow::addNode(std::unique_ptr<NodeSpecification> &&spec) noexcept
 {
     (void)spec;
-    Status status{false};
-    return status;
+    return {};
 }
 
 std::unique_ptr<Workflow> Workflow::create(const std::string &filename)

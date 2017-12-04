@@ -27,11 +27,15 @@ class System::Impl final
         std::shared_ptr<Session> launch(std::shared_ptr<Context> context);
         std::shared_ptr<Session> launch();
 
+        Status setRestraint(std::shared_ptr<gmxapi::MDModule> module);
+        std::shared_ptr<MDWorkSpec> getSpec();
+
     private:
         std::shared_ptr<Context> context_;
         std::shared_ptr<Workflow> workflow_;
+        // \todo merge Workflow and MDWorkSpec
+        std::shared_ptr<gmxapi::MDWorkSpec> spec_;
         std::unique_ptr<Status> status_;
-
 };
 
 }      // end namespace gmxapi

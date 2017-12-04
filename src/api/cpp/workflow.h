@@ -106,7 +106,7 @@ class Workflow final
          * nodes. This operation should only be permitted if it does not render a
          * valid workflow invalid.
          */
-        Status addNode(std::unique_ptr<NodeSpecification>&& spec) noexcept;
+        NodeKey addNode(std::unique_ptr<NodeSpecification> &&spec) noexcept;
 
         /*!
          * \brief Get the node specification for a provided key.
