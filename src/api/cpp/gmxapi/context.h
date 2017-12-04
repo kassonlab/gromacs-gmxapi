@@ -13,8 +13,6 @@ namespace gmxapi
 {
 
 class Status;
-class IRunner;
-class MDInput;
 class Workflow;
 class Session;
 

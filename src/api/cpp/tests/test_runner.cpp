@@ -3,9 +3,7 @@
 #include <memory>
 
 #include "gmxapi/context.h"
-#include "gmxapi/runner.h"
 #include "gmxapi/md/mdmodule.h"
-#include "gmxapi/md/runnerstate.h"
 #include "gmxapi/md.h"
 #include "gmxapi/session.h"
 #include "gmxapi/status.h"
@@ -13,26 +11,20 @@
 
 #include "gromacs/compat/make_unique.h"
 #include "gromacs/math/vectypes.h"
+#include "gromacs/mdtypes/iforceprovider.h"
 #include "gromacs/mdtypes/imdmodule.h"
 #include "gromacs/mdtypes/imdpoptionprovider.h"
 #include "gromacs/mdtypes/imdoutputprovider.h"
 #include "gromacs/mdtypes/tpxstate.h"
 #include "gromacs/restraint/restraintpotential.h"
-#include "gromacs/utility/classhelpers.h"
 #include "gromacs/utility/arrayref.h"
 
 #include <gtest/gtest.h>
-#include <gromacs/mdtypes/iforceprovider.h>
-#include <curses.h>
 
 namespace
 {
 
 const auto filename = gmxapi::testing::sample_tprfilename;
-
-class DummyMD : public gmxapi::MDEngine
-{
-};
 
 class DummyMDModule final : public gmx::IMDModule
 {

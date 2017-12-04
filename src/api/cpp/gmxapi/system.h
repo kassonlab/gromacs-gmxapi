@@ -11,11 +11,6 @@
 
 namespace gmxapi
 {
-//
-//class Atoms;
-//class MDProxy;
-//class IMDRunner;
-//class MDEngine;
 
 // Forward declaration for a return type defined elsewhere.
 class Session;

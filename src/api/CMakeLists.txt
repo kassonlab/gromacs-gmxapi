@@ -47,7 +47,6 @@ set(GMXAPI_PUBLIC_HEADERS
     ${CMAKE_CURRENT_SOURCE_DIR}/cpp/gmxapi/exceptions.h
     ${CMAKE_CURRENT_SOURCE_DIR}/cpp/gmxapi/gmxapi.h
     ${CMAKE_CURRENT_SOURCE_DIR}/cpp/gmxapi/md.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/cpp/gmxapi/runner.h
     ${CMAKE_CURRENT_SOURCE_DIR}/cpp/gmxapi/system.h
     ${CMAKE_CURRENT_SOURCE_DIR}/cpp/gmxapi/version.h
 	)

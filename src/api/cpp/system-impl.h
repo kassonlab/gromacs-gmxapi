@@ -6,9 +6,6 @@
 namespace gmxapi
 {
 
-//class Atoms;
-//class MDInput;
-//class IMDRunner;
 class Workflow;
 
 class System::Impl final

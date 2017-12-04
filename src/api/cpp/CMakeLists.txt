@@ -12,14 +12,14 @@ configure_file(gmxapi/exceptions.h gmxapi)
 configure_file(gmxapi/gromacsfwd.h gmxapi)
 configure_file(gmxapi/gmxapi.h gmxapi)
 configure_file(gmxapi/md.h gmxapi)
-configure_file(gmxapi/runner.h gmxapi)
+#configure_file(gmxapi/runner.h gmxapi)
 configure_file(gmxapi/session.h gmxapi)
 configure_file(gmxapi/status.h gmxapi)
 configure_file(gmxapi/system.h gmxapi)
 configure_file(gmxapi/version.in.h gmxapi/version.h)
 # headers for API development and extension
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/gmxapi/md)
-configure_file(gmxapi/md/runnerstate.h gmxapi/md)
+#configure_file(gmxapi/md/runnerstate.h gmxapi/md)
 configure_file(gmxapi/md/mdmodule.h gmxapi/md)
 
 # Add to install target: copy the public API headers from the source directory
@@ -67,8 +67,6 @@ target_sources(
         md-impl.h
         md.cpp
         mdmodule.cpp
-        mdproxy.cpp
-        runnerstate.cpp
         session-impl.h
         session.cpp
         status.cpp

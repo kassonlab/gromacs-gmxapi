@@ -1,7 +1,6 @@
 #include "gmxapi/md.h"
 #include <gtest/gtest.h>
 
-#include "gmxapi/runner.h"
 #include "gmxapi/status.h"
 #include "md-impl.h"
 #include "gromacs/utility/keyvaluetree.h"
@@ -11,7 +10,6 @@ TEST(ApiModuleMD, Construction)
 //    {   // Check default construction and destruction
 //        gmxapi::MDProxy proxy{};
 //    }
-    auto module = gmxapi::mdFromTpr("topol.tpr");
     // Helper function should return a non-null unique_ptr
 //    ASSERT_TRUE(module.get() != nullptr);
 //    ASSERT_EQ(module->info(), "MDStatePlaceholder initialized with filename: \"topol.tpr\"\n");

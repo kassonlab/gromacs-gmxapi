@@ -1,25 +1,19 @@
 #include "gmxapi/system.h"
 
-#include <cstdio>
-
 #include <array>
 
 #include "md-impl.h"
 #include "system-impl.h"
 #include "workflow.h"
 
-#include "gmxapi/gmxapi.h"
-#include "gmxapi/md.h"
 #include "gmxapi/context.h"
-#include "gmxapi/runner.h"
+#include "gmxapi/md.h"
 #include "gmxapi/session.h"
 #include "gmxapi/status.h"
-#include "gmxapi/md/runnerstate.h"
 
 #include "gromacs/compat/make_unique.h"
 #include "gromacs/utility.h"
 #include "gromacs/mdtypes/tpxstate.h"
-#include "gromacs/utility/keyvaluetree.h"
 #include "programs/mdrun/runner.h"
 
 namespace gmxapi
@@ -40,7 +34,7 @@ std::shared_ptr<Session> System::launch(std::shared_ptr<Context> context)
 {
 //    (void)context;
 //    auto session = gmx::compat::make_unique<Session>();
-    return impl_->launch(context);
+    return impl_->launch(std::move(context));
 }
 
 std::shared_ptr<Session> System::launch()
@@ -99,38 +93,6 @@ std::unique_ptr<gmxapi::System> fromTprFile(std::string filename)
     // It does not have enough information on its own to determine much about the
     // necessary computation environment. That comes from environment
     // introspection and user runtime options.
-
-    // for what it's worth, we can choose/configure a builder based
-    // on the sort of system we are building.
-
-    // For now have very limited execution environment abstraction
-    // or flexibility.
-//    builder->defaultContext();
-
-//    // Build MDEngine member
-//    auto mdBuilder = MDProxy().builder();
-//    assert(mdBuilder != nullptr);
-//    std::shared_ptr<MDEngine> md = mdBuilder->build();
-//    assert(md != nullptr);
-//    assert(!md->info().empty());
-//
-//    auto runnerBuilder = UninitializedMDRunnerState::Builder();
-//    runnerBuilder.mdEngine(md);
-//    auto tpxState = gmx::TpxState::initializeFromFile(filename);
-//    assert(!tpxState->isDirty());
-//    assert(tpxState->isInitialized());
-//    runnerBuilder.tpxState(std::move(tpxState));
-//    auto runner = runnerBuilder.build();
-//    assert(runner != nullptr);
-
-    // One way to get around the required CLI argument is to make sure topol.tpr is in the working directory...
-
-//
-//    auto builder = gmx::compat::make_unique<System::Builder>();
-//    builder->mdEngine(md);
-//    builder->runner(std::move(runner));
-//
-//    auto system = builder->build();
 
     return system;
 }

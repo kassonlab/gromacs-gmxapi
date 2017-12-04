@@ -13,7 +13,6 @@
 #include "gromacs/mdtypes/tpxstate.h"
 
 #include "gmxapi/gmxapi.h"
-#include "gmxapi/runner.h"
 #include "gmxapi/session.h"
 #include "gmxapi/status.h"
 
