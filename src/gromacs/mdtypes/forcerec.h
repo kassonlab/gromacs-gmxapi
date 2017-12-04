@@ -308,6 +308,7 @@ struct t_forcerec {
      */
     gmx_bool          bF_NoVirSum;
 #ifdef __cplusplus
+    // Does this structure have multiple definitions in the same shared object?!
     /* TODO: Replace the pointer by an object once we got rid of C */
     PaddedRVecVector *forceBufferNoVirialSummation;
 #else

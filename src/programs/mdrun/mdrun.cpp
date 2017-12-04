@@ -52,13 +52,13 @@
  */
 #include "gmxpre.h"
 
+#include "mdrun_main.h"
+#include "runner.h"
+
 #include "gromacs/commandline/filenm.h"
 #include "gromacs/commandline/pargs.h"
 #include "gromacs/mdtypes/commrec.h"
 #include "gromacs/utility/exceptions.h"
-
-#include "mdrun_main.h"
-#include "runner.h"
 
 //! Implements C-style main function for mdrun
 int gmx_mdrun(int argc, char *argv[])

@@ -63,6 +63,7 @@
 #include "gromacs/mdtypes/state.h"
 #include "gromacs/pbcutil/pbc.h"
 #include "gromacs/pulling/pull.h"
+#include "gromacs/restraint/manager.h"
 #include "gromacs/topology/block.h"
 #include "gromacs/topology/invblock.h"
 #include "gromacs/topology/mtop_lookup.h"
@@ -614,7 +615,8 @@ gmx_bool constrain(FILE *fplog, gmx_bool bLog, gmx_bool bEner,
 
     if (econq == econqCoord)
     {
-        if (ir->bPull && pull_have_constraint(ir->pull_work))
+        auto pull_work = gmx::restraint::Manager::instance()->getRaw();
+        if (ir->bPull && pull_have_constraint(pull_work))
         {
             if (EI_DYNAMICS(ir->eI))
             {
@@ -625,7 +627,7 @@ gmx_bool constrain(FILE *fplog, gmx_bool bLog, gmx_bool bEner,
                 t = ir->init_t;
             }
             set_pbc(&pbc, ir->ePBC, box);
-            pull_constraint(ir->pull_work, md, &pbc, cr, ir->delta_t, t, x, xprime, v, *vir);
+            pull_constraint(pull_work, md, &pbc, cr, ir->delta_t, t, x, xprime, v, *vir);
         }
         if (constr->ed && delta_step > 0)
         {
@@ -1157,10 +1159,11 @@ gmx_constr_t init_constraints(FILE *fplog,
     int nsettles =
         gmx_mtop_ftype_count(mtop, F_SETTLE);
 
-    GMX_RELEASE_ASSERT(!ir->bPull || ir->pull_work != nullptr, "init_constraints called with COM pulling before/without initializing the pull code");
+    auto pull_work = gmx::restraint::Manager::instance()->getRaw();
+    GMX_RELEASE_ASSERT(!ir->bPull || pull_work != nullptr, "init_constraints called with COM pulling before/without initializing the pull code");
 
     if (nconstraints + nsettles == 0 &&
-        !(ir->bPull && pull_have_constraint(ir->pull_work)) &&
+        !(ir->bPull && pull_have_constraint(pull_work)) &&
         !doEssentialDynamics)
     {
         return nullptr;

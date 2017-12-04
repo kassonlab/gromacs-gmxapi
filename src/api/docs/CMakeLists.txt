@@ -32,11 +32,16 @@
 # To help us fund GROMACS development, we humbly ask that you cite
 # the research papers on the package. Check out http://www.gromacs.org.
 
+
 set(GMXAPI_USERDOC_OUTPUT ${CMAKE_BINARY_DIR}/docs/html/doxygen/api-user)
 set(GMXAPI_DEVDOC_OUTPUT ${CMAKE_BINARY_DIR}/docs/html/doxygen/api-dev)
+file(MAKE_DIRECTORY ${GMXAPI_USERDOC_OUTPUT})
+file(MAKE_DIRECTORY ${GMXAPI_DEVDOC_OUTPUT})
+
 #set(GMXAPI_WEBDOC_OUTPUT ${CMAKE_BINARY_DIR}/docs/html/gmxapi)
 get_target_property(GMXAPI_DEV gmxapi SOURCE_DIR)
-string (REPLACE ";" " " GMXAPI_PUBLIC "${GMXAPI_PUBLIC_HEADERS}")
+#string (REPLACE ";" " " GMXAPI_PUBLIC "${GMXAPI_PUBLIC_HEADERS}")
+set(GMXAPI_PUBLIC ${GMXAPI_DEV}/gmxapi)
 
 configure_file(Doxyfile.in Doxyfile @ONLY)
 configure_file(Doxyfile-dev.in Doxyfile-dev @ONLY)

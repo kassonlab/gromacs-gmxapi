@@ -1,13 +1,20 @@
 #ifndef GMXAPI_EXCEPTIONS_H
 #define GMXAPI_EXCEPTIONS_H
+/*! \defgroup gmxapi_exceptions Exceptions
+ *
+ * \brief Exceptions thrown by gmxapi components.
+ *
+ * \ingroup gmxapi
+ */
 /*! \file
  * \brief Declare exception classes for external API.
  *
- * \ingroup gmxapi
+ * \ingroup gmxapi_exceptions
  */
 
 #include <exception>
 #include <string>
+#include <utility>
 
 namespace gmxapi
 {
@@ -17,7 +24,7 @@ namespace gmxapi
  * Exceptions thrown in the gmxapi namespace are descended from gmxapi::Exception
  * or there is a bug.
  *
- * \ingroup gmxapi
+ * \ingroup gmxapi_exceptions
  */
 class Exception : public std::exception
 {
@@ -46,10 +53,13 @@ class Exception : public std::exception
  *
  * Use in the "curiously recurring template pattern".
  *
- * \example
+ * Example:
+ *
  *     class DerivedException : public BasicException<DerivedException> {};
  *
  * \note Current implementation only provides constructors and no specialized or dispatched behavior.
+ *
+ * \ingroup gmxapi_exceptions
  */
 template<class E>
 class BasicException : public Exception
@@ -83,6 +93,8 @@ class BasicException : public Exception
  * If this exception is encountered in client code, the API is being misused or there is a bug.
  * Generally, required behaviors should be implemented in templates or base classes rather than
  * exposing and requiring complete implementation of the protocol in client code.
+ *
+ * \ingroup gmxapi_exceptions
  */
 class ProtocolError : public BasicException<ProtocolError>
 {
@@ -96,6 +108,8 @@ class ProtocolError : public BasicException<ProtocolError>
  * Indicates a bug in the API implementation. Either a version mismatch between the client
  * and library has gone undetected, or the API has purported to offer functionality that does
  * not exist.
+ *
+ * \ingroup gmxapi_exceptions
  */
 class NotImplementedError : public BasicException<NotImplementedError>
 {

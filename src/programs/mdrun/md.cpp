@@ -34,6 +34,10 @@
  * To help us fund GROMACS development, we humbly ask that you cite
  * the research papers on the package. Check out http://www.gromacs.org.
  */
+/*! \libinternal
+ * \file
+ * \brief Define standard molecular dynamics integration
+ */
 #include "gmxpre.h"
 
 #include "md.h"
@@ -46,6 +50,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <gromacs/restraint/manager.h>
 
 #include "thread_mpi/threads.h"
 
@@ -1672,7 +1677,8 @@ double gmx::do_md(FILE *fplog, t_commrec *cr, const gmx::MDLogger &mdlog,
 
             if (ir->bPull)
             {
-                pull_print_output(ir->pull_work, step, t);
+                ::gmx::restraint::Manager::instance()->print(step, t);
+                //pull_print_output(ir->pull_work, step, t);
             }
 
             if (do_per_step(step, ir->nstlog))

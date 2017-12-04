@@ -47,6 +47,8 @@
 #include <string.h>
 
 #include <algorithm>
+#include <iostream>
+#include "gromacs/compat/make_unique.h"
 
 #include "gromacs/commandline/filenm.h"
 #include "gromacs/domdec/domdec_struct.h"
@@ -66,6 +68,7 @@
 #include "gromacs/mdtypes/mdatom.h"
 #include "gromacs/pbcutil/pbc.h"
 #include "gromacs/pulling/pull_internal.h"
+#include "gromacs/restraint/restraintpotential.h"
 #include "gromacs/topology/mtop_lookup.h"
 #include "gromacs/topology/topology.h"
 #include "gromacs/utility/cstringutil.h"
@@ -189,7 +192,9 @@ static void pull_print_coord_dr(FILE *out, const pull_coord_work_t *pcrd,
     }
 }
 
-static void pull_print_x(FILE *out, struct pull_t *pull, double t)
+static void pull_print_x(FILE *out,
+                         const pull_t *pull,
+                         double t)
 {
     int c;
 
@@ -225,7 +230,9 @@ static void pull_print_x(FILE *out, struct pull_t *pull, double t)
     fprintf(out, "\n");
 }
 
-static void pull_print_f(FILE *out, struct pull_t *pull, double t)
+static void pull_print_f(FILE *out,
+                         const pull_t *pull,
+                         double t)
 {
     int c;
 
@@ -238,7 +245,9 @@ static void pull_print_f(FILE *out, struct pull_t *pull, double t)
     fprintf(out, "\n");
 }
 
-void pull_print_output(struct pull_t *pull, gmx_int64_t step, double time)
+void pull_print_output(const pull_t *pull,
+                       gmx_int64_t step,
+                       double time)
 {
     GMX_ASSERT(pull->numExternalPotentialsStillToBeAppliedThisStep == 0, "pull_print_output called before all external pull potentials have been applied");
 
@@ -1665,7 +1674,7 @@ void apply_external_pull_coord_force(struct pull_t *pull,
 }
 
 /* Calculate the pull potential and scalar force for a pull coordinate */
-static void do_pull_pot_coord(struct pull_t *pull, int coord_ind, t_pbc *pbc,
+static void do_pull_pot_coord(struct pull_t *pull, int coord_ind, const t_pbc *pbc,
                               double t, real lambda,
                               real *V, tensor vir, real *dVdl)
 {
@@ -1676,6 +1685,8 @@ static void do_pull_pot_coord(struct pull_t *pull, int coord_ind, t_pbc *pbc,
 
     assert(pcrd->params.eType != epullCONSTRAINT);
 
+    // only called here? move a level inwards
+    // pull->coord_scalar_force_and_potential(pull, coord_ind, pbc, t, lambda, V, dVdl)
     dev = get_pull_coord_deviation(pull, coord_ind, pbc, t);
 
     calc_pull_coord_scalar_force_and_potential(pcrd, dev, lambda, V, dVdl);
@@ -1685,11 +1696,11 @@ static void do_pull_pot_coord(struct pull_t *pull, int coord_ind, t_pbc *pbc,
     add_virial_coord(vir, pcrd);
 }
 
-real pull_potential(struct pull_t *pull, t_mdatoms *md, t_pbc *pbc,
-                    t_commrec *cr, double t, real lambda,
-                    rvec *x, rvec *f, tensor vir, real *dvdlambda)
+real pull_potential(struct pull_t *pull, const t_mdatoms *md, const t_pbc *pbc,
+                    const t_commrec *cr, double t, real lambda,
+                    const rvec *x, rvec *f, tensor vir, real *dvdlambda)
 {
-    real V = 0;
+    real V = 0; // Potential energy contribution
 
     assert(pull != NULL);
 
@@ -1701,6 +1712,7 @@ real pull_potential(struct pull_t *pull, t_mdatoms *md, t_pbc *pbc,
 
     if (pull->comm.bParticipate)
     {
+        // Accumulate work due to restraint
         real dVdl = 0;
 
         pull_calc_coms(cr, pull, md, pbc, t, x, nullptr);

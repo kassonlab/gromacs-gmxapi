@@ -11,12 +11,11 @@
 #include <string>
 
 #include "gmxapi/gmxapi.h"
-#include "gmxapi/system.h"
 
 namespace gmxapi
 {
 class MDProxy;
-class Context;
+class MDModule;
 
 class MDBuilder;
 
@@ -91,6 +90,35 @@ class IMDRunner
          * \return Handle to a launched and runnable workflow.
          */
         virtual std::shared_ptr<IMDRunner> initialize(std::shared_ptr<Context> context) = 0;
+
+        /*!
+         * \brief Execute binding protocol for restraint modules.
+         *
+         * \param module restraint module
+         *
+         * \internal
+         *
+         * Protocol to register a gmxapi::MDModule with a gmxapi::IMDRunner
+         * by passing an gmx::IRestraintPotential to a gmx::MdRunner
+         * \todo we should be registering a Spec or Factory instead of creating the IRestraint now.
+         *
+         *      // Assume an object such as this exists:
+         *      // std::shared_ptr<gmxapi::MDModule> module;
+         *      auto runner = impl_->getRunner();
+         *      auto restraint = module->getRestraint();
+         *      assert(restraint != nullptr);
+         *      runner->addPullPotential(restraint, module->name());
+         *
+         */
+        virtual void setRestraint(std::shared_ptr<gmxapi::MDModule> module);
+
+
+//        virtual void addModule(std::shared_ptr<gmx::IMDModule> module)
+//        {
+//            (void) module;
+//            throw ProtocolError("setRestraint not implemented for this class.");
+//        };
+
 };
 
 /*!
@@ -110,6 +138,7 @@ class IMDRunnerBuilder
 
         /// Build a runner. Return a handle to something that can be run.
         virtual std::shared_ptr<IMDRunner> build() = 0;
+
 };
 
 /// \cond internal
@@ -147,6 +176,8 @@ class RunnerProxy : public IMDRunner, public std::enable_shared_from_this<Runner
         std::shared_ptr <IMDRunner> initialize(std::shared_ptr<Context> context) override;
 
         void setState(std::shared_ptr<IMDRunner> state);
+
+        void setRestraint(std::shared_ptr<gmxapi::MDModule> restraint) override;
 
     private:
         /// bound task, if any

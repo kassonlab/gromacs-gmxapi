@@ -55,6 +55,7 @@
 #include "gromacs/hardware/hw_info.h"
 #include "gromacs/math/vec.h"
 #include "gromacs/mdlib/main.h"
+#include "gromacs/mdtypes/imdmodule.h"
 #include "gromacs/topology/topology.h"
 #include "gromacs/utility/basedefinitions.h"
 #include "gromacs/utility/real.h"
@@ -64,10 +65,21 @@
 struct gmx_output_env_t;
 struct ReplicaExchangeParameters;
 struct t_commrec;
+class PotentialContainer; // // defined in pulling/pullpotential.h
 
 namespace gmx
 {
-class TpxState;
+
+// Todo: move to forward declaration headers...
+class MDModules;
+
+namespace restraint
+{
+class Manager;
+}
+
+class TpxState; // defined in mdtypes/TpxState.h
+class IRestraintPotential; // defined in pulling/pullpotential.h
 
 /*! \libinternal \brief Runner object for supporting setup and execution of mdrun.
  *
@@ -196,11 +208,15 @@ class Mdrunner
         //! Handle to communication data structure.
         t_commrec                       *cr;
 
+        std::shared_ptr<restraint::Manager> restraintManager_{nullptr};
         std::shared_ptr<TpxState>       tpxState_{nullptr};
+
+        std::shared_ptr<gmx::MDModules> mdModules{nullptr};
 //        mutable std::mutex            stateAccess;
 
     public:
-        /*! \brief Defaulted constructor.
+        /*! \brief C
+         * onstructor.
          *
          * Note that when member variables are not present in the constructor
          * member initialization list (which is true for the default constructor),
@@ -222,8 +238,8 @@ class Mdrunner
         Mdrunner& operator=(const Mdrunner&) = delete;
 
         // Allow move
-        Mdrunner(Mdrunner&&) noexcept = default;
-        Mdrunner& operator=(Mdrunner&&) noexcept = default;
+        Mdrunner(Mdrunner&&) noexcept;
+        Mdrunner& operator=(Mdrunner&&) noexcept;
 
         //! Set up mdrun by calling its C-style main function.
         void initFromCLI(int argc, char *argv[]);
@@ -246,6 +262,17 @@ class Mdrunner
          *
          */
         void setTpx(std::shared_ptr<gmx::TpxState> newState);
+
+        /*!
+         * \brief Add a pulling potential to be evaluated during integration.
+         *
+         * \param puller GROMACS-provided or custom pulling potential
+         * \param name User-friendly plain-text name to uniquely identify the puller
+         */
+        void addPullPotential(std::shared_ptr<gmx::IRestraintPotential> puller,
+                              std::string name);
+
+        void addModule(std::shared_ptr<gmx::IMDModule> module);
 
         //! Called when thread-MPI spawns threads.
         t_commrec *spawnThreads(int numThreadsToLaunch);

@@ -51,8 +51,10 @@
 #include <csignal>
 #include <cstdlib>
 #include <string>
+#include <iostream>
 
 #include <algorithm>
+#include <gromacs/restraint/manager.h>
 #include "gromacs/utility/arraysize.h"
 #include "gromacs/mdrunutility/handlerestart.h"
 
@@ -103,9 +105,11 @@
 #include "gromacs/mdtypes/observableshistory.h"
 #include "gromacs/mdtypes/state.h"
 #include "gromacs/mdtypes/swaphistory.h"
-#include "gromacs/mdtypes/TpxState.h"
+#include "gromacs/mdtypes/tpxstate.h"
 #include "gromacs/pbcutil/pbc.h"
 #include "gromacs/pulling/pull.h"
+#include "gromacs/restraint/restraintpotential.h"
+#include "gromacs/restraint/restraintmdmodule.h"
 #include "gromacs/pulling/pull_rotation.h"
 #include "gromacs/timing/wallcycle.h"
 #include "gromacs/topology/mtop_util.h"
@@ -160,6 +164,8 @@ namespace gmx
 std::unique_ptr<Mdrunner> Mdrunner::cloneOnSpawnedThread() const
 {
     auto newRunner = gmx::compat::make_unique<Mdrunner>();
+
+    // Todo: how to handle the restraint manager or parameters not in inputrec?
 
     newRunner->hw_opt = hw_opt;
     // TODO This duplication is formally necessary if any thread might
@@ -353,8 +359,11 @@ void gmx::Mdrunner::initFromAPI()
     int argc = 3;
     char arg0[] = "";
     char arg1[] = "-s";
-    char arg2[strlen(tpxState_->filename())];
+    const auto stringLength = strlen(tpxState_->filename()) + 1;
+    char arg2[stringLength];
     strcpy(arg2, tpxState_->filename());
+    // Add terminating null character
+    arg2[stringLength - 1] = 0;
     char* argv[3];
     argv[0] = &arg0[0];
     argv[1] = &arg1[0];
@@ -924,7 +933,7 @@ int Mdrunner::mdrunner()
 
     /* CAUTION: threads may be started later on in this function, so
        cr doesn't reflect the final parallel state right now */
-    gmx::MDModules mdModules;
+//    gmx::MDModules mdModules;
 
     bool doMembed = opt2bSet("-membed", nfile, fnm);
     bool doRerun  = Flags.test(rerun);
@@ -1106,7 +1115,7 @@ int Mdrunner::mdrunner()
         gmx_bcast_sim(sizeof(tryUsePhysicalGpu), &tryUsePhysicalGpu, cr);
     }
     // TODO: Error handling
-    mdModules.assignOptionsToModules(*inputrec->params, nullptr);
+    mdModules->assignOptionsToModules(*inputrec->params, nullptr);
 
     if (fplog != nullptr)
     {
@@ -1435,7 +1444,10 @@ int Mdrunner::mdrunner()
 
         /* Initiate forcerecord */
         fr                 = mk_forcerec();
-        fr->forceProviders = mdModules.initForceProviders();
+        fr->forceProviders = mdModules->initForceProviders();
+        // Threads have been launched and DD initialized
+        // Todo: restraintManager can provide a proper IMDModule interface later.
+//        fr->forceProviders->addForceProvider(restraintManager_);
         init_forcerec(fplog, mdlog, fr, fcd,
                       inputrec, mtop, cr, box,
                       opt2fn("-table", nfile, fnm),
@@ -1585,14 +1597,22 @@ int Mdrunner::mdrunner()
         /* Assumes uniform use of the number of OpenMP threads */
         walltime_accounting = walltime_accounting_init(gmx_omp_nthreads_get(emntDefault));
 
-        if (inputrec->bPull)
+        // If old MDP traditional MDP pulling options were used, the pull code
+        // wrapped up in gmx::LegacyPullPack can be used.
+        if (inputrec->bPull && inputrec->pull != nullptr)
         {
-            /* Initialize pull code */
-            inputrec->pull_work =
+            // TODO: move to constructor when initializing runner is decoupled from reading TPR.
+            /* Initialize pull code structures */
+            auto pull_work =
                 init_pull(fplog, inputrec->pull, inputrec, nfile, fnm,
-                          mtop, cr, oenv, inputrec->fepvals->init_lambda,
+                          mtop, cr, oenv, real(inputrec->fepvals->init_lambda),
                           EI_DYNAMICS(inputrec->eI) && MASTER(cr), Flags.to_ulong());
+            auto legacyPullers = gmx::compat::make_unique<gmx::LegacyPuller>(pull_work);
+            auto restraints = gmx::restraint::Manager::instance();
+            restraints->add(std::move(legacyPullers), "old");
         }
+        // If we need an initialization hook, we can put it here.
+        //pullers_->startRun();
 
         if (inputrec->bRot)
         {
@@ -1623,7 +1643,7 @@ int Mdrunner::mdrunner()
                                      oenv, bVerbose,
                                      nstglobalcomm,
                                      vsite, constr,
-                                     nstepout, mdModules.outputProvider(),
+                                     nstepout, mdModules->outputProvider(),
                                      inputrec, mtop,
                                      fcd, state, &observablesHistory,
                                      mdatoms, nrnb, wcycle, fr,
@@ -1641,7 +1661,8 @@ int Mdrunner::mdrunner()
 
         if (inputrec->bPull)
         {
-            finish_pull(inputrec->pull_work);
+            auto puller = gmx::restraint::Manager::instance();
+            puller->finish();
         }
 
     }
@@ -1705,8 +1726,11 @@ int Mdrunner::mdrunner()
     return rc;
 }
 
-Mdrunner::Mdrunner()
+Mdrunner::Mdrunner() :
+    mdModules{std::make_shared<gmx::MDModules>()}
 {
+    restraintManager_ = ::gmx::restraint::Manager::instance();
+
     cr = init_commrec();
     // oenv initialized by parse_commond_args
 
@@ -1775,5 +1799,36 @@ void Mdrunner::setTpx(std::shared_ptr<gmx::TpxState> newState)
     }
     tpxState_ = std::move(newState);
 }
+
+void Mdrunner::addPullPotential(std::shared_ptr<gmx::IRestraintPotential> puller,
+                                std::string name)
+{
+    assert(restraintManager_ != nullptr);
+    assert(mdModules != nullptr);
+    std::cout << "Registering restraint named " << name << std::endl;
+    assert(tpxState_ != nullptr);
+    assert(tpxState_->getRawInputrec() != nullptr);
+    auto& enablePull = tpxState_->getRawInputrec()->bPull;
+    // We can't activate the pull code path without having params with which to
+    // initialize the pull code. We'll work on that.
+//    enablePull = true;
+
+    // When multiple restraints are used, it may be wasteful to register them separately.
+    // Maybe instead register a Restraint Manager as a force provider.
+    auto site1 = puller->sites()[0];
+    auto site2 = puller->sites()[1];
+    auto module = ::gmx::RestraintMDModule::create(puller, site1, site2);
+    mdModules->add(std::move(module));
+}
+
+void Mdrunner::addModule(std::shared_ptr<gmx::IMDModule> module)
+{
+    assert(mdModules != nullptr);
+    mdModules->add(module);
+}
+
+Mdrunner &Mdrunner::operator=(Mdrunner &&) noexcept = default;
+
+Mdrunner::Mdrunner(Mdrunner &&) noexcept = default;
 
 } // namespace gmx

@@ -9,12 +9,14 @@
 #include "gromacs/utility.h"
 #include "programs/mdrun/runner.h"
 #include "gromacs/compat/make_unique.h"
-#include "gromacs/mdtypes/TpxState.h"
+#include "gromacs/mdtypes/tpxstate.h"
 #include "gromacs/mdtypes/inputrec.h"
 
 #include "gmxapi/exceptions.h"
+#include "gmxapi/status.h"
 #include "gmxapi/md.h"
 #include "gmxapi/md/runnerstate.h"
+#include "gmxapi/md/mdmodule.h"
 
 namespace gmxapi
 {
@@ -52,6 +54,12 @@ std::shared_ptr<IMDRunner> RunnerProxy::initialize(std::shared_ptr<Context> cont
 
     instanceState_.swap(initializedRunner);
     return instanceState_;
+}
+
+void RunnerProxy::setRestraint(std::shared_ptr<gmxapi::MDModule> restraint)
+{
+    assert(instanceState_ != nullptr);
+    instanceState_->setRestraint(std::move(restraint));
 }
 
 void EmptyMDRunnerState::registerMDBuilder(std::unique_ptr<MDBuilder> builder)
@@ -180,10 +188,7 @@ RunningMDRunnerState::Impl::Impl() :
 
 Status RunningMDRunnerState::Impl::run()
 {
-    if (runner_ == nullptr)
-    {
-        throw gmxapi::ProtocolError("Runner implementation not initialized.");
-    }
+    assert(runner_ != nullptr);
     Status status{};
     // Todo: check the number of steps to run
     if (runner_->mdrunner() == 0)
@@ -221,6 +226,40 @@ void RunningMDRunnerState::registerMDBuilder(std::unique_ptr<MDBuilder> builder)
 {
     // implement the runner--mdengine binding protocol
 }
+
+// Implement the protocol
+// protocol:
+/* void gmxapi::IMDRunner::register(std::shared_ptr<gmxapi::MDModule> module)
+ * {
+ *      auto runner = impl_->runner_;
+ *      auto restraint = module->getRestraint();
+ *      runner->addPullPotential(restraint);
+ * };
+ */
+void RunningMDRunnerState::setRestraint(std::shared_ptr<gmxapi::MDModule> module)
+{
+    assert(impl_ != nullptr);
+    assert(impl_->runner_ != nullptr);
+
+    // Follow the protocol to register a gmxapi::MDModule with a gmxapi::IMDRunner
+    // by passing an gmx::IRestraintPotential to a gmx::MdRunner
+    // \todo we should be registering a Spec or Factory instead of creating the IRestraint now.
+    // Note that thread-MPI threads have not yet been spawned at this phase as of 20 November 2017
+    auto runner = impl_->runner_;
+    auto restraint = module->getRestraint();
+    if(restraint != nullptr)
+    {
+        runner->addPullPotential(restraint,
+                                 module->name());
+    }
+}
+
+//void RunningMDRunnerState::addModule(std::shared_ptr<gmx::IMDModule> module)
+//{
+//    assert(impl_ != nullptr);
+//    assert(impl_->runner_ != nullptr);
+//    impl_->runner_->addModule(module);
+//}
 
 
 RunningMDRunnerState::Builder::Builder() :
@@ -267,5 +306,11 @@ RunningMDRunnerState::Builder &RunningMDRunnerState::Builder::tpxState(std::shar
 }
 
 RunningMDRunnerState::Builder::~Builder() = default;
+
+void IMDRunner::setRestraint(std::shared_ptr<gmxapi::MDModule> restraint)
+{
+        (void)restraint;
+        throw ::gmxapi::ProtocolError("setRestraint not implemented for this class.");
+}
 
 } // end namespace gmxapi

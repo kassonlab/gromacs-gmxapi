@@ -50,6 +50,8 @@
 #ifndef GMX_PULLING_PULL_H
 #define GMX_PULLING_PULL_H
 
+#include <memory>
+
 #include <cstdio>
 
 #include "gromacs/math/vectypes.h"
@@ -57,10 +59,6 @@
 #include "gromacs/pulling/pull_internal.h"
 #include "gromacs/utility/basedefinitions.h"
 #include "gromacs/utility/real.h"
-
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 struct gmx_mtop_t;
 struct gmx_output_env_t;
@@ -172,15 +170,15 @@ void clear_pull_forces(struct pull_t *pull);
  * \param[in]     t      Time.
  * \param[in]     lambda The value of lambda in FEP calculations.
  * \param[in]     x      Positions.
- * \param[in]     f      Forces.
+ * \param[in,out] f      Forces.
  * \param[in,out] vir    The virial, which, if != NULL, gets a pull correction.
  * \param[out] dvdlambda Pull contribution to dV/d(lambda).
  *
  * \returns The pull potential energy.
  */
-real pull_potential(struct pull_t *pull, t_mdatoms *md, struct t_pbc *pbc,
-                    t_commrec *cr, double t, real lambda,
-                    rvec *x, rvec *f, tensor vir, real *dvdlambda);
+real pull_potential(struct pull_t *pull, const t_mdatoms *md, const struct t_pbc *pbc,
+                    const t_commrec *cr, double t, real lambda,
+                    const rvec *x, rvec *f, tensor vir, real *dvdlambda);
 
 
 /*! \brief Constrain the coordinates xp in the directions in x
@@ -254,13 +252,14 @@ void finish_pull(struct pull_t *pull);
  * \param step     Time step number.
  * \param time     Time.
  */
-void pull_print_output(struct pull_t *pull, gmx_int64_t step, double time);
-
+void pull_print_output(const pull_t *pull,
+                       gmx_int64_t step,
+                       double time);
 
 /*! \brief Calculates centers of mass all pull groups.
  *
  * \param[in] cr       Struct for communication info.
- * \param[in] pull     The pull data structure.
+ * \param[in,out] pull     The pull data structure.
  * \param[in] md       All atoms.
  * \param[in] pbc      Information struct about periodicity.
  * \param[in] t        Time, only used for cylinder ref.
@@ -268,12 +267,12 @@ void pull_print_output(struct pull_t *pull, gmx_int64_t step, double time);
  * \param[in,out] xp   Updated x, can be NULL.
  *
  */
-void pull_calc_coms(t_commrec        *cr,
+void pull_calc_coms(const t_commrec  *cr,
                     struct pull_t    *pull,
-                    t_mdatoms        *md,
-                    struct t_pbc     *pbc,
+                    const t_mdatoms  *md,
+                    const struct t_pbc     *pbc,
                     double            t,
-                    rvec              x[],
+                    const rvec              x[],
                     rvec             *xp);
 
 
@@ -303,9 +302,5 @@ gmx_bool pull_have_constraint(const struct pull_t *pull);
  */
 real max_pull_distance2(const pull_coord_work_t *pcrd,
                         const t_pbc             *pbc);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

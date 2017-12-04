@@ -9,7 +9,13 @@
  *  Defines a class Version in the gmxapi namespace providing static methods
  *  for use by API client code at compile time and run time.
  *
+ * Goals: do better than compiler error, build time linker errors, and run time linker errors.
+ *
  *  Todo: provide versioning for headers and library so clients can do abstract comparison of build versus runtime.
+ *
+ *  Todo: Provide better boilerplate (at least) for client self-test of API version compatibility at build time.
+ *
+ *  Todo: Add compatibility test/warning at module load when client was compiled against a different libgmxapi.
  *  \ingroup gmxapi
  */
 
@@ -18,12 +24,14 @@
 namespace gmxapi
 {
 
+using version_t = unsigned short int;
+
 // Todo: it may be preferable for CMake to get the version from the header instead of the other way around.
 // It would be nice to be able to pull the headers straight from the repository...
-static constexpr unsigned int GMXAPI_MAJOR   = @GMXAPI_MAJOR@;
-static constexpr unsigned int GMXAPI_MINOR   = @GMXAPI_MINOR@;
-static constexpr unsigned int GMXAPI_PATCH   = @GMXAPI_PATCH@;
-static const std::string  GMXAPI_RELEASE = "@GMXAPI_RELEASE@";
+static constexpr const version_t GMXAPI_MAJOR   = @GMXAPI_MAJOR@;
+static constexpr const version_t GMXAPI_MINOR   = @GMXAPI_MINOR@;
+static constexpr const version_t GMXAPI_PATCH   = @GMXAPI_PATCH@;
+static const char GMXAPI_RELEASE[] = "@GMXAPI_RELEASE@";
 
 /*!
  * \brief Provide API library version information for client code.
@@ -38,13 +46,13 @@ class Version
     public:
         /// Query gmxapi major version.
         /// \returns major version number
-        static unsigned int major();
+        static version_t major();
         /// Query gmxapi minor version.
         /// \returns minor version number
-        static unsigned int minor();
+        static version_t minor();
         /// Query gmxapi patch level.
         /// \returns patch level number
-        static unsigned int patch();
+        static version_t patch();
         /// Get formatted release string.
         /// Format is major.minor.patch
         /// \returns release as string
@@ -56,13 +64,13 @@ class Version
         /// this mechanism when checking for features still under development or to
         /// distinguish between interface levels of a specific feature.
         /// \param featurename Feature name described in the feature's documentation.
-        static bool has_feature(std::string featurename);
+        static bool has_feature(const std::string& featurename);
         /// Check for sufficiently high API version number.
         /// \returns `true` if gmxapi library version is the same or greater than the argument(s).
         /// \param major gmxapi major version number.
         /// \param minor gmxapi minor version number (optional).
         /// \param patch patch level of the api library (optional).
-        static bool is_at_least(unsigned int major, unsigned int minor = 0, unsigned int patch = 0);
+        static bool is_at_least(version_t major, version_t minor = 0, version_t patch = 0);
 };
 
 }      // namespace gmxapi

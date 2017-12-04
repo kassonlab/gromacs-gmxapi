@@ -4,21 +4,20 @@
 
 #ifndef GROMACS_RUNNERPROXY_H
 #define GROMACS_RUNNERPROXY_H
+/*! \file
+ * \brief Declare supporting classes for IMDRunner interface.
+ *
+ * \ingroup gmxapi_md
+ */
 
 #include "gmxapi/runner.h"
+#include "gmxapi/gromacsfwd.h"
 #include <memory>
-
-// Declaring classes from other namespaces is iffy and turns compile errors into linking errors
-// but reduces coupling. If we go this route, TODO: consider consolidating incomplete gmx types in a single header.
-//namespace gmx
-//{
-//    class TpxState;
-//}
-// For now, I prefer the compiler type-checking of the coupled code.
-#include "gromacs/mdtypes/TpxState.h"
 
 namespace gmxapi
 {
+
+class MDEngine;
 
 /*!
  * \brief Useless placeholder state.
@@ -122,7 +121,13 @@ class RunningMDRunnerState : public IMDRunner
             private:
                 std::unique_ptr<RunningMDRunnerState> runner_;
                 std::shared_ptr<gmx::TpxState> tpxState_;
+
         };
+
+        void setRestraint(std::shared_ptr<gmxapi::MDModule> restraint) override;
+
+//        void addModule(std::shared_ptr<gmx::IMDModule> module) override;
+
     private:
         RunningMDRunnerState();
         /// Private implementation class
