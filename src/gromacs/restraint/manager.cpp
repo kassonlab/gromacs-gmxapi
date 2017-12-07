@@ -305,12 +305,12 @@ void Manager::add(std::shared_ptr<LegacyPuller> puller, std::string name)
     impl_->addLegacy(std::move(puller), std::move(name));
 }
 
-void Manager::add(std::shared_ptr<gmx::IRestraintPotential> puller,
-                  std::string name)
-{
-    assert(impl_ != nullptr);
-    impl_->add(std::move(puller), name);
-}
+//void Manager::add(std::shared_ptr<gmx::IRestraintPotential> puller,
+//                  std::string name)
+//{
+//    assert(impl_ != nullptr);
+//    impl_->add(std::move(puller), name);
+//}
 
 //void Manager::add(std::shared_ptr<gmx::IRestraintPotential> puller,
 //                  std::string name)

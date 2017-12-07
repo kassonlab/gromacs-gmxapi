@@ -1609,7 +1609,7 @@ int Mdrunner::mdrunner()
                           EI_DYNAMICS(inputrec->eI) && MASTER(cr), Flags.to_ulong());
             auto legacyPullers = gmx::compat::make_unique<gmx::LegacyPuller>(pull_work);
             auto restraints = gmx::restraint::Manager::instance();
-            restraints->add(std::move(legacyPullers), "old");
+            restraints->add(std::move(legacyPullers), std::string("old"));
         }
         // If we need an initialization hook, we can put it here.
         //pullers_->startRun();

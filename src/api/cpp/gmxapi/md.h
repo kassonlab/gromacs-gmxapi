@@ -29,6 +29,7 @@
 #include "exceptions.h"
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace gmxapi
 {
@@ -137,7 +138,7 @@ class MDWorkSpec
         /// \brief Private implementation class
         class Impl;
         /// \brief Opaque pointer to implementation object.
-        std::unique_ptr<Impl> impl_{nullptr};
+        std::unique_ptr<Impl> impl_;
         /// \endcond
 };
 
