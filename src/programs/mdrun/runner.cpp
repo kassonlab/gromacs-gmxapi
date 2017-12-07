@@ -1827,8 +1827,8 @@ void Mdrunner::addModule(std::shared_ptr<gmx::IMDModule> module)
     mdModules->add(module);
 }
 
-Mdrunner &Mdrunner::operator=(Mdrunner &&) noexcept = default;
+Mdrunner &Mdrunner::operator=(Mdrunner &&) = default;
 
-Mdrunner::Mdrunner(Mdrunner &&) noexcept = default;
+Mdrunner::Mdrunner(Mdrunner &&) = default;
 
 } // namespace gmx
