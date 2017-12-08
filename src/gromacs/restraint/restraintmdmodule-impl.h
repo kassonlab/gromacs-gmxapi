@@ -5,7 +5,19 @@
 #ifndef GROMACS_RESTRAINTMDMODULE_IMPL_H
 #define GROMACS_RESTRAINTMDMODULE_IMPL_H
 
+/*! \internal \file
+ * \brief Implementation details for RestraintMDModule
+ *
+ *
+ * \ingroup module_restraint
+ */
+
+#include "restraintpotential.h"
+
 #include <iostream>
+#include <gromacs/mdtypes/commrec.h>
+#include <gromacs/domdec/domdec_struct.h>
+#include <gromacs/domdec/ga2la.h>
 #include "gromacs/mdtypes/imdpoptionprovider.h"
 #include "gromacs/mdtypes/imdoutputprovider.h"
 #include "gromacs/mdtypes/iforceprovider.h"
@@ -15,7 +27,61 @@
 namespace gmx
 {
 
+namespace
+{
+/*! \internal
+ * \brief Abstraction for a restraint interaction site.
+ *
+ * A restraint may operate on a single atom or some other entity, such as a selection of atoms.
+ * The Restraint implementation is very independent from how coordinates are provided or what they mean.
+ *
+ * First implementation can only represent single atoms in a global context.
+ */
+class Site
+{
+    public:
+        /*! \brief Construct from global atom indices
+         *
+         * \param globalIndex Atom index in the global state (as input to the simulation)
+         */
+        explicit Site(unsigned long int globalIndex) : index_{globalIndex} {};
 
+        unsigned long int index() const {return index_;};
+
+    private:
+        unsigned long int index_;
+};
+
+RVec sitePosition(const t_commrec *commRec,
+                                     const Site& site,
+                                     const rvec* const localPositions)
+{
+    int localIndex = static_cast<int>(site.index());
+    RVec position{0, 0, 0};
+    if (commRec->dd != nullptr)
+    {
+        // Get global-to-local indexing structure
+        auto crossRef = commRec->dd->ga2la;
+        assert(crossRef != nullptr);
+        if (ga2la_get_home(crossRef,
+                           static_cast<int>(site.index()),
+                           &localIndex))
+        {
+            position = localPositions[localIndex];
+        }
+    }
+    else
+    {
+        position = localPositions[localIndex];
+    }
+    return position;
+};
+
+} //end anonymous namespace
+
+/*!
+ * \brief Concrete MdpOptionProvider for Restraints
+ */
 class RestraintOptionProvider : public gmx::IMdpOptionProvider
 {
     public:
@@ -35,6 +101,9 @@ class RestraintOptionProvider : public gmx::IMdpOptionProvider
         }
 };
 
+/*!
+ * \brief MDOutputProvider concrete class for Restraints
+ */
 class RestraintOutputProvider : public gmx::IMDOutputProvider
 {
     public:
@@ -116,30 +185,52 @@ class RestraintForceProvider : public gmx::IForceProvider
 
         override
         {
+            using gmx::detail::make_vec3;
+
             assert(restraint_ != nullptr);
-            auto a = site1_;
-            auto b = site2_;
+            auto a = site1_.index();
+            auto b = site2_.index();
 
-            const gmx::detail::vec3<real> r1{gmx::detail::make_vec3<real>(x[a][0], x[a][1], x[a][2])};
-            const gmx::detail::vec3<real> r2{gmx::detail::make_vec3<real>(x[b][0], x[b][1], x[b][2])};
+            const RVec r1 = sitePosition(cr, site1_, x);
+            const RVec r2 = sitePosition(cr, site2_, x);
 
-            auto result = restraint_->evaluate(r1, r2, t);
+            auto result = restraint_->evaluate(make_vec3<real>(r1[0], r1[1], r1[2]),
+                                               make_vec3<real>(r2[0], r2[1], r2[3]),
+                                               t);
 
-            force[a][0] += result.force.x;
-            force[a][1] += result.force.y;
-            force[a][2] += result.force.z;
+            size_t aLocal{a};
+            // Set forces using index a if no domain decomposition, otherwise set with local index if available.
+            if ((cr->dd == nullptr) || ga2la_get_home(cr->dd->ga2la,
+                               static_cast<int>(a),
+                               reinterpret_cast<int*>(&aLocal)))
+            {
+                force[aLocal][0] += result.force.x;
+                force[aLocal][1] += result.force.y;
+                force[aLocal][2] += result.force.z;
+            }
 
-            force[b][0] -= result.force.x;
-            force[b][1] -= result.force.y;
-            force[b][2] -= result.force.z;
+            // Note: Currently calculateForces is called once per restraint and each restraint
+            // applies to a pair of atoms. Future optimizations may consolidate multiple restraints
+            // with possibly duplicated sites, in which case we may prefer to iterate over non-frozen
+            // sites to apply forces without explicitly expressing pairwise symmetry as in the
+            // following logic.
+            size_t bLocal{b};
+            if ((cr->dd == nullptr) || ga2la_get_home(cr->dd->ga2la,
+                               static_cast<int>(b),
+                               reinterpret_cast<int*>(&bLocal)))
+            {
+                force[b][0] -= result.force.x;
+                force[b][1] -= result.force.y;
+                force[b][2] -= result.force.z;
+            }
 
-            std::cout << "Evaluated restraint forces on atoms at " << r1 << " and " << r2 << ": " << result.force << "\n";
+            std::cout << "Evaluated restraint forces on atoms at " << make_vec3<real>(r1[0], r1[1], r1[2]) << " and " << make_vec3<real>(r2[0], r2[1], r2[3]) << ": " << result.force << "\n";
 
         }
     private:
         std::shared_ptr<gmx::IRestraintPotential> restraint_;
-        unsigned long int site1_;
-        unsigned long int site2_;
+        Site site1_;
+        Site site2_;
 };
 
 RestraintForceProvider::RestraintForceProvider(std::shared_ptr<gmx::IRestraintPotential> restraint,

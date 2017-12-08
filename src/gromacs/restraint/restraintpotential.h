@@ -198,6 +198,8 @@ class IRestraintPotential
          * \param r2 position of second site
          * \param t simulation time in picoseconds
          * \return force vector and potential energy to be applied by calling code.
+         *
+         * \todo The virtual function call should be replaced by a (table of) function objects retrieved before the run.
          */
         virtual PotentialPointData evaluate(Vector r1,
                               Vector r2,
