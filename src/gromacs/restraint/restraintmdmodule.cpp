@@ -16,7 +16,9 @@ gmx::RestraintMDModuleImpl::RestraintMDModuleImpl(std::shared_ptr<gmx::IRestrain
     outputProvider_{::gmx::compat::make_unique<RestraintOutputProvider>()},
     optionProvider_{::gmx::compat::make_unique<RestraintOptionProvider>()}
 {
-
+    assert(forceProvider_ != nullptr);
+    assert(outputProvider_ != nullptr);
+    assert(optionProvider_ != nullptr);
 }
 
 gmx::IMdpOptionProvider *gmx::RestraintMDModuleImpl::mdpOptionProvider()

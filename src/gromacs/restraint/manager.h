@@ -80,6 +80,18 @@ class Manager final
         Manager(Manager&&) = delete;
         Manager& operator=(Manager&&) = delete;
 
+        /*! \brief Obtain the ability to create a restraint MDModule
+         *
+         * First iteration allows one restraint.
+         *
+         * \param puller shared ownership of a restraint potential interface.
+         * \param name key by which to reference the restraint.
+         */
+        void addSpec(std::shared_ptr<gmx::IRestraintPotential> puller,
+                     std::string name);
+
+        std::shared_ptr<gmx::IRestraintPotential> getSpec() const;
+
         void add(std::shared_ptr<LegacyPuller> puller, std::string name);
 //        void add(std::shared_ptr<gmx::IRestraintPotential> puller, std::string name);
 
@@ -208,11 +220,16 @@ class Manager final
         void clearConstraintForces();
 
     private:
+        /// Private constructor enforces singleton pattern.
         Manager();
 
+        /// Regulate initialization of the manager instance when the singleton is first accessed.
         static std::mutex initializationMutex_;
+
+        /// Ownership of the shared reference to the global manager.
         static std::shared_ptr<Manager> instance_;
 
+        /// Opaque implementation pointer.
         std::unique_ptr<ManagerImpl> impl_;
 };
 

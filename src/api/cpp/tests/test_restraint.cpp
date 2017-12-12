@@ -52,13 +52,15 @@ class SimpleApiModule : public gmxapi::MDModule
         }
 };
 
-TEST(ApiRestraint, MdAndPlugin)
+TEST(ApiRestraint, MdAndNullPlugin)
 {
 
     {
-        auto system = gmxapi::fromTprFile(filename);
+        std::string waterfile = "/Users/eric/develop/CLionProjects/harmonicRestraint/water.tpr";
+        auto system = gmxapi::fromTprFile(waterfile);
 
         auto module = std::make_shared<SimpleApiModule>();
+        assert(module != nullptr);
         auto status = system->setRestraint(module);
         ASSERT_TRUE(status.success());
 
@@ -77,5 +79,6 @@ TEST(ApiRestraint, MdAndPlugin)
     }
 
 }
+
 
 } // end anonymous namespace

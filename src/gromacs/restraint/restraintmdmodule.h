@@ -73,7 +73,7 @@ class RestraintMDModule final : public gmx::IMDModule
         /*!
          * \brief Private constructor used by static create() method.
          */
-        explicit RestraintMDModule(std::unique_ptr<RestraintMDModuleImpl>);
+        explicit RestraintMDModule(std::unique_ptr<RestraintMDModuleImpl> restraint);
         /*!
          * \brief Private implementation opaque pointer.
          */
