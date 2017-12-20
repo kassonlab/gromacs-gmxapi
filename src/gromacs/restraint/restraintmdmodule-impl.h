@@ -15,17 +15,18 @@
 #include "restraintpotential.h"
 
 #include <iostream>
-#include <gromacs/mdtypes/commrec.h>
-#include <gromacs/domdec/domdec_struct.h>
-#include <gromacs/domdec/ga2la.h>
-#include <gromacs/gmxlib/network.h>
-#include <gromacs/pbcutil/pbc.h>
-#include <gromacs/mdtypes/mdatom.h>
+
+#include "gromacs/domdec/domdec_struct.h"
+#include "gromacs/domdec/ga2la.h"
+#include "gromacs/gmxlib/network.h"
 #include "gromacs/math/vec.h"
-#include "gromacs/mdtypes/imdpoptionprovider.h"
-#include "gromacs/mdtypes/imdoutputprovider.h"
+#include "gromacs/mdtypes/commrec.h"
+#include "gromacs/mdtypes/mdatom.h"
 #include "gromacs/mdtypes/iforceprovider.h"
 #include "gromacs/mdtypes/imdmodule.h"
+#include "gromacs/mdtypes/imdoutputprovider.h"
+#include "gromacs/mdtypes/imdpoptionprovider.h"
+#include "gromacs/pbcutil/pbc.h"
 #include "gromacs/utility/arrayref.h"
 
 namespace gmx
