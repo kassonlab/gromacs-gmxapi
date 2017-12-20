@@ -134,8 +134,6 @@ std::shared_ptr<Session> ContextImpl::launch(std::shared_ptr<ContextImpl> contex
 //        {
 //            // If we can do something with the node, do it. If the spec is bad, error.
 //        }
-
-//        session = std::make_shared<>();
     }
     // \todo Make some note about the unsuccessful launch.
 

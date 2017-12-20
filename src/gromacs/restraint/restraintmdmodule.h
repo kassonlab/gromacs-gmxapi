@@ -5,6 +5,12 @@
 #ifndef GROMACS_RESTRAINTMDMODULE_H
 #define GROMACS_RESTRAINTMDMODULE_H
 
+/*! \libinternal \file
+ * \brief Library interface for RestraintMDModule
+ * 
+ * \ingroup module_restraint
+ */
+
 #include "gromacs/mdtypes/imdmodule.h"
 #include "restraintpotential.h"
 
@@ -67,7 +73,7 @@ class RestraintMDModule final : public gmx::IMDModule
         /*!
          * \brief Private constructor used by static create() method.
          */
-        explicit RestraintMDModule(std::unique_ptr<RestraintMDModuleImpl>);
+        explicit RestraintMDModule(std::unique_ptr<RestraintMDModuleImpl> restraint);
         /*!
          * \brief Private implementation opaque pointer.
          */

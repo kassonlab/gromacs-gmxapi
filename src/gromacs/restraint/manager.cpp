@@ -75,12 +75,12 @@ class ManagerImpl
             positions_ = positions;
         }
 
-        void forces(rvec *forces)
+        void forces(volatile rvec *forces)
         {
             forces_ = forces;
         }
 
-        void virial(tensor virial)
+        void virial(volatile tensor virial)
         {
             virial_ = virial;
         }
@@ -93,20 +93,20 @@ class ManagerImpl
         std::shared_ptr<ICalculation> calculate(double t);
 
         std::shared_ptr<LegacyPuller> puller_;
-        std::shared_ptr<::gmx::IRestraintPotential> restraint_;
+        mutable std::shared_ptr<::gmx::IRestraintPotential> restraint_;
 
     private:
         double currentTime_{0};
         double previousTime_{0};
 
-        const t_mdatoms* atoms_{nullptr};
-        const t_pbc* pbc_{nullptr};
+        const volatile t_mdatoms* atoms_{nullptr};
+        const volatile t_pbc* pbc_{nullptr};
         real lambda_{0};
         const rvec* positions_{nullptr};
-        rvec* forces_{nullptr};
-        rvec* virial_{nullptr};
+        volatile rvec* forces_{nullptr};
+        volatile rvec* virial_{nullptr};
 
-        const t_commrec* communicator_{nullptr};
+        const volatile t_commrec* communicator_{nullptr};
 
 };
 
@@ -144,7 +144,7 @@ std::shared_ptr<LegacyPuller> ManagerImpl::getLegacy()
 
 void ManagerImpl::add(std::shared_ptr<::gmx::IRestraintPotential> restraint, std::string name)
 {
-
+    restraint_ = std::move(restraint);
 }
 
 
@@ -303,6 +303,18 @@ void Manager::add(std::shared_ptr<LegacyPuller> puller, std::string name)
 {
     assert(impl_ != nullptr);
     impl_->addLegacy(std::move(puller), std::move(name));
+}
+
+void Manager::addSpec(std::shared_ptr<gmx::IRestraintPotential> puller,
+                      std::string name)
+{
+    assert(impl_ != nullptr);
+    impl_->add(std::move(puller), name);
+}
+
+std::shared_ptr<gmx::IRestraintPotential> Manager::getSpec() const
+{
+    return impl_->restraint_;
 }
 
 //void Manager::add(std::shared_ptr<gmx::IRestraintPotential> puller,
