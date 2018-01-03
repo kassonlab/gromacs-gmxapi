@@ -14,6 +14,9 @@
 namespace gmxapi
 {
 
+// Forward declaration
+class MpiContextManager; // Locally defined in session.cpp
+
 /*!
  * \brief Implementation class for executing sessions.
  *
@@ -25,6 +28,7 @@ class SessionImpl
     public:
         /// Use create() factory to get an object.
         SessionImpl() = delete;
+        ~SessionImpl();
 
         /*!
          * \brief Check if the session is (still) running.
@@ -89,6 +93,11 @@ class SessionImpl
          * \brief Extend the life of the owning context. The session will get handles for logging, UI status messages, and other facilities through this interface.
          */
         std::shared_ptr<Context> context_;
+
+        /*!
+         * \brief RAII management of gmx::init() and gmx::finalize()
+         */
+        std::unique_ptr<MpiContextManager> mpiContextManager_;
 
         std::unique_ptr<gmx::Mdrunner> runner_;
 };

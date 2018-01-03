@@ -13,14 +13,14 @@ namespace restraint
 ICalculation::~ICalculation() = default;
 
 Calculation::Calculation(double time,
-                         const t_commrec &commRec,
-                         const t_mdatoms &atoms,
-                         const t_pbc &pbc,
+                         volatile const t_commrec &commRec,
+                         volatile const t_mdatoms &atoms,
+                         volatile const t_pbc &pbc,
                          real lambda,
                          const rvec *positions,
                          pull_t *puller,
-                         rvec *forces,
-                         tensor virial) :
+                         volatile rvec *forces,
+                         volatile tensor virial) :
     time_{time}
 {
 //    energy_ = pull_potential(puller, atoms, pbc, commRec, time, lambda, positions, forces, virial, &work_);

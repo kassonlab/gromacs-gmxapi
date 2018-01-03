@@ -120,7 +120,7 @@ add_library(Gromacs::gmxapi ALIAS gmxapi )
 include(CMakePackageConfigHelpers)
 
 write_basic_package_version_file(
-    "${CMAKE_CURRENT_BINARY_DIR}/cmake/gmxapi-version.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/cmake/gmxapi-config-version.cmake"
     VERSION ${GMXAPI_RELEASE}
     COMPATIBILITY ExactVersion
     # Every dev release will break things for a while. We can assert backwards compatibility closer to 1.0
@@ -134,7 +134,7 @@ configure_package_config_file(
 )
 install(
     FILES
-    ${CMAKE_CURRENT_BINARY_DIR}/cmake/gmxapi-version.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/cmake/gmxapi-config-version.cmake
     ${CMAKE_CURRENT_BINARY_DIR}/cmake/gmxapi-config.cmake
     DESTINATION share/cmake/gmxapi/
 )

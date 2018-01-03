@@ -40,6 +40,11 @@ set(GMXAPI_MINOR 0)
 set(GMXAPI_PATCH 3)
 set(GMXAPI_RELEASE ${GMXAPI_MAJOR}.${GMXAPI_MINOR}.${GMXAPI_PATCH})
 
+if(GMX_LIB_MPI)
+	message(FATAL_ERROR "GMXAPI currently does not support MPI builds. Set -DGMX_MPI=OFF or -DGMXAPI=OFF")
+endif()
+
+
 # Supposedly, cmake should be able to resolve these dependencies, but we need
 # to know what to install and which headers to document publicly.
 set(GMXAPI_PUBLIC_HEADERS
@@ -47,8 +52,11 @@ set(GMXAPI_PUBLIC_HEADERS
     ${CMAKE_CURRENT_SOURCE_DIR}/cpp/gmxapi/exceptions.h
     ${CMAKE_CURRENT_SOURCE_DIR}/cpp/gmxapi/gmxapi.h
     ${CMAKE_CURRENT_SOURCE_DIR}/cpp/gmxapi/md.h
+	${CMAKE_CURRENT_SOURCE_DIR}/cpp/gmxapi/session.h
+	${CMAKE_CURRENT_SOURCE_DIR}/cpp/gmxapi/status.h
     ${CMAKE_CURRENT_SOURCE_DIR}/cpp/gmxapi/system.h
     ${CMAKE_CURRENT_SOURCE_DIR}/cpp/gmxapi/version.h
+	${CMAKE_CURRENT_SOURCE_DIR}/cpp/gmxapi/md/mdmodule.h
 	)
 
 ###############################

@@ -211,7 +211,6 @@ class Mdrunner
         std::shared_ptr<restraint::Manager> restraintManager_{nullptr};
         std::shared_ptr<TpxState>       tpxState_{nullptr};
 
-        std::shared_ptr<gmx::MDModules> mdModules{nullptr};
 //        mutable std::mutex            stateAccess;
 
     public:
@@ -237,8 +236,8 @@ class Mdrunner
         Mdrunner& operator=(const Mdrunner&) = delete;
 
         // Allow move
-        Mdrunner(Mdrunner&&) noexcept;
-        Mdrunner& operator=(Mdrunner&&) noexcept;
+        Mdrunner(Mdrunner&&);
+        Mdrunner& operator=(Mdrunner&&);
 
         //! Set up mdrun by calling its C-style main function.
         void initFromCLI(int argc, char *argv[]);
@@ -246,7 +245,11 @@ class Mdrunner
         //! Set up mdrun with parameters provided by API instead of CLI.
         void initFromAPI();
 
-        /*! \brief Driver routine, that calls the different simulation methods. */
+        /*! \brief Driver routine, that calls the different simulation methods.
+         *
+         * Currently, thread-MPI does not spawn threads until during mdrunner() and parallelism
+         * is not initialized until some time during this call...
+         */
         int mdrunner();
 
         /*!
@@ -270,8 +273,6 @@ class Mdrunner
          */
         void addPullPotential(std::shared_ptr<gmx::IRestraintPotential> puller,
                               std::string name);
-
-        void addModule(std::shared_ptr<gmx::IMDModule> module);
 
         //! Called when thread-MPI spawns threads.
         t_commrec *spawnThreads(int numThreadsToLaunch);

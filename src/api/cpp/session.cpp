@@ -5,6 +5,8 @@
 #include "gmxapi/session.h"
 
 #include <cassert>
+#include "gromacs/utility/basenetwork.h"
+#include "gromacs/utility/init.h"
 #include "gmxapi/md/mdmodule.h"
 #include "gromacs/compat/make_unique.h"
 
@@ -15,6 +17,31 @@
 
 namespace gmxapi
 {
+
+class MpiContextManager
+{
+    public:
+        MpiContextManager()
+        {
+            gmx::init(nullptr, nullptr);
+#if GMX_MPI
+            assert(gmx_mpi_initialized());
+#endif
+        };
+
+        ~MpiContextManager()
+        {
+            gmx::finalize();
+        }
+
+        // Disallow copying
+        MpiContextManager(const MpiContextManager&) = delete;
+        MpiContextManager& operator=(const MpiContextManager&) = delete;
+
+        // Trivial move
+        MpiContextManager(MpiContextManager&&) noexcept = default;
+        MpiContextManager& operator=(MpiContextManager&&) noexcept = default;
+};
 
 /*!
  * \brief Check if a an object can be considered "open".
@@ -86,10 +113,12 @@ SessionImpl::SessionImpl(std::shared_ptr<ContextImpl> context,
                          std::unique_ptr<gmx::Mdrunner> runner) :
     status_{gmx::compat::make_unique<Status>(true)},
     context_{std::make_shared<Context>(std::move(context))},
+    mpiContextManager_{gmx::compat::make_unique<MpiContextManager>()},
     runner_{std::move(runner)}
 {
     assert(status_ != nullptr);
     assert(context_ != nullptr);
+    assert(mpiContextManager_ != nullptr);
     assert(runner_ != nullptr);
 }
 
@@ -181,5 +210,7 @@ std::shared_ptr<Session> launchSession(Context* context, const Workflow& work) n
     auto session = context->launch(work);
     return session;
 }
+
+SessionImpl::~SessionImpl() = default;
 
 } // end namespace gmxapi

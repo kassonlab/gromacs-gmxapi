@@ -28,14 +28,14 @@ class Calculation : public ICalculation
     public:
         Calculation() = delete;
         Calculation(double time,
-                            const t_commrec &commRec,
-                            const t_mdatoms &atoms,
-                            const t_pbc &pbc,
-                            real lambda,
-                            const rvec *positions,
-                            pull_t *puller,
-                            rvec *forces,
-                            tensor virial);
+                    volatile const t_commrec &commRec,
+                    volatile const t_mdatoms &atoms,
+                    volatile const t_pbc &pbc,
+                    real lambda,
+                    const rvec *positions,
+                    pull_t *puller,
+                    volatile rvec *forces,
+                    volatile tensor virial);
 
         /*!
          * \brief Get energy calculated for current time.
