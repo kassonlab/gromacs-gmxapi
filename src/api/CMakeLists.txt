@@ -40,9 +40,9 @@ set(GMXAPI_MINOR 0)
 set(GMXAPI_PATCH 4)
 set(GMXAPI_RELEASE ${GMXAPI_MAJOR}.${GMXAPI_MINOR}.${GMXAPI_PATCH})
 
-if(GMX_LIB_MPI)
-	message(FATAL_ERROR "GMXAPI currently does not support MPI builds. Set -DGMX_MPI=OFF or -DGMXAPI=OFF")
-endif()
+#if(GMX_LIB_MPI)
+#	message(FATAL_ERROR "GMXAPI currently does not support MPI builds. Set -DGMX_MPI=OFF or -DGMXAPI=OFF")
+#endif()
 
 
 # Supposedly, cmake should be able to resolve these dependencies, but we need

@@ -173,6 +173,9 @@ int tMPI_Reduce_fast(void* sendbuf, void* recvbuf, int count,
                     b = (void*)tMPI_Atomic_ptr_get(&(comm->reduce_recvbuf[nbr]));
                 }
 
+                // It seems like I'm getting a == b, which causes an error here...
+                // Should there be something at a higher level that guarantees that neighbors
+                // have different send and receive buffers?
                 if ((ret = tMPI_Reduce_run_op(recvbuf, a, b, datatype,
                                               count, op, comm)) != TMPI_SUCCESS)
                 {
@@ -308,7 +311,7 @@ int tMPI_Allreduce(void* sendbuf, void* recvbuf, int count,
     {
         sendbuf = recvbuf;
     }
-
+    // According to the docs for tMPI_Reduce_fast, sendbuf should still be passed as TMPI_IN_PLACE instead of being set to recvbuf already.
     ret = tMPI_Reduce_fast(sendbuf, recvbuf, count, datatype, op, 0, comm);
 #if defined(TMPI_PROFILE)
     tMPI_Profile_wait_start(cur);

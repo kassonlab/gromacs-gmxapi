@@ -70,6 +70,7 @@ class Context
         Context(Context&&) = default;
         Context& operator=(Context&&) = default;
 
+        //! Construct by wrapping an implementation object.
         explicit Context(std::shared_ptr<ContextImpl> &&impl);
 
         /*!

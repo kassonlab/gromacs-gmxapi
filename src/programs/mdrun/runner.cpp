@@ -1624,6 +1624,8 @@ int Mdrunner::mdrunner()
                           EI_DYNAMICS(inputrec->eI) && MASTER(cr), Flags.to_ulong());
             auto legacyPullers = gmx::compat::make_unique<gmx::LegacyPuller>(pull_work);
             auto restraints = gmx::restraint::Manager::instance();
+            // Maybe the error is here. If the results of init_pull are different on each thread,
+            // then they probably get merged accidentally here.
             restraints->add(std::move(legacyPullers), std::string("old"));
         }
         // If we need an initialization hook, we can put it here.

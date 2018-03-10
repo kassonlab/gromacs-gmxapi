@@ -28,7 +28,9 @@ class Session;
 class System final
 {
     public:
-        /*! \brief Private implementation class
+        /*! \brief Private implementation class.
+         *
+         * System::Impl does not have a public interface and is only exposed in opaque pointers.
          */
         class Impl;
 
@@ -74,12 +76,20 @@ class System final
          * context argument is given, the system and its configured workflow are
          * translated to the provided context and launched.
          *
+         * \param context (optional) execution context in which to launch.
+         *
+         * The Session object does not "own" the Context, but must be able to extend the lifetime of the Context in
+         * which it is running.
+         *
          * \todo Policy: does System then track the (potentially remote) context or should
          * it be considered to have "forked", and the new session object retrieved from
          * the session handle if needed.
+         *
+         * \{
          */
         std::shared_ptr<Session> launch();
         std::shared_ptr<Session> launch(std::shared_ptr<Context> context);
+        /// \}
 
         /*!
          * \brief Get the status of the last API call involving this system.

@@ -16,30 +16,57 @@ configure_file(data/water.tpr water.tpr COPYONLY)
 
 configure_file(testingconfiguration.in.h testingconfiguration.h)
 
-gmx_add_unit_test(GmxapiExternalInterfaceTests gmxapi-test
-                  moduletest.cpp
-                  test_md.cpp
-                  test_restraint.cpp
-                  test_runner.cpp
-                  test_setup.cpp
-                  test_status.cpp
-                  test_system.cpp
-                  test_workflow.cpp
-                  test_version_helpers.cpp
-                  )
+gmx_add_gtest_executable(
+    gmxapi-test
+    moduletest.cpp
+    test_md.cpp
+    test_restraint.cpp
+    test_runner.cpp
+    test_setup.cpp
+    test_status.cpp
+    test_system.cpp
+    test_workflow.cpp
+    test_version_helpers.cpp
+    )
 
 target_include_directories(gmxapi-test PRIVATE
                            ${CMAKE_CURRENT_BINARY_DIR})
+target_link_libraries(gmxapi-test Gromacs::gmxapi)
+
+gmx_register_gtest_test(GmxapiExternalInterfaceTests gmxapi-test INTEGRATION_TEST)
 
 set_tests_properties(GmxapiExternalInterfaceTests PROPERTIES
                      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+
+gmx_add_gtest_executable(
+    gmxapi-mpi-test MPI
+    moduletest.cpp
+    test_md.cpp
+    test_restraint.cpp
+    test_runner.cpp
+    # The tMPI pulling is currently broken
+    #test_setup.cpp
+    test_status.cpp
+    test_system.cpp
+    test_workflow.cpp
+    test_version_helpers.cpp
+    )
+
+target_include_directories(gmxapi-mpi-test PRIVATE
+                           ${CMAKE_CURRENT_BINARY_DIR})
+target_link_libraries(gmxapi-mpi-test Gromacs::gmxapi)
+
+gmx_register_gtest_test(GmxapiMpiTests gmxapi-mpi-test MPI_RANKS 2 INTEGRATION_TEST)
+
+set_tests_properties(GmxapiMpiTests PROPERTIES
+                     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+
 
 # If we want to override the API version in the version.h for testing purposes, we'll do it another way...
 #target_compile_definitions(gmxapi-test PUBLIC
 #    GMXAPI_MAJOR=${GMXAPI_MAJOR}
 #    GMXAPI_MINOR=${GMXAPI_MINOR}
 #    GMXAPI_PATCH=${GMXAPI_PATCH})
-target_link_libraries(gmxapi-test Gromacs::gmxapi)
 
 #add_executable(test_apirunner test_basic_mdrunner.cpp)
 #gmx_add_unit_test(gmxapi_runner test_apirunner test_basic_mdrunner.cpp)

@@ -570,6 +570,7 @@ void pull_calc_coms(const t_commrec *cr,
 
     if (pull->bRefAt && pull->bSetPBCatoms)
     {
+        // This is the origin of all threads having the same send and receive buffers.
         pull_set_pbcatoms(cr, pull, x, comm->rbuf);
 
         if (cr != nullptr && DOMAINDECOMP(cr))

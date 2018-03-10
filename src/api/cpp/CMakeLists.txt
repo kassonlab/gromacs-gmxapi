@@ -4,7 +4,7 @@
 # Define the gmxapi library target. Dependent targets can use properties of the target
 # for include directories and header files.
 
-# Configure / copy header files from the source to the build directory
+# Configure / copy header files from the source to the build directory for clarity and packaging
 # high-level client headers
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/gmxapi)
 configure_file(gmxapi/context.h gmxapi)
@@ -45,7 +45,7 @@ target_include_directories(gmxapi PRIVATE
                            )
 
 # libgmxapi source files. The public headers are picked up automatically by CMake
-# for the build system dependencies, but since they aren't listed as sources, Cmake
+# for the build system dependencies, but since they aren't listed as sources, older Cmake
 # might not get triggered by updates to the public headers. This might be reason to
 # use an INTERFACE library target, but since we call configure_file() above to get everything
 # in one place for packaging, CMake is already making sure the public headers are
@@ -60,6 +60,8 @@ target_include_directories(gmxapi PRIVATE
 # used by a given client. If it were easy to use the sources from an interface target
 # to install the public headers, I would think we should use it, but it is not, so
 # I won't.
+# Update: more recent versions of CMake seem to do more rigorous dependency chasing,
+# but listing all source files helps some code introspection tools work better.
 target_sources(
         gmxapi PRIVATE
         context.cpp
@@ -87,7 +89,14 @@ set_target_properties(gmxapi PROPERTIES SKIP_BUILD_RPATH FALSE)
 set_target_properties(gmxapi PROPERTIES BUILD_WITH_INSTALL_RPATH FALSE)
 
 # duplicates link path when installed in LIB_INSTALL_DIR with libgromacs
-#set_target_properties(gmxapi PROPERTIES INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/${LIB_INSTALL_DIR}")
+# but without it, targets referencing libgromacs symbols when importing only this target will
+# not find libgromacs the way OS X has set the RPATH to @executable_path=../lib
+# To set the @rpath to resolve to the directory in which the libgmxapi shared
+# object is living, we would set it to @loader_path, but I don't know of a CMake
+# directive that produces that effect. We may just need a platform check.
+# I suppose the question is what/how/why does CMake set rpath to executable_path instead
+# of rpath...
+set_target_properties(gmxapi PROPERTIES INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/${LIB_INSTALL_DIR}")
 
 set_target_properties(gmxapi PROPERTIES
                       INSTALL_RPATH_USE_LINK_PATH TRUE
