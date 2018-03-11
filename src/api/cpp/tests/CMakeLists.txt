@@ -58,9 +58,13 @@ target_link_libraries(gmxapi-mpi-test Gromacs::gmxapi)
 
 gmx_register_gtest_test(GmxapiMpiTests gmxapi-mpi-test MPI_RANKS 2 INTEGRATION_TEST)
 
-set_tests_properties(GmxapiMpiTests PROPERTIES
-                     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
-
+if(BUILD_TESTING)
+    # Apparently gmx_register_gtest_test has some conditional like the following when MPI_RANKS is setor when gmx_add_gtest_executable has MPI set.
+    if(GMX_MPI OR GMX_THREAD_MPI)
+        set_tests_properties(GmxapiMpiTests PROPERTIES
+                             WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+    endif(GMX_MPI OR GMX_THREAD_MPI)
+endif()
 
 # If we want to override the API version in the version.h for testing purposes, we'll do it another way...
 #target_compile_definitions(gmxapi-test PUBLIC
