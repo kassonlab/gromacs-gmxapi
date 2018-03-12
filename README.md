@@ -1,6 +1,8 @@
 This is a fork of the [main Gromacs project](http://www.gromacs.org/) in which interface, API, and extensibility issues are being investigated.
 The forked project lives on GitHub at [https://github.com/kassonlab/gromacs-gmxapi](https://github.com/kassonlab/gromacs-gmxapi/)
 
+0.0.4 development branch: [![Build Status](https://travis-ci.org/kassonlab/gromacs-gmxapi.svg?branch=dev_0_0_4)](https://travis-ci.org/kassonlab/gromacs-gmxapi)
+
 In addition to a regular GROMACS installation, this fork provides `libgmxapi` for
 high-level C++ access to GROMACS MD simulation.
 It exists primarily to support the [`gmxapi`](https://github.com/gmxapi/gmxapi) companion project that provides a Python module and bindings.
