@@ -37,6 +37,6 @@ before_install:
   - test -n $CXX && unset CXX
 
 script:
-  - mkdir build && pushd build && cmake -DBUILD_TESTING=ON -DGMX_DOUBLE=$GMX_DOUBLE -DGMX_MPI=$GMX_MPI -DGMX_THREAD_MPI=$GMX_THREAD_MPI .. && make -j4
+  - mkdir build && pushd build && cmake -DFFTWF_LIBRARY=/usr/lib/x86_64-linux-gnu/libfftw3f.so -DBUILD_TESTING=ON -DGMX_DOUBLE=$GMX_DOUBLE -DGMX_MPI=$GMX_MPI -DGMX_THREAD_MPI=$GMX_THREAD_MPI .. && make -j4
   - make check
 
