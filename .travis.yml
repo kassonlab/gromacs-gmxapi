@@ -1,20 +1,40 @@
 language: cpp
+sudo: false
+
+matrix:
+
+  include:
+
+  - os: linux
+    compiler: gcc
+    addons:
+      apt:
+        sources:
+        - ubuntu-toolchain-r-test
+        packages:
+        - doxygen
+        - python
+        - libmpich-dev
+        - libxml2-dev
+        - libblas-dev
+        - cmake
+        - cmake-data
+        - liblapack-dev
+        - g++-6
+        - gcc-6
+    env:
+      - GMX_DOUBLE=OFF
+      - GMX_MPI=OFF
+      - GMX_THREAD_MPI=ON
 
 before_install:
- - echo "yes" | sudo add-apt-repository ppa:kalakris/cmake #https://github.com/travis-ci/travis-ci/issues/2212
- - sudo apt-get update
- - sudo apt-get install libfftw3-dev libopenmpi-dev libx11-dev zlib1g-dev libgsl0-dev libxml2-dev libblas-dev liblapack-dev libboost-dev cmake
+  - uname -a
+  - apt list --installed
+  - dpkg-query -L doxygen
+  - test -n $CC  && unset CC
+  - test -n $CXX && unset CXX
 
-env:
-  matrix:
-    - GMX_DOUBLE=OFF GMX_MPI=OFF
-    - GMX_DOUBLE=OFF GMX_MPI=ON
-    - GMX_DOUBLE=ON  GMX_MPI=OFF
-    - GMX_DOUBLE=ON  GMX_MPI=ON
+script:
+  - mkdir build && pushd build && cmake -DBUILD_TESTING=ON -DGMX_BUILD_OWN_FFTW=ON -DGMX_DOUBLE=$GMX_DOUBLE -DGMX_MPI=$GMX_MPI -DGMX_THREAD_MPI=$GMX_THREAD_MPI .. && make -j4
+  - make check
 
-script: 
-  - mkdir build && pushd build && cmake -DGMX_DOUBLE=$GMX_DOUBLE -DGMX_MPI=$GMX_MPI .. && make -j4
-
-compiler:
-  - clang
-  - gcc
