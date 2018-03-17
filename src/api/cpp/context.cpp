@@ -9,6 +9,7 @@
 #include <utility>
 
 #include <cassert>
+#include <vector>
 #include "programs/mdrun/runner.h"
 #include "gromacs/mdtypes/tpxstate.h"
 
@@ -81,6 +82,8 @@ class ContextImpl
          */
         std::shared_ptr<Status> status_;
         std::weak_ptr<Session> session_;
+
+        std::vector<std::string> _mdArgs;
 };
 
 ContextImpl::ContextImpl() :
@@ -120,7 +123,7 @@ std::shared_ptr<Session> ContextImpl::launch(std::shared_ptr<ContextImpl> contex
         {
             auto tpxState = gmx::TpxState::initializeFromFile(filename);
             newMdRunner->setTpx(std::move(tpxState));
-            newMdRunner->initFromAPI();
+            newMdRunner->initFromAPI(_mdArgs);
         }
 
         {

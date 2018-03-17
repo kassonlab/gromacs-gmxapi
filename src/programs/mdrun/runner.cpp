@@ -348,28 +348,41 @@ static void override_nsteps_cmdline(const gmx::MDLogger &mdlog,
     /* Do nothing if nsteps_cmdline == -2 */
 }
 
-void gmx::Mdrunner::initFromAPI()
+void gmx::Mdrunner::initFromAPI(const std::vector<std::string>& args)
 {
     if ((tpxState_ == nullptr) || (!tpxState_->isInitialized()))
     {
         gmx_fatal(FARGS, "Need initialized input record to initialize runner.");
     }
     // Until the options processing gets picked apart more (at least the fnm handling)
-    // we're just spoofing argv and wrapping initFromCLI
-    int argc = 3;
-    char arg0[] = "";
-    char arg1[] = "-s";
-    const auto stringLength = strlen(tpxState_->filename()) + 1;
-    char arg2[stringLength];
-    strcpy(arg2, tpxState_->filename());
-    // Add terminating null character
-    arg2[stringLength - 1] = 0;
-    char* argv[3];
-    argv[0] = &arg0[0];
-    argv[1] = &arg1[0];
-    argv[2] = &arg2[0];
+    // we're just spoofing argv and wrapping initFromCLI. Note that a non-const argv is deeply
+    // embedded in GROMACS.
+    constexpr int offset = 3; // need placeholders for argv[0] and tpr file
+    int argc = offset + static_cast<int>(args.size());
+    std::vector<char *> argv{static_cast<size_t>(argc)};
 
-    initFromCLI(argc, argv);
+    argv[0] = new char[1]; // Start with an empty string (doesn't really matter)
+    strcpy(argv[0], "");
+    argv[1] = new char[3];
+    strcpy(argv[1], "-s");
+    argv[2] = new char[strlen(tpxState_->filename()) + 1];
+    strcpy(argv[2], tpxState_->filename());
+    argv[2][strlen(tpxState_->filename()) + 1] = 0;
+
+    for(size_t idx_args = 0 ; idx_args < args.size(); ++idx_args)
+    {
+        auto idx_argv = idx_args + offset;
+        argv[idx_argv] = new char[args[idx_args].length() + 1];
+        strcpy(argv[idx_argv], args[idx_args].c_str());
+    }
+
+    initFromCLI(argc, argv.data());
+
+    for(auto&& string : argv)
+    {
+        delete[] string;
+        string = nullptr;
+    }
 }
 
 void gmx::Mdrunner::initFromCLI(int argc, char *argv[])
