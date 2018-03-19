@@ -47,9 +47,11 @@
 
 #include <array>
 #include <memory>
+#include <vector>
+#include <string>
 #include <mutex>
-#include "gromacs/commandline/pargs.h"
 #include <bitset>
+#include "gromacs/commandline/pargs.h"
 
 #include "gromacs/commandline/filenm.h"
 #include "gromacs/hardware/hw_info.h"
