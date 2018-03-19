@@ -42,6 +42,8 @@ class warn
         const char* message_;
 };
 
+using gmxapi::MDArgs;
+
 /*!
  * \brief Context implementation base class.
  *
@@ -83,7 +85,7 @@ class ContextImpl
         std::shared_ptr<Status> status_;
         std::weak_ptr<Session> session_;
 
-        std::vector<std::string> _mdArgs;
+        MDArgs mdArgs_;
 };
 
 ContextImpl::ContextImpl() :
@@ -123,7 +125,7 @@ std::shared_ptr<Session> ContextImpl::launch(std::shared_ptr<ContextImpl> contex
         {
             auto tpxState = gmx::TpxState::initializeFromFile(filename);
             newMdRunner->setTpx(std::move(tpxState));
-            newMdRunner->initFromAPI(_mdArgs);
+            newMdRunner->initFromAPI(mdArgs_);
         }
 
         {
@@ -166,6 +168,11 @@ Context::Context(std::shared_ptr<ContextImpl> &&impl) :
     impl_{std::move(impl)}
 {
     assert(impl_ != nullptr);
+}
+
+void Context::setMDArgs(const MDArgs &mdArgs)
+{
+    impl_->mdArgs_ = mdArgs;
 }
 
 Context::~Context() = default;

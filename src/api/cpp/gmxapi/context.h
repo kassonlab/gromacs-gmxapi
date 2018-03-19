@@ -9,12 +9,14 @@
 
 #include <memory>
 
+
 namespace gmxapi
 {
 
 class Status;
 class Workflow;
 class Session;
+using MDArgs = std::vector<std::string>;
 
 /*!
  * \brief Context implementation abstract base class.
@@ -72,6 +74,17 @@ class Context
 
         //! Construct by wrapping an implementation object.
         explicit Context(std::shared_ptr<ContextImpl> &&impl);
+
+        /*!
+         * \brief Set the simulation runtime arguments for this instance.
+         *
+         * \param mdArgs User-provided runtime parameters a la mdrun CLI
+         *
+         * This is awkwardly named and due for some evolution, since most of the mdrun CLI options pertain
+         * to the execution environment rather than the simulation parameters. For the first implementation,
+         * we just map user arguments to the equivalent command-line substrings.
+         */
+        void setMDArgs(const MDArgs& mdArgs);
 
         /*!
          * \brief Launch a workflow in the current context, if possible.
