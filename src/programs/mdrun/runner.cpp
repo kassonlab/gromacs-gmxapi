@@ -1130,6 +1130,7 @@ int Mdrunner::mdrunner()
 
     // Build modules on all threads.
     {
+        // Build restraints.
         // Currently there is at most one restraint modules.
         auto puller = restraintManager_->getSpec();
         if (puller != nullptr)
