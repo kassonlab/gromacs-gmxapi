@@ -205,6 +205,12 @@ class IRestraintPotential
                               Vector r2,
                               double t) = 0;
 
+
+        // An update function to be called on the simulation master rank/thread periodically by the Restraint framework.
+        virtual void update(gmx::Vector v,
+                            gmx::Vector v0,
+                            double t);
+
         virtual /*!
          * \brief Find out what sites this restraint is configured to act on.
          * \return

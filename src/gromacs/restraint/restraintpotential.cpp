@@ -99,4 +99,13 @@ const struct pull_t *LegacyPuller::getRaw() const
     return pullWorkPointer_;
 }
 
+void IRestraintPotential::update(gmx::Vector v,
+                                 gmx::Vector v0,
+                                 double t)
+{
+    // By default, an IRestraintPotential has a null updater.
+    (void)(v);
+    (void)(v0);
+    (void)(t);
+}
 } // end namespace gmx

@@ -226,6 +226,7 @@ class RestraintForceProvider : public gmx::IForceProvider
                                                   static_cast<double>(r2[2]),
                                               }};
                 // \todo This definitely needs some abstraction and checks.
+                // This should be an all-reduce sum...
                 gmx_sumd(6, buffer.data(), cr);
                 assert((r1[0] == 0) || (buffer[0] == r1[0]));
                 assert((r1[1] == 0) || (buffer[1] == r1[1]));
@@ -251,6 +252,24 @@ class RestraintForceProvider : public gmx::IForceProvider
                 set_pbc(&pbc, -1, box);
                 pbc_dx(&pbc, r2, r1, dx);
                 rvec_add(r1, dx, r2);
+            }
+
+
+            // Master rank update call-back
+            if ((cr->dd == nullptr) || MASTER(cr))
+            {
+                restraint_->update(make_vec3<real>(r1[0],
+                                                   r1[1],
+                                                   r1[2]),
+                                   make_vec3<real>(r2[0],
+                                                   r2[1],
+                                                   r2[2]),
+                                   t);
+            }
+            // tMPI ranks are depending on structures that may have just been updated.
+            if (cr != nullptr && DOMAINDECOMP(cr))
+            {
+                gmx_barrier(cr);
             }
 
             auto result = restraint_->evaluate(make_vec3<real>(r1[0], r1[1], r1[2]),
