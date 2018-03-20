@@ -63,7 +63,8 @@ class System final
         /// \endcond
 
         Status setRestraint(std::shared_ptr<gmxapi::MDModule> module);
-        // Note there is confusing overlap in the use of these two functions that should be normalized.
+
+        // \todo This is used in gmxpy but not tested here.
         std::shared_ptr<MDWorkSpec> getSpec();
 
         /*!

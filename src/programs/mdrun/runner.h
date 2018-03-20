@@ -47,9 +47,11 @@
 
 #include <array>
 #include <memory>
+#include <vector>
+#include <string>
 #include <mutex>
-#include "gromacs/commandline/pargs.h"
 #include <bitset>
+#include "gromacs/commandline/pargs.h"
 
 #include "gromacs/commandline/filenm.h"
 #include "gromacs/hardware/hw_info.h"
@@ -243,7 +245,7 @@ class Mdrunner
         void initFromCLI(int argc, char *argv[]);
 
         //! Set up mdrun with parameters provided by API instead of CLI.
-        void initFromAPI();
+        void initFromAPI(const std::vector<std::string>& args);
 
         /*! \brief Driver routine, that calls the different simulation methods.
          *

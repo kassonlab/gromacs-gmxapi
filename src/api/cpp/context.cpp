@@ -9,6 +9,7 @@
 #include <utility>
 
 #include <cassert>
+#include <vector>
 #include "programs/mdrun/runner.h"
 #include "gromacs/mdtypes/tpxstate.h"
 
@@ -40,6 +41,8 @@ class warn
         /// pointer to string managed somewhere else.
         const char* message_;
 };
+
+using gmxapi::MDArgs;
 
 /*!
  * \brief Context implementation base class.
@@ -81,6 +84,8 @@ class ContextImpl
          */
         std::shared_ptr<Status> status_;
         std::weak_ptr<Session> session_;
+
+        MDArgs mdArgs_;
 };
 
 ContextImpl::ContextImpl() :
@@ -120,7 +125,7 @@ std::shared_ptr<Session> ContextImpl::launch(std::shared_ptr<ContextImpl> contex
         {
             auto tpxState = gmx::TpxState::initializeFromFile(filename);
             newMdRunner->setTpx(std::move(tpxState));
-            newMdRunner->initFromAPI();
+            newMdRunner->initFromAPI(mdArgs_);
         }
 
         {
@@ -163,6 +168,11 @@ Context::Context(std::shared_ptr<ContextImpl> &&impl) :
     impl_{std::move(impl)}
 {
     assert(impl_ != nullptr);
+}
+
+void Context::setMDArgs(const MDArgs &mdArgs)
+{
+    impl_->mdArgs_ = mdArgs;
 }
 
 Context::~Context() = default;
