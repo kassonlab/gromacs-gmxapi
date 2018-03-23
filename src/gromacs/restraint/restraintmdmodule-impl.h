@@ -15,6 +15,7 @@
 #include "restraintpotential.h"
 
 #include <iostream>
+#include <mutex>
 
 #include "gromacs/domdec/domdec_struct.h"
 #include "gromacs/domdec/ga2la.h"
