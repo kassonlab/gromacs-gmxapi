@@ -10,9 +10,8 @@
 gmx::RestraintMDModuleImpl::~RestraintMDModuleImpl() = default;
 
 gmx::RestraintMDModuleImpl::RestraintMDModuleImpl(std::shared_ptr<gmx::IRestraintPotential> restraint,
-                                                  unsigned long int site1,
-                                                  unsigned long int site2) :
-    forceProvider_{::gmx::compat::make_unique<RestraintForceProvider>(restraint, site1, site2)},
+                                                  const std::vector<unsigned long int>& sites) :
+    forceProvider_{::gmx::compat::make_unique<RestraintForceProvider>(restraint, sites)},
     outputProvider_{::gmx::compat::make_unique<RestraintOutputProvider>()},
     optionProvider_{::gmx::compat::make_unique<RestraintOptionProvider>()}
 {
@@ -65,9 +64,9 @@ void gmx::RestraintMDModule::initForceProviders(ForceProviders *forceProviders)
 }
 
 std::unique_ptr<gmx::RestraintMDModule>
-gmx::RestraintMDModule::create(std::shared_ptr<gmx::IRestraintPotential> restraint, unsigned long int site1, unsigned long int site2)
+gmx::RestraintMDModule::create(std::shared_ptr<gmx::IRestraintPotential> restraint, const std::vector<unsigned long int>& sites)
 {
-    auto implementation = ::gmx::compat::make_unique<RestraintMDModuleImpl>(std::move(restraint), site1, site2);
+    auto implementation = ::gmx::compat::make_unique<RestraintMDModuleImpl>(std::move(restraint), sites);
     std::unique_ptr<gmx::RestraintMDModule> newModule{new RestraintMDModule(std::move(implementation))};
     return newModule;
 }

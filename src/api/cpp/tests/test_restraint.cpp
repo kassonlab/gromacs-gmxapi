@@ -28,10 +28,13 @@ class NullRestraint : public gmx::IRestraintPotential
                                          gmx::Vector r2,
                                          double t) override
         {
+            (void)r1;
+            (void)r2;
+            (void)t;
             return {};
         }
 
-        std::array<unsigned long, 2> sites() const override
+        std::vector<unsigned long> sites() const override
         {
             return {{0,1}};
         }

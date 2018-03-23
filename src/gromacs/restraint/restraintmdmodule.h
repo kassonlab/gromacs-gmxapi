@@ -45,7 +45,7 @@ class RestraintMDModule final : public gmx::IMDModule
          * as long as those interfaces are needed (probably the duration of an MD run).
          */
         static std::unique_ptr<RestraintMDModule>
-        create(std::shared_ptr<gmx::IRestraintPotential> restraint, unsigned long int site1, unsigned long int site2);
+        create(std::shared_ptr<gmx::IRestraintPotential> restraint, const std::vector<unsigned long int>& sites);
 
         /*!
          * \brief Implement IMDModule interface

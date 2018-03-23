@@ -218,7 +218,7 @@ class IRestraintPotential
          * \brief Find out what sites this restraint is configured to act on.
          * \return
          */
-        std::array<unsigned long int, 2> sites() const = 0;
+        std::vector<unsigned long int> sites() const = 0;
 };
 
 /*!
