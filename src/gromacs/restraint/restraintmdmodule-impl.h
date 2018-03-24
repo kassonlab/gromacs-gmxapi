@@ -36,6 +36,7 @@ namespace gmx
 namespace
 {
 /*! \internal
+ * \ingroup module_restraint
  * \brief Abstraction for a restraint interaction site.
  *
  * A restraint may operate on a single atom or some other entity, such as a selection of atoms.
@@ -75,17 +76,21 @@ class Site
         /*!
          * \brief Get the position of this site at time t.
          *
-         * By providing the current time, we can cache results in order to use them once per timestep.
-         * In the long term, we would prefer to also allow client code to preregister interest in a
-         * position at a given time, or issue "futures".
-         *
          * \param cr Communications record.
          * \param nx Number of locally available atoms (size of local atom data arrays)
          * \param x Array of locally available atom coordinates.
          * \param t the current time.
          * \return position vector.
+         *
+         * \internal
+         * By providing the current time, we can cache results in order to use them once per timestep.
+         * In the long term, we would prefer to also allow client code to preregister interest in a
+         * position at a given time, or issue "futures".
          */
-        RVec position(const t_commrec *cr, size_t nx, const rvec* x, double t)
+        RVec centerOfMass(const t_commrec *cr,
+                          size_t nx,
+                          const rvec *x,
+                          double t)
         {
             // I think I'm overlooking a better way to do this, but I think we should move to an issuer
             // of futures instead of explicitly locking, so it might not be worth looking into. I'm trying
@@ -101,6 +106,8 @@ class Site
             {
                 std::lock_guard<std::mutex> cacheLock(cacheMutex_);
                 // Now that we've got the lock, check again whether the cache was updated while we were waiting.
+                // Declaring t_ volatile should tell the compiler that t_ may have changed since the previous
+                // line and should be reloaded.
                 if (t_ <= t)
                 {
                     gmx::RVec r{0,0,0};
@@ -109,12 +116,14 @@ class Site
                         // Get global-to-local indexing structure
                         auto crossRef = cr->dd->ga2la;
                         assert(crossRef != nullptr);
+                        // Initialize to an invalid index to help catch logic errors.
                         int localIndex{-1};
                         if (ga2la_get_home(crossRef,
                                            static_cast<int>(index_),
                                            &localIndex))
                         {
                             assert(localIndex < static_cast<decltype(localIndex)>(nx));
+                            // If the atom was not available locally, we should not have entered this branch.
                             assert(localIndex >= 0);
                             // If atom is local, get its location
                             copy_rvec(x[localIndex], r);
@@ -123,9 +132,12 @@ class Site
                         {
                             // Nothing to contribute on this rank. Leave position == [0,0,0].
                         }
-                        // AllReduce across the ranks of the simulation.
-                        std::array<double , 3> buffer{{r[0], r[1], r[2]}};
+                        // AllReduce across the ranks of the simulation. For single-atom sites,
+                        // exactly one rank should have a non-zero position. For future multi-atom
+                        // selections, we will receive weighted center-of-mass contributions from
+                        // each rank and combine to get the global center of mass.
                         // \todo This definitely needs some abstraction and checks.
+                        std::array<double , 3> buffer{{r[0], r[1], r[2]}};
                         // This should be an all-reduce sum, which gmx_sumd appears to be.
                         gmx_sumd(3, buffer.data(), cr);
                         r[0] = static_cast<real>(buffer[0]);
@@ -161,6 +173,9 @@ class Site
 
 /*!
  * \brief Concrete MdpOptionProvider for Restraints
+ *
+ * Does nothing. We currently receive parameters through external interfaces for the individual modules.
+ * \ingroup module_restraint
  */
 class RestraintOptionProvider : public gmx::IMdpOptionProvider
 {
@@ -183,6 +198,10 @@ class RestraintOptionProvider : public gmx::IMdpOptionProvider
 
 /*!
  * \brief MDOutputProvider concrete class for Restraints
+ *
+ * Does nothing (calls default implementation). We are interested in external I/O and generic
+ * logging, but don't currently have a use case for sending information specifically to the MD log.
+ * \ingroup module_restraint
  */
 class RestraintOutputProvider : public gmx::IMDOutputProvider
 {
@@ -212,6 +231,7 @@ class RestraintOutputProvider : public gmx::IMDOutputProvider
  * Adapter class from IForceProvider to IRestraintPotential.
  * Objects of this type are uniquely owned by instances of RestraintMDModuleImpl. The object will
  * dispatch calls to IForceProvider->calculateForces() to the functor managed by RestraintMDModuleImpl.
+ * \ingroup module_restraint
  */
 class RestraintForceProvider : public gmx::IForceProvider
 {
@@ -263,129 +283,11 @@ class RestraintForceProvider : public gmx::IForceProvider
                              const matrix              box,
                              double                    t,
                              const rvec               *x,
-                             gmx::ArrayRef<gmx::RVec>  force)
-
-        override
-        {
-            using gmx::detail::vec3;
-            using gmx::detail::make_vec3;
-
-            assert(restraint_ != nullptr);
-
-            assert(mdatoms->homenr >= 0);
-
-            assert(check_box(-1, box) == nullptr);
-            t_pbc pbc{};
-            set_pbc(&pbc, -1, box);
-
-            // Cooperatively get Cartesian coordinates for center of mass of each site
-            RVec r1 = sites_[0].position(cr,
-                                      static_cast<size_t>(mdatoms->homenr),
-                                      x,
-                                      t);
-            RVec r2{r1[0],r1[1],r1[2]};
-            rvec dr{0,0,0};
-            // Build r2 by following a path of difference vectors that are each presumed to be less than
-            // a half-box apart, in case we are battling periodic boundary conditions along the lines of
-            // a big molecule in a small box.
-            for (size_t i = 0; i < sites_.size() - 1; ++i)
-            {
-                RVec a = sites_[i].position(cr,
-                                            static_cast<size_t>(mdatoms->homenr),
-                                            x,
-                                            t);
-                RVec b = sites_[i+1].position(cr,
-                                              static_cast<size_t>(mdatoms->homenr),
-                                              x,
-                                              t);
-                pbc_dx(&pbc, b, a, dr);
-                r2[0] += dr[0];
-                r2[1] += dr[1];
-                r2[2] += dr[2];
-            }
-            // In the case of a single-atom site, r1 and r2 are now correct if local or [0,0,0] if not local.
-
-
-            // Master rank update call-back. This needs to be moved to a discrete place in the
-            // time step to avoid extraneous barriers. The code would be prettier with "futures"...
-            if ((cr->dd == nullptr) || MASTER(cr))
-            {
-                restraint_->update(make_vec3<real>(r1[0],
-                                                   r1[1],
-                                                   r1[2]),
-                                   make_vec3<real>(r2[0],
-                                                   r2[1],
-                                                   r2[2]),
-                                   t);
-            }
-            // All ranks wait for the update to finish.
-            // tMPI ranks are depending on structures that may have just been updated.
-            if (cr != nullptr && DOMAINDECOMP(cr))
-            {
-                // Note: this assumes that all ranks are hitting this line, which is not generally true.
-                // I need to find the right subcommunicator. What I really want is a _scoped_ communicator...
-                gmx_barrier(cr);
-            }
-
-            auto result = restraint_->evaluate(make_vec3<real>(r1[0], r1[1], r1[2]),
-                                               make_vec3<real>(r2[0], r2[1], r2[2]),
-                                               t);
-
-            int site1{static_cast<int>(sites_.front().index())};
-            int aLocal{site1};
-            // Set forces using index a if no domain decomposition, otherwise set with local index if available.
-            if ((cr->dd == nullptr) || ga2la_get_home(cr->dd->ga2la,
-                               site1,
-                               &aLocal))
-            {
-                force[static_cast<size_t>(aLocal)][0] += result.force.x;
-                force[static_cast<size_t>(aLocal)][1] += result.force.y;
-                force[static_cast<size_t>(aLocal)][2] += result.force.z;
-            }
-
-            // Note: Currently calculateForces is called once per restraint and each restraint
-            // applies to a pair of atoms. Future optimizations may consolidate multiple restraints
-            // with possibly duplicated sites, in which case we may prefer to iterate over non-frozen
-            // sites to apply forces without explicitly expressing pairwise symmetry as in the
-            // following logic.
-            int site2{static_cast<int>(sites_.back().index())};
-            int bLocal{site2};
-            if ((cr->dd == nullptr) || ga2la_get_home(cr->dd->ga2la,
-                               site2,
-                               &bLocal))
-            {
-                force[static_cast<size_t>(bLocal)][0] -= result.force.x;
-                force[static_cast<size_t>(bLocal)][1] -= result.force.y;
-                force[static_cast<size_t>(bLocal)][2] -= result.force.z;
-            }
-
-            if (int(t*1000) % 100 == 0)
-            {
-                if ((cr->dd == nullptr) || MASTER(cr))
-                {
-                    std::cout << "Evaluated restraint forces on sites at " << make_vec3<real>(r1[0], r1[1], r1[2]) << " and " << make_vec3<real>(r2[0], r2[1], r2[2]) << ": " << result.force << ". rank,time: " << cr->rank_pp_intranode << "," << t << "\n";
-                }
-            }
-
-        }
+                             gmx::ArrayRef<gmx::RVec>  force) override;
     private:
         std::shared_ptr<gmx::IRestraintPotential> restraint_;
         std::vector<Site> sites_;
 };
-
-RestraintForceProvider::RestraintForceProvider(std::shared_ptr<gmx::IRestraintPotential> restraint,
-                                               const std::vector<unsigned long int>& sites) :
-    restraint_{std::move(restraint)},
-    sites_{}
-{
-    assert(restraint_ != nullptr);
-    assert(sites_.empty());
-    for (auto&& site : sites)
-    {
-        sites_.emplace_back(site);
-    }
-    assert(sites_.size() >= 2);
-}
 
 /*! \internal
  * \brief IMDModule implementation for RestraintMDModule.
