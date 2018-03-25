@@ -14,6 +14,7 @@
 #include <memory>
 #include <map>
 #include <iostream>
+#include <mutex>
 
 #include "restraintfunctor-impl.h"
 

@@ -1135,11 +1135,8 @@ int Mdrunner::mdrunner()
         auto puller = restraintManager_->getSpec();
         if (puller != nullptr)
         {
-            auto site1 = puller->sites()[0];
-            auto site2 = puller->sites()[1];
             auto module = ::gmx::RestraintMDModule::create(puller,
-                                                           site1,
-                                                           site2);
+                                                           puller->sites());
             mdModules.add(std::move(module));
         }
     }

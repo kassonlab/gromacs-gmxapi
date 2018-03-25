@@ -94,6 +94,7 @@ Status SessionImpl::run() noexcept
 {
     // Status is failure until proven otherwise.
     Status status{false};
+    assert(runner_ != nullptr);
     auto rc = runner_->mdrunner();
     if (rc == 0)
     {
