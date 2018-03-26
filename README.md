@@ -5,7 +5,7 @@ The forked project lives on GitHub at [https://github.com/kassonlab/gromacs-gmxa
 
 In addition to a regular GROMACS installation, this fork provides `libgmxapi` for
 high-level C++ access to GROMACS MD simulation.
-It exists primarily to support the [`gmxapi`](https://github.com/gmxapi/gmxapi) companion project that provides a Python module and bindings.
+It exists primarily to support the [`gmxapi`](https://github.com/kassonlab/gmxapi) companion project that provides a Python module and bindings.
 
 This README.md file supplants the main README file to avoid merge conflicts while providing convenient documentation to the repository browser.
 
