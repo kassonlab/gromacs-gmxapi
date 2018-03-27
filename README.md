@@ -14,10 +14,10 @@ This README.md file supplants the main README file to avoid merge conflicts whil
 Install as you would a regular copy of GROMACS. The following example downloads the source into a directory named `gromacs`,
 creates a parallel (out-of-source) `build` directory, configures, builds, and installs. Use e.g. `make -j10 install` to build in parallel with 10 processes.
 
-    $ git clone https://github.com/kassonlab/gromacs-gmxapi gromacs
+    $ git clone https://github.com/kassonlab/gromacs-gmxapi.git
     $ mkdir build
     $ cd build
-    $ cmake ../gromacs -DCMAKE_INSTALL_PREFIX=/path/to/where/i/want/gromacs -DGMX_THREAD_MPI=ON -DGMX_GPU=OFF
+    $ cmake ../gromacs-gmxapi -DCMAKE_INSTALL_PREFIX=/path/to/where/i/want/gromacs -DGMX_THREAD_MPI=ON -DGMX_GPU=OFF -DGMX_BUILD_OWN_FFTW=ON                                                                                                                                                                                             
     $ make install
 
 You may then either source the GMXRC file (as usual for GROMACS use) or export the environment variable
