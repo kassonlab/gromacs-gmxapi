@@ -94,7 +94,7 @@ class ManagerImpl
         std::shared_ptr<ICalculation> calculate(double t);
 
         std::shared_ptr<LegacyPuller> puller_;
-        mutable std::shared_ptr<::gmx::IRestraintPotential> restraint_;
+        mutable std::vector<std::shared_ptr<::gmx::IRestraintPotential>> restraint_;
 
     private:
         double currentTime_{0};
@@ -145,7 +145,8 @@ std::shared_ptr<LegacyPuller> ManagerImpl::getLegacy()
 
 void ManagerImpl::add(std::shared_ptr<::gmx::IRestraintPotential> restraint, std::string name)
 {
-    restraint_ = std::move(restraint);
+    (void)name;
+    restraint_.emplace_back(std::move(restraint));
 }
 
 
@@ -223,7 +224,7 @@ bool Manager::contributesEnergy()
             energetic = bool(pull_have_potential(pull_work));
         }
     }
-    if (impl_->restraint_ != nullptr)
+    if (!impl_->restraint_.empty())
     {
         energetic = true;
     };
@@ -313,7 +314,7 @@ void Manager::addSpec(std::shared_ptr<gmx::IRestraintPotential> puller,
     impl_->add(std::move(puller), name);
 }
 
-std::shared_ptr<gmx::IRestraintPotential> Manager::getSpec() const
+std::vector<std::shared_ptr<IRestraintPotential>> Manager::getSpec() const
 {
     return impl_->restraint_;
 }
