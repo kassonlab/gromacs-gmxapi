@@ -6,6 +6,8 @@ FROM jupyter/scipy-notebook
 
 # Allow the build type to be specified with `docker build --build-arg TYPE=something`
 ARG TYPE=Release
+# Allow build for an arbitrary branch or tag, but default to the tip of `master`
+ARG BRANCH=master
 
 # jupyter/scipy-notebook sets the USER to jovyan. Temporarily switch it back to root to install more stuff.
 USER root
@@ -29,9 +31,9 @@ USER jovyan
 RUN conda install pytest tox cmake
 
 RUN cd /home/jovyan && \
-    wget https://github.com/kassonlab/gromacs-gmxapi/archive/master.tar.gz && \
-    tar xvf master.tar.gz && \
-    mv gromacs-gmxapi-master gromacs-source
+    wget https://github.com/kassonlab/gromacs-gmxapi/archive/$BRANCH.tar.gz && \
+    tar xvf $BRANCH.tar.gz && \
+    mv gromacs-gmxapi-$BRANCH gromacs-source
 
 # build shared object library with OpenMPI support.
 RUN (mkdir -p /home/jovyan/gromacs-build && \
