@@ -90,7 +90,7 @@ class Manager final
         void addSpec(std::shared_ptr<gmx::IRestraintPotential> puller,
                      std::string name);
 
-        std::shared_ptr<gmx::IRestraintPotential> getSpec() const;
+        std::vector<std::shared_ptr<IRestraintPotential>> getSpec() const;
 
         void add(std::shared_ptr<LegacyPuller> puller, std::string name);
 //        void add(std::shared_ptr<gmx::IRestraintPotential> puller, std::string name);

@@ -36,3 +36,22 @@ Then refer either to `docs/html/doxygen/api-user/index.html` or
 `docs/html/doxygen/api-dev/index.html` in the build directory.
 
 Also, please use the issue tracking system or feel free to suggest other modes of communication.
+
+# Releases, Compatibility, and Versioning
+
+Beginning with the 1.0 release, gmxapi will follow traditional semantic versioning for API compatibility.
+ABI compatibility guarantees are TBD. For 0.0.x, expect API incompatibility for each release. For 0.1.x
+and onwards, patch releases should maintain API backwards compatibility with the minor version.
+
+The version numbers for gmxapi are encoded in the repository solely in the `src/api/CMakeLists.txt` file.
+During CMake configuration, the `src/api/cpp/gmxapi/version.h` file is created so that the built library can
+report this version through the `gmxapi::Version` interface. Client code should include the installed 
+`gmxapi/version.h` header in order to embed the constants `gmxapi::GMXAPI_MAJOR`, `gmxapi::GMXAPI_MINOR`,
+and `gmxapi::GMXAPI_PATCH` so that API compatibility checks can be performed at runtime.
+
+When a new software release is tagged, the next commit on the development branch should increment the patch level to distinguish development builds from the tagged release. As incompatibilities are introduced
+in feature branches, minor or major version number should be incremented as appropriate. At this time,
+client code has no indication of whether the version presented in a development build of gmxapi is an
+officially specified API revision or is subject to change. Developers coding against development branches
+should keep this in mind. If this becomes problematic, please offer your suggestions or propose a revision
+to the `gmxapi::Version` API.

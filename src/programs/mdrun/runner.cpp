@@ -1132,12 +1132,15 @@ int Mdrunner::mdrunner()
     {
         // Build restraints.
         // Currently there is at most one restraint modules.
-        auto puller = restraintManager_->getSpec();
-        if (puller != nullptr)
+        auto pullers = restraintManager_->getSpec();
+        if (!pullers.empty())
         {
-            auto module = ::gmx::RestraintMDModule::create(puller,
-                                                           puller->sites());
-            mdModules.add(std::move(module));
+            for (auto&& puller : pullers)
+            {
+                auto module = ::gmx::RestraintMDModule::create(puller,
+                                                               puller->sites());
+                mdModules.add(std::move(module));
+            }
         }
     }
     // TODO: Error handling
