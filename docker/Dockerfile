@@ -33,9 +33,11 @@ RUN conda install pytest tox cmake
 RUN cd /home/jovyan && \
     wget https://github.com/kassonlab/gromacs-gmxapi/archive/$BRANCH.tar.gz && \
     tar xvf $BRANCH.tar.gz && \
-    mv gromacs-gmxapi-$BRANCH gromacs-source
+    mv gromacs-gmxapi-$BRANCH gromacs-source && \
+    rm $BRANCH.tar.gz
 
 # build shared object library with OpenMPI support.
+# Note: AVX2 instructions not available in older docker engines.
 RUN (mkdir -p /home/jovyan/gromacs-build && \
     cd /home/jovyan/gromacs-build && \
     rm -f CMakeCache.txt && \
@@ -43,6 +45,9 @@ RUN (mkdir -p /home/jovyan/gromacs-build && \
         -DCMAKE_INSTALL_PREFIX=/home/jovyan/install/gromacs \
         -DGMX_THREAD_MPI=ON \
         -DGMX_BUILD_HELP=OFF \
+        -DGMX_SIMD=AVX_256 \
+        -DGMX_USE_RDTSCP=OFF \
+        -DGMX_HWLOC=OFF \
         -DBUILD_TESTING=ON \
         -DCMAKE_BUILD_TYPE=$TYPE && \
     make -j4)
