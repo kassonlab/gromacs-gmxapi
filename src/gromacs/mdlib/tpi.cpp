@@ -147,27 +147,37 @@ namespace gmx
                            unsigned long Flags,
                            gmx_walltime_accounting_t walltime_accounting)
  */
-double do_tpi(FILE *fplog, t_commrec *cr, const gmx::MDLogger gmx_unused &mdlog,
-              int nfile, const t_filenm fnm[],
-              const gmx_output_env_t *oenv, gmx_bool bVerbose,
+double do_tpi(FILE *fplog,
+              t_commrec *cr,
+              const gmx::MDLogger gmx_unused &mdlog,
+              int nfile,
+              const t_filenm fnm[],
+              const gmx_output_env_t *oenv,
+              gmx_bool bVerbose,
               int gmx_unused nstglobalcomm,
-              gmx_vsite_t gmx_unused *vsite, gmx_constr_t gmx_unused constr,
+              gmx_vsite_t gmx_unused *vsite,
+              gmx_constr_t gmx_unused constr,
               int gmx_unused stepout,
               gmx::IMDOutputProvider *outputProvider,
               t_inputrec *inputrec,
-              gmx_mtop_t *top_global, t_fcdata *fcd,
+              gmx_mtop_t *top_global,
+              t_fcdata *fcd,
               t_state *state_global,
               ObservablesHistory gmx_unused *observablesHistory,
               t_mdatoms *mdatoms,
-              t_nrnb *nrnb, gmx_wallcycle_t wcycle,
+              t_nrnb *nrnb,
+              gmx_wallcycle_t wcycle,
               t_forcerec *fr,
               const ReplicaExchangeParameters gmx_unused &replExParams,
               gmx_membed_t gmx_unused *membed,
-              real gmx_unused cpt_period, real gmx_unused max_hours,
+              real gmx_unused cpt_period,
+              real gmx_unused max_hours,
               int gmx_unused imdport,
               unsigned long gmx_unused Flags,
-              gmx_walltime_accounting_t walltime_accounting)
+              gmx_walltime_accounting_t walltime_accounting,
+              const gmx::md::Context &context)
 {
+    (void) context;
     gmx_localtop_t  *top;
     gmx_groups_t    *groups;
     gmx_enerdata_t  *enerd;

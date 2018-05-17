@@ -82,13 +82,14 @@ class Manager final
 
         /*! \brief Obtain the ability to create a restraint MDModule
          *
-         * First iteration allows one restraint.
+         * Though the name is reminiscent of the evolving idea of a work specification, the
+         * Spec here is just a list of restraint modules.
          *
          * \param puller shared ownership of a restraint potential interface.
          * \param name key by which to reference the restraint.
          */
-        void addSpec(std::shared_ptr<gmx::IRestraintPotential> puller,
-                     std::string name);
+        void addToSpec(std::shared_ptr<gmx::IRestraintPotential> puller,
+                       std::string name);
 
         std::vector<std::shared_ptr<IRestraintPotential>> getSpec() const;
 

@@ -128,6 +128,7 @@
 #include "deform.h"
 #include "membed.h"
 #include "repl_ex.h"
+#include "context.h"
 
 #ifdef GMX_FAHCORE
 #include "corewrap.h"
@@ -236,7 +237,8 @@ double gmx::do_md(FILE *fplog, t_commrec *cr, const gmx::MDLogger &mdlog,
                   real cpt_period, real max_hours,
                   int imdport,
                   unsigned long Flags,
-                  gmx_walltime_accounting_t walltime_accounting)
+                  gmx_walltime_accounting_t walltime_accounting,
+                  const gmx::md::Context& context)
 {
     gmx_mdoutf_t    outf = nullptr;
     gmx_int64_t     step, step_rel;
@@ -310,7 +312,7 @@ double gmx::do_md(FILE *fplog, t_commrec *cr, const gmx::MDLogger &mdlog,
     bool              shouldCheckNumberOfBondedInteractions = false;
     int               totalNumberOfBondedInteractions       = -1;
 
-    SimulationSignals signals;
+    SimulationSignals& signals{*context.simulationSignals()};
     // Most global communnication stages don't propagate mdrun
     // signals, and will use this object to achieve that.
     SimulationSignaller nullSignaller(nullptr, nullptr, false, false);

@@ -57,6 +57,7 @@
 #include "gromacs/hardware/hw_info.h"
 #include "gromacs/math/vec.h"
 #include "gromacs/mdlib/main.h"
+#include "gromacs/mdlib/simulationsignal.h"
 #include "gromacs/mdtypes/imdmodule.h"
 #include "gromacs/topology/topology.h"
 #include "gromacs/utility/basedefinitions.h"
@@ -210,6 +211,13 @@ class Mdrunner
         //! Handle to communication data structure.
         t_commrec                       *cr;
 
+        //! Allow override of final step from original input.
+        volatile bool                        finalStep_{false};
+
+        //! hold the signaling object since integrator_t is just a function.
+        //! Signals are always mutable.
+        mutable SimulationSignals               simulationSignals_;
+
         std::shared_ptr<restraint::Manager> restraintManager_{nullptr};
         std::shared_ptr<TpxState>       tpxState_{nullptr};
 
@@ -278,6 +286,31 @@ class Mdrunner
 
         //! Called when thread-MPI spawns threads.
         t_commrec *spawnThreads(int numThreadsToLaunch);
+
+        /*!
+         * \brief API hook to allow a toggle to end the simulation.
+         *
+         * Sets a simulation stop condition. The
+         * next pass through the MD loop exits cleanly. Allows a client of the Mdrunner
+         * to cleanly interrupt a integrator_t function during execution of an MD loop.
+         *
+         * Note that the runner does not know the current step of the executing MD loop.
+         * It just owns the data resource that the integrator will check. The calling code
+         * should bear this in mind.
+         *
+         * May be called on any or all ranks.
+         */
+        void declareFinalStep();
+
+        /*!
+         * \brief Get raw pointer to the simulation signals mediated by the runner.
+         *
+         * The array pointed to is guaranteed to exist, but the elements may not yet be
+         * initialized.
+         *
+         * \return pointer to array of Signal objects.
+         */
+         SimulationSignals* signals() const;
 
         /*! \brief Initializes a new Mdrunner from the master.
          *
