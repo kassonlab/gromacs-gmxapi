@@ -21,6 +21,7 @@ configure_file(gmxapi/version.in.h gmxapi/version.h)
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/gmxapi/md)
 #configure_file(gmxapi/md/runnerstate.h gmxapi/md)
 configure_file(gmxapi/md/mdmodule.h gmxapi/md)
+configure_file(gmxapi/md/mdsignals.h gmxapi/md)
 
 # Add to install target: copy the public API headers from the source directory
 # into the gmxapi header subdirectory.
@@ -71,6 +72,7 @@ target_sources(
         mdmodule.cpp
         session-impl.h
         session.cpp
+        mdsignals.cpp
         status.cpp
         system.cpp
         system-impl.h

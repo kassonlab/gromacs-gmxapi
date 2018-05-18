@@ -107,6 +107,17 @@ class Session
 
         bool isOpen() const noexcept;
 
+        /*! \internal
+         * \brief Get a non-owning handle to the implementation object.
+         *
+         * Get a raw pointer to the implementation object. The pointer is valid only during the lifetime of the Session,
+         * so retain a shared pointer to this Session object or only hold the pointer for the duration of a code block
+         * guaranteed to exist entirely within the lifetime of a Session object.
+         *
+         * \return opaque pointer used by gmxapi implementation and extension code.
+         */
+        SessionImpl* getRaw() const noexcept;
+
     private:
         friend
         Status setSessionRestraint(Session* session,

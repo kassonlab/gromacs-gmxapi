@@ -1142,15 +1142,6 @@ int Mdrunner::mdrunner()
                                                                puller->sites());
                 mdModules.add(std::move(module));
             }
-
-            // Temporarily abuse the intention of the restraintManager and let
-            // the restraints register more than just mdModules.
-
-            // collect ControlModules for modules that want to provide a stop condition.
-            for (auto&& puller : pullers)
-            {
-                puller->bindRunner(this);
-            }
         }
     }
     // TODO: Error handling
