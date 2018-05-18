@@ -312,7 +312,7 @@ double gmx::do_md(FILE *fplog, t_commrec *cr, const gmx::MDLogger &mdlog,
     bool              shouldCheckNumberOfBondedInteractions = false;
     int               totalNumberOfBondedInteractions       = -1;
 
-    SimulationSignals& signals{*context.simulationSignals()};
+    SimulationSignals& signals = *context.simulationSignals();
     // Most global communnication stages don't propagate mdrun
     // signals, and will use this object to achieve that.
     SimulationSignaller nullSignaller(nullptr, nullptr, false, false);
