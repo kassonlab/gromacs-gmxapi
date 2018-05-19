@@ -212,8 +212,19 @@ bool Session::isOpen() const noexcept
 Status setSessionRestraint(Session *session,
                            std::shared_ptr<gmxapi::MDModule> module)
 {
-    module->getRestraint()->bindSession(session);
-    auto status = session->impl_->setRestraint(std::move(module));
+    auto status = gmxapi::Status(false);
+
+    if (session != nullptr && module != nullptr)
+    {
+        auto restraint = module->getRestraint();
+        if (restraint != nullptr)
+        {
+            restraint->bindSession(session);
+        }
+
+        assert(session->impl_);
+        auto status = session->impl_->setRestraint(std::move(module));
+    }
     return status;
 }
 
