@@ -2,10 +2,11 @@
 // Created by Eric Irrgang on 5/18/18.
 //
 
-
-
-#include <gromacs/compat/make_unique.h>
 #include "gmxapi/md/mdsignals.h"
+
+#include <atomic>
+
+#include "gromacs/compat/make_unique.h"
 
 #include "gromacs/mdlib/simulationsignal.h"
 #include "programs/mdrun/runner.h"
@@ -45,36 +46,53 @@ class StopSignal : public Signal::SignalImpl
     public:
         explicit StopSignal(gmx::Mdrunner* runner) : runner_{runner} {};
 
+        StopSignal(gmx::Mdrunner* runner, unsigned int numParticipants) : StopSignal(runner)
+        {
+            StopSignal::numParticipants_.store(numParticipants);
+        }
+
         void call() override
         {
-            auto signals = runner_->signals();
-            signals->at(eglsSTOPCOND).sig = true;
+            unsigned int n{++StopSignal::numCalls_};
+            if (n >= StopSignal::numParticipants_.load())
+            {   auto signals = runner_->signals();
+                signals->at(eglsSTOPCOND).sig = true;
+            }
         }
 
     private:
         gmx::Mdrunner* runner_;
+
+        // Number of participants in this signal
+        static std::atomic<unsigned int> numParticipants_;
+
+        // Number of times the signal has been called.
+        static std::atomic<unsigned int> numCalls_;
 };
 
+std::atomic<unsigned int> StopSignal::numParticipants_{0};
+std::atomic<unsigned int> StopSignal::numCalls_{0};
 
 Signal getMdrunnerSignal(Session* session, md::signals signal)
 {
 //// while there is only one choice...
 //    if (signal == md::signals::STOP)
 //    {
-        assert(signal == md::signals::STOP);
-        assert(session);
+    assert(signal == md::signals::STOP);
+    assert(session);
 
-        auto impl = session->getRaw();
-        assert(impl);
+    auto impl = session->getRaw();
+    assert(impl);
 
-        auto runner = impl->getRunner();
-        assert(runner);
+    auto runner = impl->getRunner();
+    assert(runner);
 
-        std::unique_ptr<Signal::SignalImpl> signalImpl = gmx::compat::make_unique<StopSignal>(runner);
+ //   std::unique_ptr<Signal::SignalImpl> signalImpl = gmx::compat::make_unique<StopSignal>(runner);
+    std::unique_ptr<Signal::SignalImpl> signalImpl = gmx::compat::make_unique<StopSignal>(runner, impl->numRestraints);
 
-        Signal functor{std::move(signalImpl)};
+    Signal functor{std::move(signalImpl)};
 
-        return functor;
+    return functor;
 //    }
 //    else
 //    {

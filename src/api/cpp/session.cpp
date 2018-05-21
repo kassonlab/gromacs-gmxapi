@@ -220,6 +220,7 @@ Status setSessionRestraint(Session *session,
         if (restraint != nullptr)
         {
             restraint->bindSession(session);
+            session->impl_->numRestraints += 1;
         }
 
         assert(session->impl_);

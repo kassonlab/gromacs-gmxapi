@@ -79,6 +79,8 @@ class SessionImpl
          * \return non-owning pointer to the current runner or nullptr if none.
          */
         gmx::Mdrunner* getRunner();
+
+        int numRestraints{0};
     private:
         /*!
          * \brief Private constructor for use by create()
