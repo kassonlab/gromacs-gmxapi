@@ -55,8 +55,10 @@ class StopSignal : public Signal::SignalImpl
         {
             unsigned int n{++StopSignal::numCalls_};
             if (n >= StopSignal::numParticipants_.load())
-            {   auto signals = runner_->signals();
-                signals->at(eglsSTOPCOND).sig = true;
+            {   
+                auto signals = runner_->signals();
+                // sig > 0 stops at next NS step. sig < 0 stops at next step.
+                signals->at(eglsSTOPCOND).sig = -1;
             }
         }
 
