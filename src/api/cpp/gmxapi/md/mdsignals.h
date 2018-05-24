@@ -7,8 +7,8 @@
  * prototyping only. Please don't let it slip into a release without serious design considerations.
  */
 
-#ifndef GROMACS_SIGNALS_H
-#define GROMACS_SIGNALS_H
+#ifndef GMXAPI_MDSIGNALS_H
+#define GMXAPI_MDSIGNALS_H
 
 #include <memory>
 
@@ -56,4 +56,4 @@ Signal getMdrunnerSignal(Session* session, md::signals signal);
 
 } // end namespace md
 
-#endif //GROMACS_SIGNALS_H
+#endif //GMXAPI_MDSIGNALS_H
