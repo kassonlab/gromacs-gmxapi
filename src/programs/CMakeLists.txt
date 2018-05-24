@@ -67,9 +67,9 @@ else()
     endif()
     add_library(view_objlib OBJECT ${VIEW_SOURCES})
     add_executable(gmx
-        ${GMX_MAIN_SOURCES}
-        $<TARGET_OBJECTS:mdrun_objlib>
-        $<TARGET_OBJECTS:view_objlib>)
+                   ${GMX_MAIN_SOURCES}
+                   $<TARGET_OBJECTS:mdrun_objlib>
+                   $<TARGET_OBJECTS:view_objlib>)
     target_link_libraries(gmx libgromacs
         ${GMX_COMMON_LIBRARIES}
         ${GMX_EXE_LINKER_FLAGS}

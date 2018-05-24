@@ -99,6 +99,7 @@
 #include "gromacs/utility/fatalerror.h"
 #include "gromacs/utility/logger.h"
 #include "gromacs/utility/smalloc.h"
+#include "programs/mdrun/context.h"
 
 //! Utility structure for manipulating states during EM
 typedef struct {
@@ -1010,8 +1011,10 @@ double do_cg(FILE *fplog, t_commrec *cr, const gmx::MDLogger gmx_unused &mdlog,
              real gmx_unused cpt_period, real gmx_unused max_hours,
              int imdport,
              unsigned long gmx_unused Flags,
-             gmx_walltime_accounting_t walltime_accounting)
+             gmx_walltime_accounting_t walltime_accounting,
+             const gmx::md::Context& context)
 {
+    (void) context;
     const char       *CG = "Polak-Ribiere Conjugate Gradients";
 
     gmx_localtop_t   *top;
@@ -1643,27 +1646,37 @@ double do_cg(FILE *fplog, t_commrec *cr, const gmx::MDLogger gmx_unused &mdlog,
                           unsigned long Flags,
                           gmx_walltime_accounting_t walltime_accounting)
  */
-double do_lbfgs(FILE *fplog, t_commrec *cr, const gmx::MDLogger gmx_unused &mdlog,
-                int nfile, const t_filenm fnm[],
-                const gmx_output_env_t gmx_unused *oenv, gmx_bool bVerbose,
+double do_lbfgs(FILE *fplog,
+                t_commrec *cr,
+                const gmx::MDLogger gmx_unused &mdlog,
+                int nfile,
+                const t_filenm fnm[],
+                const gmx_output_env_t gmx_unused *oenv,
+                gmx_bool bVerbose,
                 int gmx_unused nstglobalcomm,
-                gmx_vsite_t *vsite, gmx_constr_t constr,
+                gmx_vsite_t *vsite,
+                gmx_constr_t constr,
                 int gmx_unused stepout,
                 gmx::IMDOutputProvider *outputProvider,
                 t_inputrec *inputrec,
-                gmx_mtop_t *top_global, t_fcdata *fcd,
+                gmx_mtop_t *top_global,
+                t_fcdata *fcd,
                 t_state *state_global,
                 ObservablesHistory *observablesHistory,
                 t_mdatoms *mdatoms,
-                t_nrnb *nrnb, gmx_wallcycle_t wcycle,
+                t_nrnb *nrnb,
+                gmx_wallcycle_t wcycle,
                 t_forcerec *fr,
                 const ReplicaExchangeParameters gmx_unused &replExParams,
                 gmx_membed_t gmx_unused *membed,
-                real gmx_unused cpt_period, real gmx_unused max_hours,
+                real gmx_unused cpt_period,
+                real gmx_unused max_hours,
                 int imdport,
                 unsigned long gmx_unused Flags,
-                gmx_walltime_accounting_t walltime_accounting)
+                gmx_walltime_accounting_t walltime_accounting,
+                const gmx::md::Context &context)
 {
+    (void) context;
     static const char *LBFGS = "Low-Memory BFGS Minimizer";
     em_state_t         ems;
     gmx_localtop_t    *top;
@@ -2415,27 +2428,37 @@ double do_lbfgs(FILE *fplog, t_commrec *cr, const gmx::MDLogger gmx_unused &mdlo
                           unsigned long Flags,
                           gmx_walltime_accounting_t walltime_accounting)
  */
-double do_steep(FILE *fplog, t_commrec *cr, const gmx::MDLogger gmx_unused &mdlog,
-                int nfile, const t_filenm fnm[],
-                const gmx_output_env_t gmx_unused *oenv, gmx_bool bVerbose,
+double do_steep(FILE *fplog,
+                t_commrec *cr,
+                const gmx::MDLogger gmx_unused &mdlog,
+                int nfile,
+                const t_filenm fnm[],
+                const gmx_output_env_t gmx_unused *oenv,
+                gmx_bool bVerbose,
                 int gmx_unused nstglobalcomm,
-                gmx_vsite_t *vsite, gmx_constr_t constr,
+                gmx_vsite_t *vsite,
+                gmx_constr_t constr,
                 int gmx_unused stepout,
                 gmx::IMDOutputProvider *outputProvider,
                 t_inputrec *inputrec,
-                gmx_mtop_t *top_global, t_fcdata *fcd,
+                gmx_mtop_t *top_global,
+                t_fcdata *fcd,
                 t_state *state_global,
                 ObservablesHistory *observablesHistory,
                 t_mdatoms *mdatoms,
-                t_nrnb *nrnb, gmx_wallcycle_t wcycle,
+                t_nrnb *nrnb,
+                gmx_wallcycle_t wcycle,
                 t_forcerec *fr,
                 const ReplicaExchangeParameters gmx_unused &replExParams,
                 gmx_membed_t gmx_unused *membed,
-                real gmx_unused cpt_period, real gmx_unused max_hours,
+                real gmx_unused cpt_period,
+                real gmx_unused max_hours,
                 int imdport,
                 unsigned long gmx_unused Flags,
-                gmx_walltime_accounting_t walltime_accounting)
+                gmx_walltime_accounting_t walltime_accounting,
+                const gmx::md::Context &context)
 {
+    (void) context;
     const char       *SD = "Steepest Descents";
     gmx_localtop_t   *top;
     gmx_enerdata_t   *enerd;
@@ -2685,27 +2708,37 @@ double do_steep(FILE *fplog, t_commrec *cr, const gmx::MDLogger gmx_unused &mdlo
                           unsigned long Flags,
                           gmx_walltime_accounting_t walltime_accounting)
  */
-double do_nm(FILE *fplog, t_commrec *cr, const gmx::MDLogger &mdlog,
-             int nfile, const t_filenm fnm[],
-             const gmx_output_env_t gmx_unused *oenv, gmx_bool bVerbose,
+double do_nm(FILE *fplog,
+             t_commrec *cr,
+             const gmx::MDLogger &mdlog,
+             int nfile,
+             const t_filenm fnm[],
+             const gmx_output_env_t gmx_unused *oenv,
+             gmx_bool bVerbose,
              int gmx_unused nstglobalcomm,
-             gmx_vsite_t *vsite, gmx_constr_t constr,
+             gmx_vsite_t *vsite,
+             gmx_constr_t constr,
              int gmx_unused stepout,
              gmx::IMDOutputProvider *outputProvider,
              t_inputrec *inputrec,
-             gmx_mtop_t *top_global, t_fcdata *fcd,
+             gmx_mtop_t *top_global,
+             t_fcdata *fcd,
              t_state *state_global,
              ObservablesHistory gmx_unused *observablesHistory,
              t_mdatoms *mdatoms,
-             t_nrnb *nrnb, gmx_wallcycle_t wcycle,
+             t_nrnb *nrnb,
+             gmx_wallcycle_t wcycle,
              t_forcerec *fr,
              const ReplicaExchangeParameters gmx_unused &replExParams,
              gmx_membed_t gmx_unused *membed,
-             real gmx_unused cpt_period, real gmx_unused max_hours,
+             real gmx_unused cpt_period,
+             real gmx_unused max_hours,
              int imdport,
              unsigned long gmx_unused Flags,
-             gmx_walltime_accounting_t walltime_accounting)
+             gmx_walltime_accounting_t walltime_accounting,
+             const gmx::md::Context &context)
 {
+    (void) context;
     const char          *NM = "Normal Mode Analysis";
     gmx_mdoutf_t         outf;
     int                  nnodes, node;

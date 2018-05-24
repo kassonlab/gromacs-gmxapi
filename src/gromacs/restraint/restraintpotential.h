@@ -42,8 +42,15 @@ struct t_inputrec;
 struct t_mdatoms;
 struct t_pbc;
 
+namespace gmxapi
+{
+class Session;
+}
+
 namespace gmx
 {
+
+class Mdrunner; // defined in src/programs/mdrun/runner.h
 
 /*!
  * \brief Provide a vector type name with a more stable interface than RVec and a more stable
@@ -206,19 +213,57 @@ class IRestraintPotential
                               double t) = 0;
 
 
-        // An update function to be called on the simulation master rank/thread periodically by the Restraint framework.
+            /*!
+             * \brief Call-back hook for restraint implementations.
+             *
+             * An update function to be called on the simulation master rank/thread periodically
+             * by the Restraint framework.
+             * Receives the same input as the evaluate() method, but is only called on the master
+             * rank of a simulation to allow implementation code to be thread-safe without knowing
+             * anything about the domain decomposition.
+             *
+             * \param v position of the first site
+             * \param v0 position of the second site
+             * \param t simulation time
+             *
+             * \internal
+             * We give the definition here because we don't want plugins to have to link against
+             * libgromacs right now (complicated header maintenance and no API stability guarantees).
+             * But once we've had plugin restraints wrap themselves in a Restraint template, we can set update = 0
+             * \todo: Provide gmxapi facility for plugin restraints to wrap themselves with a default implementation to let this class be pure virtual.
+             */
         virtual void update(gmx::Vector v,
                             gmx::Vector v0,
                             double t) { (void)v; (void)v0; (void)t; };
-        // We give the definition here because we don't want plugins to have to link against libgromacs right now.
+        // We give the definition here because we don't want plugins to have to link against libgromacs right now (complicated header maintenance and no API stability guarantees).
         // But once we've had plugin restraints wrap themselves in a Restraint template, we can
         // set update = 0
+        // Todo: Provide gmxapi facility for plugin restraints to wrap themselves with a default implementation to let this class be pure virtual.
 
-        virtual /*!
+        /*!
          * \brief Find out what sites this restraint is configured to act on.
          * \return
          */
+        virtual
         std::vector<unsigned long int> sites() const = 0;
+
+        /*!
+         * \brief Allow the Mdrunner for a simulation to interact with a module.
+         *
+         * A module implements this method to receive a handle to the runner that will be
+         * invoking the integrator to which the module is/will be attached. This allows the module
+         * to perform custom binding routines that require knowledge of or access to the runner.
+         * Other hooks include the force provider initialization and the restraint force calculation
+         * during the ForceProviders execution, which occur at lower levels.
+         *
+         * \param runner
+         */
+        virtual void bindSession(gmxapi::Session* session)
+        {
+            // Defined in header as a temporary stop-gap to keep this interface purely public.
+            // Default: no-op.
+            (void) session;
+        }
 };
 
 /*!

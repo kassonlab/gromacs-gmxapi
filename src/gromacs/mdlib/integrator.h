@@ -70,6 +70,8 @@ namespace gmx
 class IMDOutputProvider;
 class MDLogger;
 
+namespace md { class Context; }
+
 /*! \brief Integrator algorithm implementation.
  *
  * \param[in] fplog               Log file for output
@@ -120,7 +122,8 @@ typedef double integrator_t (FILE *fplog, t_commrec *cr, const gmx::MDLogger &md
                              real cpt_period, real max_hours,
                              int imdport,
                              unsigned long Flags,
-                             gmx_walltime_accounting_t walltime_accounting);
+                             gmx_walltime_accounting_t walltime_accounting,
+                             const gmx::md::Context& context);
 
 }      // namespace gmx
 

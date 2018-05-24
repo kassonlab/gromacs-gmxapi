@@ -17,10 +17,16 @@ configure_file(gmxapi/session.h gmxapi)
 configure_file(gmxapi/status.h gmxapi)
 configure_file(gmxapi/system.h gmxapi)
 configure_file(gmxapi/version.in.h gmxapi/version.h)
+
 # headers for API development and extension
+
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/gmxapi/md)
 #configure_file(gmxapi/md/runnerstate.h gmxapi/md)
 configure_file(gmxapi/md/mdmodule.h gmxapi/md)
+configure_file(gmxapi/md/mdsignals.h gmxapi/md)
+
+file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/gmxapi/context)
+configure_file(gmxapi/context/outputstream.h gmxapi/context)
 
 # Add to install target: copy the public API headers from the source directory
 # into the gmxapi header subdirectory.
@@ -64,11 +70,14 @@ target_include_directories(gmxapi PRIVATE
 # but listing all source files helps some code introspection tools work better.
 target_sources(
         gmxapi PRIVATE
+        boolean.cpp
         context.cpp
         gmxapi.cpp
         md-impl.h
         md.cpp
         mdmodule.cpp
+        mdsignals.cpp
+        outputstream.cpp
         session-impl.h
         session.cpp
         status.cpp
