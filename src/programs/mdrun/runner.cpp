@@ -1838,7 +1838,8 @@ void Mdrunner::addPullPotential(std::shared_ptr<gmx::IRestraintPotential> puller
 
     // When multiple restraints are used, it may be wasteful to register them separately.
     // Maybe instead register a Restraint Manager as a force provider.
-    restraintManager_->addSpec(std::move(puller), std::move(name));
+    restraintManager_->addToSpec(std::move(puller),
+                                 std::move(name));
 }
 
 Mdrunner &Mdrunner::operator=(Mdrunner &&) = default;
