@@ -9,6 +9,15 @@
 /*! \file
  * \brief Declare exception classes for external API.
  *
+ * The core gmxapi library should not throw exceptions to client code. If this happens, please
+ * report the bug.
+ *
+ * The gmxapi header library / template code may use exceptions descended from gmxapi::Exception to
+ * simplify client code.
+ *
+ * In general, errors, warnings, and peculiar circumstances are indicated with the return of empty
+ * objects that evaluate false under boolean conversion or with a gmxapi::Status object.
+ *
  * \ingroup gmxapi_exceptions
  */
 
@@ -119,6 +128,23 @@ class NotImplementedError : public BasicException<NotImplementedError>
 {
     public:
         using BasicException<NotImplementedError>::BasicException;
+};
+
+
+/*!
+ * \brief Key was not found in a look-up operation
+ *
+ * The client correctly performed a look-up operation, but the key provided by the client was not
+ * found. This is exception is not necessarily an error.
+ *
+ * \ingroup gmxapi_exeptions
+ */
+class KeyError : public BasicException<KeyError>
+{
+    public:
+        using BasicException<KeyError>::BasicException;
+
+
 };
 
 }      // end namespace gmxapi
