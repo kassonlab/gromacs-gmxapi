@@ -16,6 +16,7 @@ namespace gmxapi
 
 // Forward declaration
 class MpiContextManager; // Locally defined in session.cpp
+class ContextImpl; // locally defined in context.cpp
 
 /*!
  * \brief Implementation class for executing sessions.
@@ -71,6 +72,15 @@ class SessionImpl
                                                    std::unique_ptr<gmx::Mdrunner> runner);
 
         Status setRestraint(std::shared_ptr<gmxapi::MDModule> module);
+
+        /*! \internal
+         * \brief API implementation function to retrieve the current runner.
+         *
+         * \return non-owning pointer to the current runner or nullptr if none.
+         */
+        gmx::Mdrunner* getRunner();
+
+        int numRestraints{0};
     private:
         /*!
          * \brief Private constructor for use by create()
