@@ -210,9 +210,7 @@ class IRestraintPotential
         virtual void update(gmx::Vector v,
                             gmx::Vector v0,
                             double t) { (void)v; (void)v0; (void)t; };
-        // We give the definition here because we don't want plugins to have to link against libgromacs right now.
-        // But once we've had plugin restraints wrap themselves in a Restraint template, we can
-        // set update = 0
+
 
         virtual /*!
          * \brief Find out what sites this restraint is configured to act on.
