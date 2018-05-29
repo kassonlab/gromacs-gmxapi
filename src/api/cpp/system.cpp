@@ -130,6 +130,7 @@ std::shared_ptr<Session> System::Impl::launch(std::shared_ptr<Context> context)
     if (context != nullptr)
     {
         session = context->launch(*workflow_);
+        assert(session);
 
         for (auto&& module : spec_->getModules())
         {

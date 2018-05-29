@@ -9,6 +9,7 @@
 #include "gromacs/utility/init.h"
 #include "gmxapi/md/mdmodule.h"
 #include "gromacs/compat/make_unique.h"
+#include "gromacs/restraint/restraintpotential.h"
 
 #include "gmxapi/context.h"
 #include "gmxapi/status.h"
@@ -139,6 +140,16 @@ Status SessionImpl::setRestraint(std::shared_ptr<gmxapi::MDModule> module)
     return status;
 }
 
+gmx::Mdrunner *SessionImpl::getRunner()
+{
+    gmx::Mdrunner * runner{nullptr};
+    if (runner_)
+    {
+        runner = runner_.get();
+    }
+    return runner;
+}
+
 Session::Session(std::unique_ptr<SessionImpl>&& impl) noexcept :
     impl_{std::move(impl)}
 {
@@ -201,9 +212,26 @@ bool Session::isOpen() const noexcept
 Status setSessionRestraint(Session *session,
                            std::shared_ptr<gmxapi::MDModule> module)
 {
+    auto status = gmxapi::Status(false);
 
-    auto status = session->impl_->setRestraint(std::move(module));
+    if (session != nullptr && module != nullptr)
+    {
+        auto restraint = module->getRestraint();
+        if (restraint != nullptr)
+        {
+            restraint->bindSession(session);
+            session->impl_->numRestraints += 1;
+        }
+
+        assert(session->impl_);
+        auto status = session->impl_->setRestraint(std::move(module));
+    }
     return status;
+}
+
+SessionImpl *Session::getRaw() const noexcept
+{
+    return impl_.get();
 }
 
 std::shared_ptr<Session> launchSession(Context* context, const Workflow& work) noexcept
