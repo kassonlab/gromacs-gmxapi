@@ -23,7 +23,13 @@ template<class T> struct TypeMapMap<T>
 {
     std::map<std::string, std::function<void (T&)>> here;
 
+    // Get map using either rvalue or lvalue type tag.
     std::map<std::string, std::function<void (T&)>>* get(T&&)
+    {
+        return &here;
+    };
+
+    std::map<std::string, std::function<void (T&)>>* get(T&)
     {
         return &here;
     };
@@ -34,22 +40,24 @@ template<class T, class... Ts> struct TypeMapMap<T,Ts...>
     std::map<std::string, std::function<void (T&)>>  here;
     TypeMapMap<Ts...> tail;
 
-    // Something is wrong with this template or my understanding of templates.
-    // U is getting deduced as a reference, but I thought the signature of get would ensure U is deduced with references removed...
-    template<typename U>
-    std::map<std::string, std::function<void(typename std::remove_reference<U>::type &)>>* get(U&& data)
-    {
-        return tail.get(std::forward<typename std::remove_reference<U>::type>(data));
-    };
 
+    // Catch get() calls using rvalues as type tags.
     std::map<std::string, std::function<void (T&)>>* get(T&&)
     {
         return &here;
     };
 
+    // Make sure we catch lvalues parameters that would otherwise match the get(U&& data) template.
     std::map<std::string, std::function<void (T&)>>* get(T&)
     {
         return &here;
+    };
+
+    // Forward data as a type tag
+    template<typename U>
+    std::map<std::string, std::function<void(typename std::remove_reference<U>::type &)>>* get(U&& data)
+    {
+        return tail.get(data);
     };
 };
 
