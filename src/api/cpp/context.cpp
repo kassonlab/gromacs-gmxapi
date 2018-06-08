@@ -107,6 +107,18 @@ std::shared_ptr<Session> ContextImpl::launch(std::shared_ptr<ContextImpl> contex
     assert(status_ != nullptr);
     *status_ = false;
 
+    // Much of this implementation is not easily testable: we need tools to inspect simulation results and to modify
+    // simulation inputs.
+
+    // As default behavior, automatically extend trajectories from the checkpoint file.
+    // In the future, our API for objects used to initialize a simulation needs to address the fact that currently a
+    // microstate requires data from both the TPR and checkpoint file to be fully specified. Put another way, current
+    // GROMACS simulations can take a "configuration" as input that does not constitute a complete microstate in terms
+    // of hidden degrees of freedom (integrator/thermostat/barostat/PRNG state), but we want a clear notion of a
+    // microstate for gmxapi interfaces.
+    mdArgs_.emplace_back("-cpi");
+    mdArgs_.emplace_back("state.cpt");
+
     std::shared_ptr<Session> session{nullptr};
 
     // This implementation can only run one workflow at a time.
