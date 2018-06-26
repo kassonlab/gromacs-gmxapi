@@ -1758,6 +1758,7 @@ int Mdrunner::mdrunner()
     if (MASTER(cr) && Flags.test(appendFiles))
     {
         gmx_log_close(fplog);
+        fplog = nullptr;
     }
 
     rc = (int)gmx_get_stop_condition();
@@ -1771,6 +1772,16 @@ int Mdrunner::mdrunner()
         tMPI_Finalize();
     }
 #endif
+
+    // If log file is open, try to flush it before we return control to the API
+    if (MASTER(cr) && fplog != nullptr)
+    {
+        // If fplog is already closed, but has not been set to nullptr, we expect errno to be set, but we don't care,
+        // so we will make sure to leave it in the same state we found it.
+        const auto tempErrno = errno;
+        fflush(fplog);
+        errno = tempErrno;
+    }
 
     return rc;
 }
@@ -1824,6 +1835,7 @@ Mdrunner::~Mdrunner()
     if (cr != nullptr && MASTER(cr) && !(Flags.test(appendFiles)))
     {
         gmx_log_close(fplog);
+        fplog = nullptr;
     }
     sfree(cr);
 }

@@ -78,15 +78,6 @@ class DummyMDModule final : public gmx::IMDModule
         unsigned int force_called() { return forceprovider->force_called; };
 };
 
-TEST(ApiRunner, Build)
-{
-//    auto md = std::make_shared<gmxapi::MDEngine>();
-//    auto runnerBuilder = gmxapi::UninitializedMDRunnerState::Builder();
-//    runnerBuilder.mdEngine(md);
-//    runnerBuilder.tpxState(std::make_shared<gmx::TpxState>());
-//    auto runner = runnerBuilder.build();
-}
-
 TEST(ApiRunner, BasicMD)
 {
 
@@ -96,12 +87,59 @@ TEST(ApiRunner, BasicMD)
         std::shared_ptr<gmxapi::Context> context = gmxapi::defaultContext();
         ASSERT_TRUE(context != nullptr);
         ASSERT_TRUE(system != nullptr);
-        auto session = system->launch();
+        gmxapi::MDArgs args;
+        args.emplace_back("-nsteps");
+        args.emplace_back("10");
+        context->setMDArgs(args);
+        auto session = system->launch(context);
         ASSERT_TRUE(session != nullptr);
         gmxapi::Status status;
         ASSERT_NO_THROW(status = session->run());
 //        ASSERT_NO_THROW(session->run(1000));
         ASSERT_TRUE(status.success());
+        status = session->close();
+        ASSERT_TRUE(status.success());
+    }
+}
+
+TEST(ApiRunner, ContinuedMD)
+{
+    // Run a simulation, then extend the target number of steps and continue the simulation
+    auto system = gmxapi::fromTprFile(filename);
+
+    {
+        std::shared_ptr<gmxapi::Context> context = gmxapi::defaultContext();
+
+        {
+            ASSERT_TRUE(context != nullptr);
+            ASSERT_TRUE(system != nullptr);
+            gmxapi::MDArgs args;
+            args.emplace_back("-nsteps");
+            args.emplace_back("20");
+            context->setMDArgs(args);
+            auto session = system->launch(context);
+            ASSERT_TRUE(session != nullptr);
+            gmxapi::Status status;
+            ASSERT_NO_THROW(status = session->run());
+            ASSERT_TRUE(status.success());
+            ASSERT_NO_THROW(status = session->close());
+            ASSERT_TRUE(status.success());
+        }
+
+        // Reuse the context. Add MD parameters. Run a new session extending the previous trajectory.
+        {
+            gmxapi::MDArgs args;
+            args.emplace_back("-nsteps");
+            args.emplace_back("20");
+            context->setMDArgs(args);
+            auto session = system->launch(context);
+            ASSERT_TRUE(session != nullptr);
+            gmxapi::Status status;
+            ASSERT_NO_THROW(status = session->run());
+            ASSERT_TRUE(status.success());
+            ASSERT_NO_THROW(status = session->close());
+            ASSERT_TRUE(status.success());
+        }
     }
 }
 

@@ -13,6 +13,7 @@
 #include "programs/mdrun/runner.h"
 #include "gromacs/mdtypes/tpxstate.h"
 
+#include "gmxapi/exceptions.h"
 #include "gmxapi/gmxapi.h"
 #include "gmxapi/session.h"
 #include "gmxapi/status.h"
@@ -152,7 +153,10 @@ std::shared_ptr<Session> ContextImpl::launch(std::shared_ptr<ContextImpl> contex
 //            // If we can do something with the node, do it. If the spec is bad, error.
 //        }
     }
-    // \todo Make some note about the unsuccessful launch.
+    else
+    {
+        throw gmxapi::ProtocolError("Tried to launch a session while a session is still active.");
+    }
 
     if (session != nullptr)
     {
