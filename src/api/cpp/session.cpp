@@ -85,6 +85,9 @@ Status SessionImpl::status() const noexcept
 
 std::unique_ptr<Status> SessionImpl::close()
 {
+    // When the Session is closed, we need to know that the MD output has been finalized, which currently requires
+    // gmx::MDrunner::~MDrunner() to be called.
+    runner_.reset();
     std::unique_ptr<Status> status{nullptr};
     status.swap(status_);
     assert(status_ == nullptr);

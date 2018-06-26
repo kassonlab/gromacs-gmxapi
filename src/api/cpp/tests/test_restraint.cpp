@@ -55,36 +55,5 @@ class SimpleApiModule : public gmxapi::MDModule
         }
 };
 
-// This testing is currently performed elsewhere.
-//TEST(ApiRestraint, MdAndNullPlugin)
-//{
-//
-//    {
-//        // \todo move slow validation tests to a separate testing suite.
-//        // Automate evaluation of the results of these test.
-//        std::string waterfile = "water.tpr";
-//        auto system = gmxapi::fromTprFile(waterfile);
-//
-//        auto module = std::make_shared<SimpleApiModule>();
-//        assert(module != nullptr);
-//        auto status = system->setRestraint(module);
-//        ASSERT_TRUE(status.success());
-//
-//        std::shared_ptr<gmxapi::Context> context = gmxapi::defaultContext();
-//
-//        auto session = system->launch(context);
-//        ASSERT_TRUE(session->isOpen());
-//
-//        ASSERT_NO_THROW(status = session->run());
-////        ASSERT_TRUE(module->force_called() > 0);
-////        ASSERT_NO_THROW(session->run(1000));
-//        ASSERT_TRUE(status.success());
-//        ASSERT_TRUE(session->isOpen());
-//        status = session->close();
-//        ASSERT_TRUE(status.success());
-//    }
-//
-//}
-
 
 } // end anonymous namespace
