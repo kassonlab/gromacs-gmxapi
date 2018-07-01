@@ -18,6 +18,7 @@
 #include "gromacs/mdtypes/tpxstate.h"
 #include "gromacs/restraint/restraintpotential.h"
 #include "gromacs/utility/arrayref.h"
+#include "testingconfiguration.in.h"
 
 #include <gtest/gtest.h>
 
@@ -87,7 +88,7 @@ TEST(ApiRunner, BasicMD)
         std::shared_ptr<gmxapi::Context> context = gmxapi::defaultContext();
         ASSERT_TRUE(context != nullptr);
         ASSERT_TRUE(system != nullptr);
-        gmxapi::MDArgs args;
+        gmxapi::MDArgs args = gmxapi::testing::mdArgs;
         args.emplace_back("-nsteps");
         args.emplace_back("10");
         context->setMDArgs(args);
@@ -113,7 +114,7 @@ TEST(ApiRunner, ContinuedMD)
         {
             ASSERT_TRUE(context != nullptr);
             ASSERT_TRUE(system != nullptr);
-            gmxapi::MDArgs args;
+            gmxapi::MDArgs args = gmxapi::testing::mdArgs;
             args.emplace_back("-nsteps");
             args.emplace_back("20");
             context->setMDArgs(args);
@@ -128,7 +129,7 @@ TEST(ApiRunner, ContinuedMD)
 
         // Reuse the context. Add MD parameters. Run a new session extending the previous trajectory.
         {
-            gmxapi::MDArgs args;
+            gmxapi::MDArgs args = gmxapi::testing::mdArgs;
             args.emplace_back("-nsteps");
             args.emplace_back("20");
             context->setMDArgs(args);
