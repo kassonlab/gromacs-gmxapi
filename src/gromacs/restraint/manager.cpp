@@ -154,6 +154,15 @@ Manager::Manager() : impl_(gmx::compat::make_unique<ManagerImpl>()) {};
 
 Manager::~Manager() = default;
 
+void Manager::clear() noexcept
+{
+    auto new_impl = gmx::compat::make_unique<ManagerImpl>();
+    if (new_impl)
+    {
+        impl_.swap(new_impl);
+    }
+}
+
 std::shared_ptr<Manager> Manager::instance()
 {
     std::lock_guard<std::mutex> lock(initializationMutex_);
@@ -317,6 +326,11 @@ void Manager::addToSpec(std::shared_ptr<gmx::IRestraintPotential> puller,
 std::vector<std::shared_ptr<IRestraintPotential>> Manager::getSpec() const
 {
     return impl_->restraint_;
+}
+
+unsigned long Manager::countRestraints() noexcept
+{
+    return impl_->restraint_.size();
 }
 
 //void Manager::add(std::shared_ptr<gmx::IRestraintPotential> puller,

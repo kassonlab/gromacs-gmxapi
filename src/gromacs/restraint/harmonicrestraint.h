@@ -19,7 +19,7 @@ namespace gmx
  * The potential is a functional of selected pair distances
  * evaluated
  */
-class RouxRestraint : public IRestraintPotential
+class HarmonicRestraint : public IRestraintPotential
 {
 
 };
