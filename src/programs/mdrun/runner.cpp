@@ -1788,7 +1788,10 @@ int Mdrunner::mdrunner()
 
 Mdrunner::Mdrunner()
 {
+    // Assume ownership of the Manager singleton
     restraintManager_ = ::gmx::restraint::Manager::instance();
+    restraintManager_->clear();
+    assert(restraintManager_->countRestraints() == 0);
 
     cr = init_commrec();
     // oenv initialized by parse_commond_args
