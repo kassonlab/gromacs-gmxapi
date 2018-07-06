@@ -1790,8 +1790,6 @@ Mdrunner::Mdrunner()
 {
     // Assume ownership of the Manager singleton
     restraintManager_ = ::gmx::restraint::Manager::instance();
-    restraintManager_->clear();
-    assert(restraintManager_->countRestraints() == 0);
 
     cr = init_commrec();
     // oenv initialized by parse_commond_args
@@ -1832,6 +1830,12 @@ Mdrunner::Mdrunner()
 
 Mdrunner::~Mdrunner()
 {
+    // Clean up of the Manager singleton.
+    // This will end up getting called on every thread-MPI rank, which is okay, but unnecessary. There should probably
+    // be a simulation shutdown hook and this manager probably shouldn't be a singleton.
+    restraintManager_->clear();
+    assert(restraintManager_->countRestraints() == 0);
+
     /* Log file has to be closed in mdrunner if we are appending to it
        (fplog not set here) */
     // assert(cr != nullptr); // Todo: can we just initialize the cr in the constructor and keep it initialized?
