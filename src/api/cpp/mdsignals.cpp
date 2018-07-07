@@ -48,6 +48,7 @@ class StopSignal : public Signal::SignalImpl
         StopSignal(gmx::Mdrunner* runner, unsigned int numParticipants) : StopSignal(runner)
         {
             StopSignal::numParticipants_.store(numParticipants);
+            StopSignal::numCalls_.store(0);
         }
 
         void call() override
