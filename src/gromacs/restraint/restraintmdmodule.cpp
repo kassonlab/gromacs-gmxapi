@@ -135,14 +135,14 @@ void gmx::RestraintForceProvider::calculateForces(const t_commrec          *cr,
 
     // Kludgey logging for sanity checking until we can be passed a logging facility.
     // I suppose we could use MDOutputProvider for this, but we don't necessarily want it
-    // in a log file.
-    if (int(t*1000) % 100 == 0)
-    {
-        if ((cr->dd == nullptr) || MASTER(cr))
-        {
-            std::cout << "Evaluated restraint forces on sites at " << make_vec3<real>(r1[0], r1[1], r1[2]) << " and " << make_vec3<real>(r2[0], r2[1], r2[2]) << ": " << result.force << ". rank,time: " << cr->rank_pp_intranode << "," << t << "\n";
-        }
-    }
+    // in a log file, either.
+//    if (int(t*1000) % 100 == 0)
+//    {
+//        if ((cr->dd == nullptr) || MASTER(cr))
+//        {
+//            std::cout << "Evaluated restraint forces on sites at " << make_vec3<real>(r1[0], r1[1], r1[2]) << " and " << make_vec3<real>(r2[0], r2[1], r2[2]) << ": " << result.force << ". rank,time: " << cr->rank_pp_intranode << "," << t << "\n";
+//        }
+//    }
 }
 
 gmx::RestraintMDModuleImpl::~RestraintMDModuleImpl() = default;

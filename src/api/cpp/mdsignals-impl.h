@@ -46,6 +46,9 @@ class StopSignal : public Signal::SignalImpl
  * signal inputs to operations that take signals as input (like Mdrunner) and should allow
  * multiple subscribers. For additional signal processing, such as boolean operations,
  * additional operations should be inserted in a chain.
+ *
+ * A SignalManager should be created for each consumer (each gmx::Mdrunner) in a Session.
+ * This occurs in the SessionImpl::create() function.
  */
 class SignalManager
 {

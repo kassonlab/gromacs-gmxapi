@@ -160,7 +160,6 @@ Status SessionImpl::setRestraint(std::shared_ptr<gmxapi::MDModule> module)
             }
             else
             {
-                restraint->bindSession(sessionResources);
                 runner_->addPullPotential(restraint, module->name());
                 status = true;
             }
@@ -205,6 +204,13 @@ gmxapi::SessionResources *SessionImpl::createResources(std::shared_ptr<gmxapi::M
         auto resourcesInstance = gmx::compat::make_unique<SessionResources>(this, module->name());
         resources_.emplace(std::make_pair(module->name(), std::move(resourcesInstance)));
         resources = resources_.at(module->name()).get();
+        // This should be more dynamic.
+        getSignalManager()->addSignaller(module->name());
+        auto restraint = module->getRestraint();
+        if (restraint)
+        {
+            restraint->bindSession(resources);
+        }
     };
     return resources;
 }

@@ -73,6 +73,17 @@ class SessionImpl
          */
         Status run() noexcept;
 
+        /*!
+         * \brief Create a new implementation object and transfer ownership.
+         *
+         * \param context Shared ownership of a Context implementation instance.
+         * \param runner MD simulation operation to take ownership of.
+         * \return Ownership of new instance.
+         *
+         * A gmxapi::SignalManager is created with lifetime tied to the SessionImpl. The SignalManager
+         * is created with a non-owning pointer to runner. Signal issuers are registered with the
+         * manager when createResources() is called.
+         */
         static std::unique_ptr<SessionImpl> create(std::shared_ptr<ContextImpl> context,
                                                    std::unique_ptr<gmx::Mdrunner> runner);
 
@@ -96,6 +107,18 @@ class SessionImpl
          */
         gmxapi::SessionResources* getResources(const std::string& name) const noexcept;
 
+        /*!
+         * \brief Create SessionResources for a module and bind the module.
+         *
+         * Adds a new managed resources object to the Session for the uniquely named module.
+         * Allows the module to bind to the SignalManager and to the resources object.
+         *
+         * \param module
+         * \return non-owning pointer to created resources or nullptr for error.
+         *
+         * If the named module is already registered, calling createResources again is considered an
+         * error and nullptr is returned.
+         */
         gmxapi::SessionResources* createResources(std::shared_ptr<gmxapi::MDModule> module) noexcept;
 
         SignalManager* getSignalManager();
