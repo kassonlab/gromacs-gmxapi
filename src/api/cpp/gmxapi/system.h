@@ -118,11 +118,12 @@ class System final
          * are passed to gmxapi::setSessionRestraint().
          * 1. A gmx::IRestraintPotential is retrieved from the module.
          * 2. A unique, named SessionResources is created for the module and attached to the SessionImpl.
-         * 3. The SessionResources is passed to IRestraintPotential::bindSession(). Currently, the only thing
-         *    the restraint could do at this point is to save a copy of the pointer and later pass it to
-         *    gmxapi::getMdrunnerSignal().
-         * 4. The restraint is passed to gmx::Mdrunner::addPullPotential(), which adds the restraint to
-         *    the global gmx::restraint::Manager, which then needs to be `clear()`ed after the runner completes.
+         *     1. The module is added as a signaller to the session SignalManager with getSignalManager()->addSignaller(module->name())
+         *     2. The SessionResources is passed to IRestraintPotential::bindSession(). Currently, the only thing
+         *        the restraint could do at this point is to save a copy of the pointer and later pass it to
+         *        gmxapi::getMdrunnerSignal().
+         *     3. The restraint is passed to gmx::Mdrunner::addPullPotential(), which adds the restraint to
+         *        the global gmx::restraint::Manager, which then needs to be `clear()`ed after the runner completes.
          *
          * Shared ownership of the Session is returned to the caller of launch().
          *
