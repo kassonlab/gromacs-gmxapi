@@ -32,8 +32,6 @@ System::System() :
 
 std::shared_ptr<Session> System::launch(std::shared_ptr<Context> context)
 {
-//    (void)context;
-//    auto session = gmx::compat::make_unique<Session>();
     return impl_->launch(std::move(context));
 }
 

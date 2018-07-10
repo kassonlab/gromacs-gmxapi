@@ -24,7 +24,7 @@ enum class signals {
 } // end namespace md
 
 
-class Session;  // defined in gmxapi/session.h
+class SessionResources;  // reference gmxapi/session/resources.h
 
 /*!
  * \brief Proxy for signalling function objects.
@@ -36,8 +36,8 @@ class Signal
     public:
         class SignalImpl;
         explicit Signal(std::unique_ptr<SignalImpl>&& signal);
-        Signal(Signal&& signal);
-        Signal& operator=(Signal&& signal);
+        Signal(Signal&& signal) noexcept ;
+        Signal& operator=(Signal&& signal) noexcept ;
         ~Signal();
 
         void operator()();
@@ -49,10 +49,13 @@ class Signal
 /*!
  * \brief Get a function object that issues a signal to the currently active MD runner.
  *
- * \param session pointer to the active Session.
+ * \param resources pointer to the active Session resources.
  * \return Callable function object handle
+ *
+ * \throws gmxapi::NotImplementedError for unknown values of signal.
  */
-Signal getMdrunnerSignal(Session* session, md::signals signal);
+Signal getMdrunnerSignal(SessionResources *resources,
+                         md::signals signal);
 
 } // end namespace md
 

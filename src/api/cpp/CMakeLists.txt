@@ -27,6 +27,7 @@ configure_file(gmxapi/md/mdsignals.h gmxapi/md)
 
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/gmxapi/session)
 configure_file(gmxapi/session/outputstream.h gmxapi/session)
+configure_file(gmxapi/session/resources.h gmxapi/session)
 #configure_file(gmxapi/session/input.h gmxapi/session)
 
 # Add to install target: copy the public API headers from the source directory
@@ -77,9 +78,11 @@ target_sources(
         md.cpp
         mdmodule.cpp
         mdsignals.cpp
+        mdsignals-impl.h
         outputstream.cpp
         session-impl.h
         session.cpp
+        sessionresources-impl.h
         status.cpp
         system.cpp
         system-impl.h

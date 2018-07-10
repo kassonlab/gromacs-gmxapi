@@ -119,14 +119,19 @@ class Session
         SessionImpl* getRaw() const noexcept;
 
     private:
-        friend
-        Status setSessionRestraint(Session* session,
-                                   std::shared_ptr<MDModule> module);
-
-
         /// \brief opaque pointer to implementation
         std::unique_ptr<SessionImpl> impl_;
 };
+
+/*!
+ * \brief Set a uniquely identifiable restraint instance on the MD simulator.
+ *
+ * \param session
+ * \param module
+ * \return
+ */
+Status setSessionRestraint(Session *session,
+                           std::shared_ptr<gmxapi::MDModule> module);
 
 /*!
  * \brief Launch a workflow in the provided execution context.

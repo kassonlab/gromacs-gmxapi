@@ -53,11 +53,18 @@ using gmxapi::MDArgs;
  *
  * \todo Separate interface and implementation.
  */
-class ContextImpl
+class ContextImpl final : public std::enable_shared_from_this<ContextImpl>
 {
     public:
+        static std::shared_ptr<gmxapi::ContextImpl> create();
+
+        /*!
+         * \brief Default constructor.
+         *
+         * Don't use this. Use create() to get a shared pointer right away.
+         * Otherwise, shared_from_this() is potentially dangerous.
+         */
         ContextImpl();
-        virtual ~ContextImpl() = default;
 
         /*!
          * \brief Get a reference to the current status object.
@@ -74,7 +81,7 @@ class ContextImpl
          *
          * \todo This probably makes more sense as a free function.
          */
-        std::shared_ptr<Session> launch(std::shared_ptr<ContextImpl> context, const Workflow& work);
+        std::shared_ptr<Session> launch(const Workflow &work);
 
         /*!
          * \brief Status of the last operation in the local context.
@@ -97,12 +104,18 @@ ContextImpl::ContextImpl() :
     assert(session_.expired());
 }
 
+std::shared_ptr<gmxapi::ContextImpl> ContextImpl::create()
+{
+    auto impl = std::make_shared<gmxapi::ContextImpl>();
+    return impl;
+}
+
 std::shared_ptr<const Status> ContextImpl::status() const noexcept
 {
     return status_;
 }
 
-std::shared_ptr<Session> ContextImpl::launch(std::shared_ptr<ContextImpl> context, const Workflow &work)
+std::shared_ptr<Session> ContextImpl::launch(const Workflow &work)
 {
     // Assume failure until proven otherwise.
     assert(status_ != nullptr);
@@ -142,7 +155,7 @@ std::shared_ptr<Session> ContextImpl::launch(std::shared_ptr<ContextImpl> contex
         }
 
         {
-            auto newSession = SessionImpl::create(std::move(context),
+            auto newSession = SessionImpl::create(shared_from_this(),
                                                   std::move(newMdRunner));
             session = std::make_shared<Session>(std::move(newSession));
         }
@@ -170,14 +183,14 @@ std::shared_ptr<Session> ContextImpl::launch(std::shared_ptr<ContextImpl> contex
 
 // In 0.0.3 there is only one Context type
 Context::Context() :
-    impl_ {gmx::compat::make_unique<ContextImpl>()}
+    Context{std::make_shared<ContextImpl>()}
 {
     assert(impl_ != nullptr);
 }
 
 std::shared_ptr<Session> Context::launch(const Workflow& work)
 {
-    return impl_->launch(impl_, work);
+    return impl_->launch(work);
 }
 
 Context::Context(std::shared_ptr<ContextImpl> &&impl) :
