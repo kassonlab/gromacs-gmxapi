@@ -45,6 +45,7 @@ struct t_pbc;
 namespace gmxapi
 {
 class Session;
+class SessionResources;
 }
 
 namespace gmx
@@ -245,21 +246,19 @@ class IRestraintPotential
         std::vector<unsigned long int> sites() const = 0;
 
         /*!
-         * \brief Allow the Mdrunner for a simulation to interact with a module.
+         * \brief Allow Session-mediated interaction with other resources or workflow elements.
          *
-         * A module implements this method to receive a handle to the runner that will be
-         * invoking the integrator to which the module is/will be attached. This allows the module
-         * to perform custom binding routines that require knowledge of or access to the runner.
-         * Other hooks include the force provider initialization and the restraint force calculation
-         * during the ForceProviders execution, which occur at lower levels.
+         * \param resources temporary access to the resources provided by the session for additional configuration.
          *
-         * \param runner
+         * A module implements this method to receive a handle to resources configured for this particular workflow
+         * element.
+         *
+         * \internal
+         * \todo This should be more general than the RestraintPotential interface.
          */
-        virtual void bindSession(gmxapi::Session* session)
+        virtual void bindSession(gmxapi::SessionResources* resources)
         {
-            // Defined in header as a temporary stop-gap to keep this interface purely public.
-            // Default: no-op.
-            (void) session;
+            (void) resources;
         }
 };
 

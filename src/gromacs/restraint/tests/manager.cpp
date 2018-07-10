@@ -15,6 +15,9 @@ class DummyRestraint: public gmx::IRestraintPotential
                                          gmx::Vector r2,
                                          double t) override
         {
+            (void) r1;
+            (void) r2;
+            (void) t;
             return {};
         }
 
@@ -28,7 +31,7 @@ class DummyRestraint: public gmx::IRestraintPotential
             return std::vector<unsigned long>();
         }
 
-        void bindSession(gmxapi::Session *session) override
+        void bindSession(gmxapi::SessionResources *session) override
         {
             (void)session;
         }
