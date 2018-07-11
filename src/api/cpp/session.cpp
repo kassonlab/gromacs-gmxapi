@@ -5,19 +5,21 @@
 #include "gmxapi/session.h"
 
 #include <cassert>
-#include "gmxapi/exceptions.h"
+
+#include "gromacs/compat/make_unique.h"
+#include "gromacs/mdlib/sighandler.h"
+#include "gromacs/restraint/restraintpotential.h"
 #include "gromacs/utility/basenetwork.h"
 #include "gromacs/utility/init.h"
-#include "gmxapi/md/mdmodule.h"
-#include "gromacs/compat/make_unique.h"
-#include "gromacs/restraint/restraintpotential.h"
 
 #include "gmxapi/context.h"
+#include "gmxapi/exceptions.h"
 #include "gmxapi/status.h"
+#include "gmxapi/md/mdmodule.h"
 
+#include "mdsignals-impl.h"
 #include "session-impl.h"
 #include "sessionresources-impl.h"
-#include "mdsignals-impl.h"
 
 namespace gmxapi
 {
@@ -141,6 +143,9 @@ SessionImpl::SessionImpl(std::shared_ptr<ContextImpl> context,
     assert(context_ != nullptr);
     assert(mpiContextManager_ != nullptr);
     assert(runner_ != nullptr);
+    // For the libgromacs context, a session should explicitly reset global variables that could
+    // have been set in a previous simulation during the same process.
+    gmx_sighandler_reset();
 }
 
 Status SessionImpl::setRestraint(std::shared_ptr<gmxapi::MDModule> module)
