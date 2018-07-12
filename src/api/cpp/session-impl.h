@@ -121,6 +121,14 @@ class SessionImpl
          */
         gmxapi::SessionResources* createResources(std::shared_ptr<gmxapi::MDModule> module) noexcept;
 
+        /*!
+         * \brief Get a non-owning handle to the SignalManager for the active MD runner.
+         *
+         * Calling code is responsible for ensuring that the SessionImpl is kept alive and "open"
+         * while the returned SignalManager handle is in use.
+         *
+         * \return non-owning pointer if runner and signal manager are active, else nullptr.
+         */
         SignalManager* getSignalManager();
 
     private:

@@ -126,9 +126,6 @@ std::unique_ptr<SessionImpl> SessionImpl::create(std::shared_ptr<ContextImpl> co
                                                  std::unique_ptr<gmx::Mdrunner> runner)
 {
     std::unique_ptr<SessionImpl> impl{new SessionImpl(std::move(context), std::move(runner))};
-    assert(impl->runner_ != nullptr);
-    impl->signal_ = gmx::compat::make_unique<SignalManager>(impl->runner_.get());
-    assert(impl->signal_);
     return impl;
 }
 
@@ -137,12 +134,14 @@ SessionImpl::SessionImpl(std::shared_ptr<ContextImpl> context,
     status_{gmx::compat::make_unique<Status>(true)},
     context_{std::make_shared<Context>(std::move(context))},
     mpiContextManager_{gmx::compat::make_unique<MpiContextManager>()},
-    runner_{std::move(runner)}
+    runner_{std::move(runner)},
+    signal_{gmx::compat::make_unique<SignalManager>(runner_.get())}
 {
     assert(status_ != nullptr);
     assert(context_ != nullptr);
     assert(mpiContextManager_ != nullptr);
     assert(runner_ != nullptr);
+    assert(signal_ != nullptr);
     // For the libgromacs context, a session should explicitly reset global variables that could
     // have been set in a previous simulation during the same process.
     gmx_sighandler_reset();
@@ -222,7 +221,12 @@ gmxapi::SessionResources *SessionImpl::createResources(std::shared_ptr<gmxapi::M
 
 SignalManager *SessionImpl::getSignalManager()
 {
-    return signal_.get();
+    SignalManager* ptr{nullptr};
+    if (isOpen())
+    {
+        ptr = signal_.get();
+    }
+    return ptr;
 }
 
 Session::Session(std::unique_ptr<SessionImpl>&& impl) noexcept :
@@ -338,7 +342,10 @@ Signal SessionResources::getMdrunnerSignal(md::signals signal)
 
     // Get a signalling proxy for the caller.
     auto signalManager = sessionImpl_->getSignalManager();
-    assert(signalManager);
+    if(signalManager == nullptr)
+    {
+        throw gmxapi::ProtocolError("Client requested access to a signaller that is not available.");
+    };
     auto functor = signalManager->getSignal(name_, signal);
 
     return functor;
