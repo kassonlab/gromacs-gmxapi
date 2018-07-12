@@ -83,6 +83,14 @@ class BasicException : public Exception
             what_ = message;
         }
 
+        /*!
+         * \brief Get message.
+         *
+         * \return pointer to C string.
+         *
+         * It is the responsibility of the caller to keep the Exception object alive while the char
+         * pointer is in use.
+         */
         const char* what() const noexcept override
         {
             return what_.c_str();

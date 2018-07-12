@@ -2,6 +2,12 @@
 // Created by Eric Irrgang on 5/18/18.
 //
 
+/*! \file
+ * \brief Implementation details for MD signalling support.
+ *
+ * \ingroup gmxapi_md
+ */
+
 #include "gmxapi/md/mdsignals.h"
 
 #include <atomic>
@@ -49,6 +55,25 @@ void SignalManager::addSignaller(std::string name)
     called_[name].store(false);
 }
 
+/*!
+ * Implement the SignalImpl interface to provide a logical AND for managed MD signals.
+ *
+ * Tracks whether each registered input has issued a signal to this operation. When the
+ * final registered input issues `call()`, the LogicalAND issues `call()` on the output
+ * signal path.
+ *
+ * State is managed by the parent SignalManager. Client code should get a short-lived handle
+ * to a Signal wrapping this implementation object by calling SignalManager::getSignal()
+ * with the unique workflow operation name for the block of client code and a gmxapi::md::signals::STOP
+ * signal argument.
+ *
+ * Currently explicitly supports the MD stop signal only.
+ *
+ * Version gmxapi 0.0.6:  Also, all registered restraints
+ * are automatically in the set of ANDed inputs.
+ *
+ * \ingroup gmxapi_md
+ */
 class SignalManager::LogicalAND : public Signal::SignalImpl
 {
     public:
