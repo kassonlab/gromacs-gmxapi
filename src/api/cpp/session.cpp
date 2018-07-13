@@ -154,18 +154,23 @@ Status SessionImpl::setRestraint(std::shared_ptr<gmxapi::MDModule> module)
 
     if (module != nullptr)
     {
-        auto restraint = module->getRestraint();
-        if (restraint != nullptr)
+        const auto& name = module->name();
+        if (restraints_.find(name) == restraints_.end())
         {
-            auto sessionResources = createResources(module);
-            if (!sessionResources)
+            auto restraint = module->getRestraint();
+            if (restraint != nullptr)
             {
-                status = false;
-            }
-            else
-            {
-                runner_->addPullPotential(restraint, module->name());
-                status = true;
+                restraints_.emplace(std::make_pair(name, restraint));
+                auto sessionResources = createResources(module);
+                if (!sessionResources)
+                {
+                    status = false;
+                }
+                else
+                {
+                    runner_->addPullPotential(restraint, module->name());
+                    status = true;
+                }
             }
         }
     }
@@ -203,17 +208,23 @@ gmxapi::SessionResources *SessionImpl::createResources(std::shared_ptr<gmxapi::M
     // If not, create resources and return handle.
     // Return nullptr for any failure.
     gmxapi::SessionResources * resources{nullptr};
-    if (resources_.find(module->name()) == resources_.end())
+    const auto& name = module->name();
+    if (resources_.find(name) == resources_.end())
     {
-        auto resourcesInstance = gmx::compat::make_unique<SessionResources>(this, module->name());
-        resources_.emplace(std::make_pair(module->name(), std::move(resourcesInstance)));
-        resources = resources_.at(module->name()).get();
+        auto resourcesInstance = gmx::compat::make_unique<SessionResources>(this, name);
+        resources_.emplace(std::make_pair(name, std::move(resourcesInstance)));
+        resources = resources_.at(name).get();
         // This should be more dynamic.
-        getSignalManager()->addSignaller(module->name());
-        auto restraint = module->getRestraint();
-        if (restraint)
+        getSignalManager()->addSignaller(name);
+        std::shared_ptr<gmx::IRestraintPotential> restraint{nullptr};
+        if (restraints_.find(name) != restraints_.end())
         {
-            restraint->bindSession(resources);
+            auto restraintRef = restraints_.at(name);
+            auto restraint = restraintRef.lock();
+            if (restraint)
+            {
+                restraint->bindSession(resources);
+            }
         }
     };
     return resources;

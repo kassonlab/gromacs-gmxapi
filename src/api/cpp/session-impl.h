@@ -167,6 +167,8 @@ class SessionImpl
         std::unique_ptr<gmx::Mdrunner> runner_;
 
         std::unique_ptr<SignalManager> signal_;
+
+        std::map<std::string, std::weak_ptr<gmx::IRestraintPotential>> restraints_;
 };
 
 } //end namespace gmxapi
