@@ -50,8 +50,8 @@ class Signal
     public:
         class SignalImpl;
         explicit Signal(std::unique_ptr<SignalImpl>&& signal);
-        Signal(Signal&& signal) noexcept ;
-        Signal& operator=(Signal&& signal) noexcept ;
+        Signal(Signal&&) noexcept ;
+        Signal& operator=(Signal&&) noexcept ;
         ~Signal();
 
         void operator()();

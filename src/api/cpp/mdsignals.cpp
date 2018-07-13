@@ -25,8 +25,8 @@
 namespace gmxapi {
 
 
-Signal::Signal(Signal &&signal) noexcept = default;
-Signal &Signal::operator=(Signal &&signal) noexcept = default;
+Signal::Signal(Signal&&) noexcept = default;
+Signal &Signal::operator=(Signal&&) noexcept = default;
 
 Signal::Signal(std::unique_ptr<gmxapi::Signal::SignalImpl>&& impl) :
     impl_{std::move(impl)}
