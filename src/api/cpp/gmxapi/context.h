@@ -101,7 +101,9 @@ class Context
 
     private:
         /*!
-         * \brief Private implementation may be shared by several interfaces.
+         * \brief Private implementation
+         *
+         * May be shared by several interfaces. Various objects need to extend the life of the Context.
          */
         std::shared_ptr<ContextImpl> impl_;
 };

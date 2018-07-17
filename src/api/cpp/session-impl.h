@@ -9,13 +9,19 @@
  *
  * \ingroup gmxapi
  */
-#include <programs/mdrun/runner.h>
+
+#include <map>
+#include "programs/mdrun/runner.h"
+
+#include "gmxapi/session/resources.h"
 
 namespace gmxapi
 {
 
 // Forward declaration
 class MpiContextManager; // Locally defined in session.cpp
+class ContextImpl; // locally defined in context.cpp
+class SignalManager; // defined in mdsignals-impl.h
 
 /*!
  * \brief Implementation class for executing sessions.
@@ -67,10 +73,64 @@ class SessionImpl
          */
         Status run() noexcept;
 
+        /*!
+         * \brief Create a new implementation object and transfer ownership.
+         *
+         * \param context Shared ownership of a Context implementation instance.
+         * \param runner MD simulation operation to take ownership of.
+         * \return Ownership of new instance.
+         *
+         * A gmxapi::SignalManager is created with lifetime tied to the SessionImpl. The SignalManager
+         * is created with a non-owning pointer to runner. Signal issuers are registered with the
+         * manager when createResources() is called.
+         */
         static std::unique_ptr<SessionImpl> create(std::shared_ptr<ContextImpl> context,
                                                    std::unique_ptr<gmx::Mdrunner> runner);
 
         Status setRestraint(std::shared_ptr<gmxapi::MDModule> module);
+
+        /*! \internal
+         * \brief API implementation function to retrieve the current runner.
+         *
+         * \return non-owning pointer to the current runner or nullptr if none.
+         */
+        gmx::Mdrunner* getRunner();
+
+        /*!
+         * \brief Get a handle to the resources for the named session operation.
+         *
+         * \param name unique name of element in workflow
+         * \return temporary access to the resources.
+         *
+         * If called on a non-const Session, creates the resource if it does not yet exist. If called on a const Session,
+         * returns nullptr if the resource does not exist.
+         */
+        gmxapi::SessionResources* getResources(const std::string& name) const noexcept;
+
+        /*!
+         * \brief Create SessionResources for a module and bind the module.
+         *
+         * Adds a new managed resources object to the Session for the uniquely named module.
+         * Allows the module to bind to the SignalManager and to the resources object.
+         *
+         * \param module
+         * \return non-owning pointer to created resources or nullptr for error.
+         *
+         * If the named module is already registered, calling createResources again is considered an
+         * error and nullptr is returned.
+         */
+        gmxapi::SessionResources* createResources(std::shared_ptr<gmxapi::MDModule> module) noexcept;
+
+        /*!
+         * \brief Get a non-owning handle to the SignalManager for the active MD runner.
+         *
+         * Calling code is responsible for ensuring that the SessionImpl is kept alive and "open"
+         * while the returned SignalManager handle is in use.
+         *
+         * \return non-owning pointer if runner and signal manager are active, else nullptr.
+         */
+        SignalManager* getSignalManager();
+
     private:
         /*!
          * \brief Private constructor for use by create()
@@ -80,6 +140,11 @@ class SessionImpl
          */
         SessionImpl(std::shared_ptr<ContextImpl> context,
                     std::unique_ptr<gmx::Mdrunner> runner);
+
+        /*!
+         * \brief Manage session resources for named workflow elements.
+         */
+        std::map<std::string, std::unique_ptr<SessionResources>> resources_;
 
         /*!
          * \brief Current / most recent Status for the session.
@@ -100,6 +165,10 @@ class SessionImpl
         std::unique_ptr<MpiContextManager> mpiContextManager_;
 
         std::unique_ptr<gmx::Mdrunner> runner_;
+
+        std::unique_ptr<SignalManager> signal_;
+
+        std::map<std::string, std::weak_ptr<gmx::IRestraintPotential>> restraints_;
 };
 
 } //end namespace gmxapi

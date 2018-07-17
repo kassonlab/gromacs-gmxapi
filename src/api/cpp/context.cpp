@@ -13,6 +13,7 @@
 #include "programs/mdrun/runner.h"
 #include "gromacs/mdtypes/tpxstate.h"
 
+#include "gmxapi/exceptions.h"
 #include "gmxapi/gmxapi.h"
 #include "gmxapi/session.h"
 #include "gmxapi/status.h"
@@ -52,11 +53,18 @@ using gmxapi::MDArgs;
  *
  * \todo Separate interface and implementation.
  */
-class ContextImpl
+class ContextImpl final : public std::enable_shared_from_this<ContextImpl>
 {
     public:
+        static std::shared_ptr<gmxapi::ContextImpl> create();
+
+        /*!
+         * \brief Default constructor.
+         *
+         * Don't use this. Use create() to get a shared pointer right away.
+         * Otherwise, shared_from_this() is potentially dangerous.
+         */
         ContextImpl();
-        virtual ~ContextImpl() = default;
 
         /*!
          * \brief Get a reference to the current status object.
@@ -73,7 +81,7 @@ class ContextImpl
          *
          * \todo This probably makes more sense as a free function.
          */
-        std::shared_ptr<Session> launch(std::shared_ptr<ContextImpl> context, const Workflow& work);
+        std::shared_ptr<Session> launch(const Workflow &work);
 
         /*!
          * \brief Status of the last operation in the local context.
@@ -96,16 +104,34 @@ ContextImpl::ContextImpl() :
     assert(session_.expired());
 }
 
+std::shared_ptr<gmxapi::ContextImpl> ContextImpl::create()
+{
+    auto impl = std::make_shared<gmxapi::ContextImpl>();
+    return impl;
+}
+
 std::shared_ptr<const Status> ContextImpl::status() const noexcept
 {
     return status_;
 }
 
-std::shared_ptr<Session> ContextImpl::launch(std::shared_ptr<ContextImpl> context, const Workflow &work)
+std::shared_ptr<Session> ContextImpl::launch(const Workflow &work)
 {
     // Assume failure until proven otherwise.
     assert(status_ != nullptr);
     *status_ = false;
+
+    // Much of this implementation is not easily testable: we need tools to inspect simulation results and to modify
+    // simulation inputs.
+
+    // As default behavior, automatically extend trajectories from the checkpoint file.
+    // In the future, our API for objects used to initialize a simulation needs to address the fact that currently a
+    // microstate requires data from both the TPR and checkpoint file to be fully specified. Put another way, current
+    // GROMACS simulations can take a "configuration" as input that does not constitute a complete microstate in terms
+    // of hidden degrees of freedom (integrator/thermostat/barostat/PRNG state), but we want a clear notion of a
+    // microstate for gmxapi interfaces.
+    mdArgs_.emplace_back("-cpi");
+    mdArgs_.emplace_back("state.cpt");
 
     std::shared_ptr<Session> session{nullptr};
 
@@ -129,7 +155,7 @@ std::shared_ptr<Session> ContextImpl::launch(std::shared_ptr<ContextImpl> contex
         }
 
         {
-            auto newSession = SessionImpl::create(std::move(context),
+            auto newSession = SessionImpl::create(shared_from_this(),
                                                   std::move(newMdRunner));
             session = std::make_shared<Session>(std::move(newSession));
         }
@@ -140,7 +166,10 @@ std::shared_ptr<Session> ContextImpl::launch(std::shared_ptr<ContextImpl> contex
 //            // If we can do something with the node, do it. If the spec is bad, error.
 //        }
     }
-    // \todo Make some note about the unsuccessful launch.
+    else
+    {
+        throw gmxapi::ProtocolError("Tried to launch a session while a session is still active.");
+    }
 
     if (session != nullptr)
     {
@@ -154,14 +183,14 @@ std::shared_ptr<Session> ContextImpl::launch(std::shared_ptr<ContextImpl> contex
 
 // In 0.0.3 there is only one Context type
 Context::Context() :
-    impl_ {gmx::compat::make_unique<ContextImpl>()}
+    Context{std::make_shared<ContextImpl>()}
 {
     assert(impl_ != nullptr);
 }
 
 std::shared_ptr<Session> Context::launch(const Workflow& work)
 {
-    return impl_->launch(impl_, work);
+    return impl_->launch(work);
 }
 
 Context::Context(std::shared_ptr<ContextImpl> &&impl) :

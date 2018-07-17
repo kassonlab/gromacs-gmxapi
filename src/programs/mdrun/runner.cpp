@@ -131,6 +131,7 @@
 #include "membed.h"
 #include "repl_ex.h"
 #include "resource-division.h"
+#include "context.h"
 
 #ifdef GMX_FAHCORE
 #include "corewrap.h"
@@ -1669,21 +1670,38 @@ int Mdrunner::mdrunner()
                             Flags.test(ddBondCheck), fr->cginfo_mb);
         }
 
+        auto context = gmx::md::Context(*this);
         /* Now do whatever the user wants us to do (how flexible...) */
-        my_integrator(inputrec->eI) (fplog, cr, mdlog, nfile, fnm,
-                                     oenv, bVerbose,
-                                     nstglobalcomm,
-                                     vsite, constr,
-                                     nstepout, mdModules.outputProvider(),
-                                     inputrec, mtop,
-                                     fcd, state, &observablesHistory,
-                                     mdatoms, nrnb, wcycle, fr,
-                                     replExParams,
-                                     membed,
-                                     cpt_period, max_hours,
-                                     imdport,
-                                     Flags.to_ulong(),
-                                     walltime_accounting);
+        auto integrator = my_integrator(inputrec->eI);
+        integrator(fplog,
+                   cr,
+                   mdlog,
+                   nfile,
+                   fnm,
+                   oenv,
+                   bVerbose,
+                   nstglobalcomm,
+                   vsite,
+                   constr,
+                   nstepout,
+                   mdModules.outputProvider(),
+                   inputrec,
+                   mtop,
+                   fcd,
+                   state,
+                   &observablesHistory,
+                   mdatoms,
+                   nrnb,
+                   wcycle,
+                   fr,
+                   replExParams,
+                   membed,
+                   cpt_period,
+                   max_hours,
+                   imdport,
+                   Flags.to_ulong(),
+                   walltime_accounting,
+                   context);
 
         if (inputrec->bRot)
         {
@@ -1740,6 +1758,7 @@ int Mdrunner::mdrunner()
     if (MASTER(cr) && Flags.test(appendFiles))
     {
         gmx_log_close(fplog);
+        fplog = nullptr;
     }
 
     rc = (int)gmx_get_stop_condition();
@@ -1754,11 +1773,22 @@ int Mdrunner::mdrunner()
     }
 #endif
 
+    // If log file is open, try to flush it before we return control to the API
+    if (MASTER(cr) && fplog != nullptr)
+    {
+        // If fplog is already closed, but has not been set to nullptr, we expect errno to be set, but we don't care,
+        // so we will make sure to leave it in the same state we found it.
+        const auto tempErrno = errno;
+        fflush(fplog);
+        errno = tempErrno;
+    }
+
     return rc;
 }
 
 Mdrunner::Mdrunner()
 {
+    // Assume ownership of the Manager singleton
     restraintManager_ = ::gmx::restraint::Manager::instance();
 
     cr = init_commrec();
@@ -1800,12 +1830,19 @@ Mdrunner::Mdrunner()
 
 Mdrunner::~Mdrunner()
 {
+    // Clean up of the Manager singleton.
+    // This will end up getting called on every thread-MPI rank, which is okay, but unnecessary. There should probably
+    // be a simulation shutdown hook and this manager probably shouldn't be a singleton.
+    restraintManager_->clear();
+    assert(restraintManager_->countRestraints() == 0);
+
     /* Log file has to be closed in mdrunner if we are appending to it
        (fplog not set here) */
     // assert(cr != nullptr); // Todo: can we just initialize the cr in the constructor and keep it initialized?
     if (cr != nullptr && MASTER(cr) && !(Flags.test(appendFiles)))
     {
         gmx_log_close(fplog);
+        fplog = nullptr;
     }
     sfree(cr);
 }
@@ -1838,7 +1875,18 @@ void Mdrunner::addPullPotential(std::shared_ptr<gmx::IRestraintPotential> puller
 
     // When multiple restraints are used, it may be wasteful to register them separately.
     // Maybe instead register a Restraint Manager as a force provider.
-    restraintManager_->addSpec(std::move(puller), std::move(name));
+    restraintManager_->addToSpec(std::move(puller),
+                                 std::move(name));
+}
+
+void Mdrunner::declareFinalStep()
+{
+    simulationSignals_[eglsSTOPCOND].sig = true;
+}
+
+SimulationSignals *Mdrunner::signals() const
+{
+    return &simulationSignals_;
 }
 
 Mdrunner &Mdrunner::operator=(Mdrunner &&) = default;

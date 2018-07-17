@@ -32,8 +32,6 @@ System::System() :
 
 std::shared_ptr<Session> System::launch(std::shared_ptr<Context> context)
 {
-//    (void)context;
-//    auto session = gmx::compat::make_unique<Session>();
     return impl_->launch(std::move(context));
 }
 
@@ -130,6 +128,7 @@ std::shared_ptr<Session> System::Impl::launch(std::shared_ptr<Context> context)
     if (context != nullptr)
     {
         session = context->launch(*workflow_);
+        assert(session);
 
         for (auto&& module : spec_->getModules())
         {

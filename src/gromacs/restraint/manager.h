@@ -80,16 +80,37 @@ class Manager final
         Manager(Manager&&) = delete;
         Manager& operator=(Manager&&) = delete;
 
+        /*!
+         * \brief Clear registered restraints and reset the manager.
+         */
+        void clear() noexcept ;
+
+        /*!
+         * \brief Get the number of currently managed restraints.
+         *
+         * \return number of restraints.
+         *
+         * \internal
+         * Only considers the IRestraintPotential objects
+         */
+        unsigned long countRestraints() noexcept;
+
         /*! \brief Obtain the ability to create a restraint MDModule
          *
-         * First iteration allows one restraint.
+         * Though the name is reminiscent of the evolving idea of a work specification, the
+         * Spec here is just a list of restraint modules.
          *
          * \param puller shared ownership of a restraint potential interface.
          * \param name key by which to reference the restraint.
          */
-        void addSpec(std::shared_ptr<gmx::IRestraintPotential> puller,
-                     std::string name);
+        void addToSpec(std::shared_ptr<gmx::IRestraintPotential> puller,
+                       std::string name);
 
+        /*!
+         * \brief Get a copy of the current set of restraints to be applied.
+         *
+         * \return a copy of the list of restraint potentials.
+         */
         std::vector<std::shared_ptr<IRestraintPotential>> getSpec() const;
 
         void add(std::shared_ptr<LegacyPuller> puller, std::string name);

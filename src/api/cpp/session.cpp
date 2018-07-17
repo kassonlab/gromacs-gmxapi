@@ -5,15 +5,21 @@
 #include "gmxapi/session.h"
 
 #include <cassert>
+
+#include "gromacs/compat/make_unique.h"
+#include "gromacs/mdlib/sighandler.h"
+#include "gromacs/restraint/restraintpotential.h"
 #include "gromacs/utility/basenetwork.h"
 #include "gromacs/utility/init.h"
-#include "gmxapi/md/mdmodule.h"
-#include "gromacs/compat/make_unique.h"
 
 #include "gmxapi/context.h"
+#include "gmxapi/exceptions.h"
 #include "gmxapi/status.h"
+#include "gmxapi/md/mdmodule.h"
 
+#include "mdsignals-impl.h"
 #include "session-impl.h"
+#include "sessionresources-impl.h"
 
 namespace gmxapi
 {
@@ -24,8 +30,10 @@ class MpiContextManager
         MpiContextManager()
         {
             gmx::init(nullptr, nullptr);
+#ifdef GMX_MPI
 #if GMX_MPI
             assert(gmx_mpi_initialized());
+#endif
 #endif
         };
 
@@ -72,6 +80,14 @@ bool isOpen<Session>(const Session& object)
     return object.isOpen();
 }
 
+
+SignalManager::SignalManager(gmx::Mdrunner *runner) : runner_(runner)
+{
+
+}
+
+SignalManager::~SignalManager() = default;
+
 bool SessionImpl::isOpen() const noexcept
 {
     return status_ != nullptr;
@@ -84,6 +100,9 @@ Status SessionImpl::status() const noexcept
 
 std::unique_ptr<Status> SessionImpl::close()
 {
+    // When the Session is closed, we need to know that the MD output has been finalized, which currently requires
+    // gmx::MDrunner::~MDrunner() to be called.
+    runner_.reset();
     std::unique_ptr<Status> status{nullptr};
     status.swap(status_);
     assert(status_ == nullptr);
@@ -115,28 +134,110 @@ SessionImpl::SessionImpl(std::shared_ptr<ContextImpl> context,
     status_{gmx::compat::make_unique<Status>(true)},
     context_{std::make_shared<Context>(std::move(context))},
     mpiContextManager_{gmx::compat::make_unique<MpiContextManager>()},
-    runner_{std::move(runner)}
+    runner_{std::move(runner)},
+    signal_{gmx::compat::make_unique<SignalManager>(runner_.get())}
 {
     assert(status_ != nullptr);
     assert(context_ != nullptr);
     assert(mpiContextManager_ != nullptr);
     assert(runner_ != nullptr);
+    assert(signal_ != nullptr);
+    // For the libgromacs context, a session should explicitly reset global variables that could
+    // have been set in a previous simulation during the same process.
+    gmx_sighandler_reset();
 }
 
 Status SessionImpl::setRestraint(std::shared_ptr<gmxapi::MDModule> module)
 {
     assert(runner_ != nullptr);
     Status status{false};
+
     if (module != nullptr)
     {
-        auto restraint = module->getRestraint();
-        if (restraint != nullptr)
+        const auto& name = module->name();
+        if (restraints_.find(name) == restraints_.end())
         {
-            runner_->addPullPotential(restraint, module->name());
-            status = true;
+            auto restraint = module->getRestraint();
+            if (restraint != nullptr)
+            {
+                restraints_.emplace(std::make_pair(name, restraint));
+                auto sessionResources = createResources(module);
+                if (!sessionResources)
+                {
+                    status = false;
+                }
+                else
+                {
+                    runner_->addPullPotential(restraint, module->name());
+                    status = true;
+                }
+            }
         }
     }
     return status;
+}
+
+gmx::Mdrunner *SessionImpl::getRunner()
+{
+    gmx::Mdrunner * runner{nullptr};
+    if (runner_)
+    {
+        runner = runner_.get();
+    }
+    return runner;
+}
+
+gmxapi::SessionResources *SessionImpl::getResources(const std::string &name) const noexcept
+{
+    gmxapi::SessionResources * resources{nullptr};
+    try
+    {
+        resources = resources_.at(name).get();
+    }
+    catch (const std::out_of_range& e)
+    {
+        // named operation does not have any resources registered.
+    };
+
+    return resources;
+}
+
+gmxapi::SessionResources *SessionImpl::createResources(std::shared_ptr<gmxapi::MDModule> module) noexcept
+{
+    // check if resources already exist for this module
+    // If not, create resources and return handle.
+    // Return nullptr for any failure.
+    gmxapi::SessionResources * resources{nullptr};
+    const auto& name = module->name();
+    if (resources_.find(name) == resources_.end())
+    {
+        auto resourcesInstance = gmx::compat::make_unique<SessionResources>(this, name);
+        resources_.emplace(std::make_pair(name, std::move(resourcesInstance)));
+        resources = resources_.at(name).get();
+        // This should be more dynamic.
+        getSignalManager()->addSignaller(name);
+        std::shared_ptr<gmx::IRestraintPotential> restraint{nullptr};
+        if (restraints_.find(name) != restraints_.end())
+        {
+            auto restraintRef = restraints_.at(name);
+            auto restraint = restraintRef.lock();
+            if (restraint)
+            {
+                restraint->bindSession(resources);
+            }
+        }
+    };
+    return resources;
+}
+
+SignalManager *SessionImpl::getSignalManager()
+{
+    SignalManager* ptr{nullptr};
+    if (isOpen())
+    {
+        ptr = signal_.get();
+    }
+    return ptr;
 }
 
 Session::Session(std::unique_ptr<SessionImpl>&& impl) noexcept :
@@ -201,9 +302,21 @@ bool Session::isOpen() const noexcept
 Status setSessionRestraint(Session *session,
                            std::shared_ptr<gmxapi::MDModule> module)
 {
+    auto status = gmxapi::Status(false);
 
-    auto status = session->impl_->setRestraint(std::move(module));
+    if (session != nullptr && module != nullptr)
+    {
+        auto sessionImpl = session->getRaw();
+
+        assert(sessionImpl);
+        status = sessionImpl->setRestraint(std::move(module));
+    }
     return status;
+}
+
+SessionImpl *Session::getRaw() const noexcept
+{
+    return impl_.get();
 }
 
 std::shared_ptr<Session> launchSession(Context* context, const Workflow& work) noexcept
@@ -213,5 +326,40 @@ std::shared_ptr<Session> launchSession(Context* context, const Workflow& work) n
 }
 
 SessionImpl::~SessionImpl() = default;
+
+SessionResources::SessionResources(gmxapi::SessionImpl *session,
+                                   std::string name) :
+    sessionImpl_{session},
+    name_{std::move(name)}
+{
+}
+
+SessionResources::~SessionResources() = default;
+
+const std::string SessionResources::name() const
+{
+    return name_;
+}
+
+Signal SessionResources::getMdrunnerSignal(md::signals signal)
+{
+    //// while there is only one choice...
+//    if (signal == md::signals::STOP)
+//    {
+    if(signal != md::signals::STOP)
+    {
+        throw gmxapi::NotImplementedError("This signaller only handles stop signals.");
+    };
+
+    // Get a signalling proxy for the caller.
+    auto signalManager = sessionImpl_->getSignalManager();
+    if(signalManager == nullptr)
+    {
+        throw gmxapi::ProtocolError("Client requested access to a signaller that is not available.");
+    };
+    auto functor = signalManager->getSignal(name_, signal);
+
+    return functor;
+}
 
 } // end namespace gmxapi
