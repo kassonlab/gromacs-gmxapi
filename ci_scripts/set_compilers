@@ -1,0 +1,14 @@
+export MPICC=`which mpicc`
+export MPICXX=`which mpicxx`
+
+if [ ${CI_MPI} -eq 0 ] ; then
+    export CC=`which gcc-${GCC}`
+    export CXX=`which g++-${GCC}`
+else
+    export CC=$MPICC
+    export CXX=$MPICXX
+fi
+
+export CCACHE_COMPILERCHECK=content
+${CC} --version
+${CXX} --version
