@@ -82,7 +82,7 @@ before_script:
 script:
   # Note that as of gromacs-gmxapi 0.0.6, gmxapi ensemble management is not compatible with MPI-enabled gromacs-gmxapi
   - if [ "${CI_MPI}" = 0 ] ; then source $HOME/install/gromacs/bin/GMXRC && ./ci_scripts/pygmx_0_0_6.sh ; fi
-  - if [ "${CI_MPI}" = 0 ] ; then ./ci_scripts/sample_restraint.sh v0.0.6 ; fi
+  - if [ "${CI_MPI}" = 0 ] ; then ./ci_scripts/sample_restraint.sh release-0_0_6 ; fi
   - |
     if [ "${TRAVIS_BRANCH}" != master -a "${CI_MPI}" = 0 ]
         then source $HOME/install/gromacs/bin/GMXRC && ./ci_scripts/pygmx_devel.sh
