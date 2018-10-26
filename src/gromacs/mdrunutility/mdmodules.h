@@ -1,7 +1,7 @@
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
- * Copyright (c) 2016,2017, by the GROMACS development team, led by
+ * Copyright (c) 2016,2017,2018, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -146,12 +146,26 @@ class MDModules
         ForceProviders *initForceProviders();
 
         /*!
-         * \brief Add a module to the container
+         * \brief Add a module to the container.
          *
-         * Adding a module breaks some assumptions in the protocol of the other member
-         * functions. This should be removed to a builder class.
+         * An object may be added by a client to the bound MD Modules at run time.
+         * Both the client and the MDModules object may need to extend the life
+         * of the provided object. However, the MDModules container guarantees
+         * to extend the life of a provided object for as long as its consumers
+         * may attempt to use its the interfaces accessible through IMDModule
+         * methods.
          *
          * \param module implements some sort of modular functionality for MD.
+         *
+         * \note: There is not yet a way to add a IMDModule object between
+         * creation of the MDModules container and the execution of the various
+         * initialization protocols it supports.
+         *
+         * \internal
+         * Adding a module at an arbitrary point in the MDModules life breaks
+         * some assumptions in the protocol of the other member functions. If
+         * MDModules should not change after some point, we should move this
+         * to a builder class.
          */
         void add(std::shared_ptr<gmx::IMDModule> module);
 

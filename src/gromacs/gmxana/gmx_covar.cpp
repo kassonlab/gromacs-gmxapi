@@ -3,7 +3,7 @@
  *
  * Copyright (c) 1991-2000, University of Groningen, The Netherlands.
  * Copyright (c) 2001-2004, The GROMACS development team.
- * Copyright (c) 2013,2014,2015,2016,2017, by the GROMACS development team, led by
+ * Copyright (c) 2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -122,7 +122,7 @@ int gmx_covar(int argc, char *argv[])
     real              xj, *w_rls = nullptr;
     real              min, max, *axis;
     int               natoms, nat, nframes0, nframes, nlevels;
-    gmx_int64_t       ndim, i, j, k, l;
+    int64_t           ndim, i, j, k, l;
     int               WriteXref;
     const char       *fitfile, *trxfile, *ndxfile;
     const char       *eigvalfile, *eigvecfile, *averfile, *logfile;
@@ -131,7 +131,6 @@ int gmx_covar(int argc, char *argv[])
     int               d, dj, nfit;
     int              *index, *ifit;
     gmx_bool          bDiffMass1, bDiffMass2;
-    char              timebuf[STRLEN];
     t_rgb             rlo, rmi, rhi;
     real             *eigenvectors;
     gmx_output_env_t *oenv;
@@ -254,7 +253,7 @@ int gmx_covar(int argc, char *argv[])
     snew(x, natoms);
     snew(xav, natoms);
     ndim = natoms*DIM;
-    if (std::sqrt(static_cast<real>(GMX_INT64_MAX)) < static_cast<real>(ndim))
+    if (std::sqrt(static_cast<real>(INT64_MAX)) < static_cast<real>(ndim))
     {
         gmx_fatal(FARGS, "Number of degrees of freedoms to large for matrix.\n");
     }
@@ -590,8 +589,7 @@ int gmx_covar(int argc, char *argv[])
 
     out = gmx_ffopen(logfile, "w");
 
-    gmx_format_current_time(timebuf, STRLEN);
-    fprintf(out, "Covariance analysis log, written %s\n", timebuf);
+    fprintf(out, "Covariance analysis log, written %s\n", gmx_format_current_time().c_str());
 
     fprintf(out, "Program: %s\n", argv[0]);
     gmx_getcwd(str, STRLEN);

@@ -3,7 +3,7 @@
  *
  * Copyright (c) 1991-2000, University of Groningen, The Netherlands.
  * Copyright (c) 2001-2004, The GROMACS development team.
- * Copyright (c) 2013,2014,2015,2016,2017, by the GROMACS development team, led by
+ * Copyright (c) 2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -36,7 +36,8 @@
  */
 #include "gmxpre.h"
 
-#include <assert.h>
+#include <cassert>
+#include <cmath>
 
 #include <algorithm>
 
@@ -47,8 +48,8 @@
 #include "gromacs/math/units.h"
 #include "gromacs/math/vec.h"
 #include "gromacs/math/vecdump.h"
+#include "gromacs/mdlib/expanded.h"
 #include "gromacs/mdlib/gmx_omp_nthreads.h"
-#include "gromacs/mdlib/mdrun.h"
 #include "gromacs/mdlib/sim_util.h"
 #include "gromacs/mdlib/update.h"
 #include "gromacs/mdtypes/commrec.h"
@@ -63,7 +64,6 @@
 #include "gromacs/random/tabulatednormaldistribution.h"
 #include "gromacs/random/threefry.h"
 #include "gromacs/random/uniformrealdistribution.h"
-#include "gromacs/trajectory/energy.h"
 #include "gromacs/utility/cstringutil.h"
 #include "gromacs/utility/fatalerror.h"
 #include "gromacs/utility/smalloc.h"
@@ -102,8 +102,8 @@ static const double* sy_const[] = {
    };*/
 
 /* these integration routines are only referenced inside this file */
-static void NHC_trotter(t_grpopts *opts, int nvar, gmx_ekindata_t *ekind, real dtfull,
-                        double xi[], double vxi[], double scalefac[], real *veta, t_extmass *MassQ, gmx_bool bEkinAveVel)
+static void NHC_trotter(const t_grpopts *opts, int nvar, const gmx_ekindata_t *ekind, real dtfull,
+                        double xi[], double vxi[], double scalefac[], real *veta, const t_extmass *MassQ, gmx_bool bEkinAveVel)
 
 {
     /* general routine for both barostat and thermostat nose hoover chains */
@@ -237,8 +237,8 @@ static void NHC_trotter(t_grpopts *opts, int nvar, gmx_ekindata_t *ekind, real d
     sfree(GQ);
 }
 
-static void boxv_trotter(t_inputrec *ir, real *veta, real dt, tensor box,
-                         gmx_ekindata_t *ekind, tensor vir, real pcorr, t_extmass *MassQ)
+static void boxv_trotter(const t_inputrec *ir, real *veta, real dt, const tensor box,
+                         const gmx_ekindata_t *ekind, const tensor vir, real pcorr, const t_extmass *MassQ)
 {
 
     real   pscal;
@@ -272,7 +272,7 @@ static void boxv_trotter(t_inputrec *ir, real *veta, real dt, tensor box,
         gmx_fatal(FARGS, "Barostat is coupled to a T-group with no degrees of freedom\n");
     }
     /* alpha factor for phase space volume, then multiply by the ekin scaling factor.  */
-    alpha  = 1.0 + DIM/((double)ir->opts.nrdf[0]);
+    alpha  = 1.0 + DIM/(static_cast<double>(ir->opts.nrdf[0]));
     alpha *= ekind->tcstat[0].ekinscalef_nhc;
     msmul(ekind->ekin, alpha, ekinmod);
     /* for now, we use Elr = 0, because if you want to get it right, you
@@ -294,7 +294,7 @@ static void boxv_trotter(t_inputrec *ir, real *veta, real dt, tensor box,
  *
  */
 
-real calc_pres(int ePBC, int nwall, matrix box, tensor ekin, tensor vir,
+real calc_pres(int ePBC, int nwall, const matrix box, const tensor ekin, const tensor vir,
                tensor pres)
 {
     int  n, m;
@@ -362,9 +362,9 @@ static void calcParrinelloRahmanInvMass(const t_inputrec *ir, const matrix box,
     }
 }
 
-void parrinellorahman_pcoupl(FILE *fplog, gmx_int64_t step,
+void parrinellorahman_pcoupl(FILE *fplog, int64_t step,
                              const t_inputrec *ir, real dt, const tensor pres,
-                             tensor box, tensor box_rel, tensor boxv,
+                             const tensor box, tensor box_rel, tensor boxv,
                              tensor M, matrix mu, gmx_bool bFirstStep)
 {
     /* This doesn't do any coordinate updating. It just
@@ -486,7 +486,6 @@ void parrinellorahman_pcoupl(FILE *fplog, gmx_int64_t step,
             default:
                 gmx_fatal(FARGS, "Parrinello-Rahman pressure coupling type %s "
                           "not supported yet\n", EPCOUPLTYPETYPE(ir->epct));
-                break;
         }
 
         real maxchange = 0;
@@ -507,7 +506,7 @@ void parrinellorahman_pcoupl(FILE *fplog, gmx_int64_t step,
                    to its current size.
                  */
 
-                change = fabs(dt*boxv[d][n]/box[d][d]);
+                change = std::fabs(dt*boxv[d][n]/box[d][d]);
 
                 if (change > maxchange)
                 {
@@ -548,7 +547,7 @@ void parrinellorahman_pcoupl(FILE *fplog, gmx_int64_t step,
     mmul_ur0(invbox, t1, mu);
 }
 
-void berendsen_pcoupl(FILE *fplog, gmx_int64_t step,
+void berendsen_pcoupl(FILE *fplog, int64_t step,
                       const t_inputrec *ir, real dt,
                       const tensor pres, const matrix box,
                       const matrix force_vir, const matrix constraint_vir,
@@ -607,7 +606,7 @@ void berendsen_pcoupl(FILE *fplog, gmx_int64_t step,
         case epctSURFACETENSION:
             /* ir->ref_p[0/1] is the reference surface-tension times *
              * the number of surfaces                                */
-            if (ir->compress[ZZ][ZZ])
+            if (ir->compress[ZZ][ZZ] != 0.0f)
             {
                 p_corr_z = dt/ir->tau_p*(ir->ref_p[ZZ][ZZ] - pres[ZZ][ZZ]);
             }
@@ -627,7 +626,6 @@ void berendsen_pcoupl(FILE *fplog, gmx_int64_t step,
         default:
             gmx_fatal(FARGS, "Berendsen pressure coupling type %s not supported yet\n",
                       EPCOUPLTYPETYPE(ir->epct));
-            break;
     }
     /* To fullfill the orientation restrictions on triclinic boxes
      * we will set mu_yx, mu_zx and mu_zy to 0 and correct
@@ -690,7 +688,6 @@ void berendsen_pscale(const t_inputrec *ir, const matrix mu,
     int     nthreads gmx_unused;
 
 #ifndef __clang_analyzer__
-    // cppcheck-suppress unreadVariable
     nthreads = gmx_omp_nthreads_get(emntUpdate);
 #endif
 
@@ -781,10 +778,12 @@ void berendsen_tcoupl(const t_inputrec *ir, const gmx_ekindata_t *ekind, real dt
     }
 }
 
-void andersen_tcoupl(t_inputrec *ir, gmx_int64_t step,
-                     const t_commrec *cr, const t_mdatoms *md, t_state *state, real rate, const gmx_bool *randomize, const real *boltzfac)
+void andersen_tcoupl(const t_inputrec *ir, int64_t step,
+                     const t_commrec *cr, const t_mdatoms *md,
+                     gmx::ArrayRef<gmx::RVec> v,
+                     real rate, const gmx_bool *randomize, const real *boltzfac)
 {
-    const int                                 *gatindex = (DOMAINDECOMP(cr) ? cr->dd->gatindex : nullptr);
+    const int                                 *gatindex = (DOMAINDECOMP(cr) ? cr->dd->globalAtomIndices.data() : nullptr);
     int                                        i;
     int                                        gc = 0;
     gmx::ThreeFry2x64<0>                       rng(ir->andersen_seed, gmx::RandomDomain::Thermostat);
@@ -828,7 +827,7 @@ void andersen_tcoupl(t_inputrec *ir, gmx_int64_t step,
 
                 for (d = 0; d < DIM; d++)
                 {
-                    state->v[i][d] = scal*normalDist(rng);
+                    v[i][d] = scal*normalDist(rng);
                 }
             }
         }
@@ -836,8 +835,8 @@ void andersen_tcoupl(t_inputrec *ir, gmx_int64_t step,
 }
 
 
-void nosehoover_tcoupl(t_grpopts *opts, gmx_ekindata_t *ekind, real dt,
-                       double xi[], double vxi[], t_extmass *MassQ)
+void nosehoover_tcoupl(const t_grpopts *opts, const gmx_ekindata_t *ekind, real dt,
+                       double xi[], double vxi[], const t_extmass *MassQ)
 {
     int   i;
     real  reft, oldvxi;
@@ -853,21 +852,21 @@ void nosehoover_tcoupl(t_grpopts *opts, gmx_ekindata_t *ekind, real dt,
     }
 }
 
-void trotter_update(t_inputrec *ir, gmx_int64_t step, gmx_ekindata_t *ekind,
-                    gmx_enerdata_t *enerd, t_state *state,
-                    tensor vir, t_mdatoms *md,
-                    t_extmass *MassQ, int **trotter_seqlist, int trotter_seqno)
+void trotter_update(const t_inputrec *ir, int64_t step, gmx_ekindata_t *ekind,
+                    const gmx_enerdata_t *enerd, t_state *state,
+                    const tensor vir, const t_mdatoms *md,
+                    const t_extmass *MassQ, const int * const *trotter_seqlist, int trotter_seqno)
 {
 
-    int             n, i, d, ngtc, gc = 0, t;
-    t_grp_tcstat   *tcstat;
-    t_grpopts      *opts;
-    gmx_int64_t     step_eff;
-    real            dt;
-    double         *scalefac, dtc;
-    int            *trotter_seq;
-    rvec            sumv = {0, 0, 0};
-    gmx_bool        bCouple;
+    int              n, i, d, ngtc, gc = 0, t;
+    t_grp_tcstat    *tcstat;
+    const t_grpopts *opts;
+    int64_t          step_eff;
+    real             dt;
+    double          *scalefac, dtc;
+    const int       *trotter_seq;
+    rvec             sumv = {0, 0, 0};
+    gmx_bool         bCouple;
 
     if (trotter_seqno <= ettTSEQ2)
     {
@@ -913,6 +912,7 @@ void trotter_update(t_inputrec *ir, gmx_int64_t step, gmx_ekindata_t *ekind,
             dt = dtc;
         }
 
+        auto v = makeArrayRef(state->v);
         switch (trotter_seq[i])
         {
             case etrtBAROV:
@@ -952,14 +952,14 @@ void trotter_update(t_inputrec *ir, gmx_int64_t step, gmx_ekindata_t *ekind,
                     }
                     for (d = 0; d < DIM; d++)
                     {
-                        state->v[n][d] *= scalefac[gc];
+                        v[n][d] *= scalefac[gc];
                     }
 
                     if (debug)
                     {
                         for (d = 0; d < DIM; d++)
                         {
-                            sumv[d] += (state->v[n][d])/md->invmass[n];
+                            sumv[d] += (v[n][d])/md->invmass[n];
                         }
                     }
                 }
@@ -969,28 +969,15 @@ void trotter_update(t_inputrec *ir, gmx_int64_t step, gmx_ekindata_t *ekind,
         }
     }
     /* check for conserved momentum -- worth looking at this again eventually, but not working right now.*/
-#if 0
-    if (debug)
-    {
-        if (bFirstHalf)
-        {
-            for (d = 0; d < DIM; d++)
-            {
-                consk[d] = sumv[d]*exp((1 + 1.0/opts->nrdf[0])*((1.0/DIM)*log(det(state->box)/state->vol0)) + state->nosehoover_xi[0]);
-            }
-            fprintf(debug, "Conserved kappa: %15.8f %15.8f %15.8f\n", consk[0], consk[1], consk[2]);
-        }
-    }
-#endif
     sfree(scalefac);
 }
 
 
-extern void init_npt_masses(t_inputrec *ir, t_state *state, t_extmass *MassQ, gmx_bool bInit)
+extern void init_npt_masses(const t_inputrec *ir, t_state *state, t_extmass *MassQ, gmx_bool bInit)
 {
-    int           n, i, j, d, ngtc, nh;
-    t_grpopts    *opts;
-    real          reft, kT, ndj, nd;
+    int              n, i, j, d, ngtc, nh;
+    const t_grpopts *opts;
+    real             reft, kT, ndj, nd;
 
     opts    = &(ir->opts); /* just for ease of referencing */
     ngtc    = ir->opts.ngtc;
@@ -1081,12 +1068,12 @@ extern void init_npt_masses(t_inputrec *ir, t_state *state, t_extmass *MassQ, gm
     }
 }
 
-int **init_npt_vars(t_inputrec *ir, t_state *state, t_extmass *MassQ, gmx_bool bTrotter)
+int **init_npt_vars(const t_inputrec *ir, t_state *state, t_extmass *MassQ, gmx_bool bTrotter)
 {
-    int           i, j, nnhpres, nh;
-    t_grpopts    *opts;
-    real          bmass, qmass, reft, kT;
-    int         **trotter_seq;
+    int              i, j, nnhpres, nh;
+    const t_grpopts *opts;
+    real             bmass, qmass, reft, kT;
+    int            **trotter_seq;
 
     opts    = &(ir->opts); /* just for ease of referencing */
     nnhpres = state->nnhpres;
@@ -1281,7 +1268,7 @@ static real energyNoseHoover(const t_inputrec *ir, const t_state *state, const t
         const double *ivxi  = &state->nosehoover_vxi[i*nh];
         const double *iQinv = &(MassQ->Qinv[i*nh]);
 
-        int           nd    = ir->opts.nrdf[i];
+        int           nd    = static_cast<int>(ir->opts.nrdf[i]);
         real          reft  = std::max<real>(ir->opts.ref_t[i], 0);
         real          kT    = BOLTZ * reft;
 
@@ -1303,7 +1290,7 @@ static real energyNoseHoover(const t_inputrec *ir, const t_state *state, const t
                         }
                         else
                         {
-                            ndj = 1.0;
+                            ndj = 1;
                         }
                         energy += ndj*ixi[j]*kT;
                     }
@@ -1446,9 +1433,9 @@ real NPT_energy(const t_inputrec *ir, const t_state *state, const t_extmass *Mas
 }
 
 
-static real vrescale_sumnoises(real                            nn,
-                               gmx::ThreeFry2x64<>            *rng,
-                               gmx::NormalDistribution<real>  *normalDist)
+static real vrescale_sumnoises(real                           nn,
+                               gmx::ThreeFry2x64<>           *rng,
+                               gmx::NormalDistribution<real> *normalDist)
 {
 /*
  * Returns the sum of nn independent gaussian noises squared
@@ -1464,7 +1451,7 @@ static real vrescale_sumnoises(real                            nn,
         int  nn_int, i;
         real gauss;
 
-        nn_int = (int)(nn + 0.5);
+        nn_int = gmx::roundToInt(nn);
 
         if (nn - nn_int < -ndeg_tol || nn - nn_int > ndeg_tol)
         {
@@ -1488,7 +1475,7 @@ static real vrescale_sumnoises(real                            nn,
 }
 
 static real vrescale_resamplekin(real kk, real sigma, real ndeg, real taut,
-                                 gmx_int64_t step, gmx_int64_t seed)
+                                 int64_t step, int64_t seed)
 {
 /*
  * Generates a new value for the kinetic energy,
@@ -1523,13 +1510,13 @@ static real vrescale_resamplekin(real kk, real sigma, real ndeg, real taut,
     return ekin_new;
 }
 
-void vrescale_tcoupl(t_inputrec *ir, gmx_int64_t step,
+void vrescale_tcoupl(const t_inputrec *ir, int64_t step,
                      gmx_ekindata_t *ekind, real dt,
                      double therm_integral[])
 {
-    t_grpopts *opts;
-    int        i;
-    real       Ek, Ek_ref1, Ek_ref, Ek_new;
+    const t_grpopts *opts;
+    int              i;
+    real             Ek, Ek_ref1, Ek_ref, Ek_new;
 
     opts = &ir->opts;
 
@@ -1578,7 +1565,7 @@ void vrescale_tcoupl(t_inputrec *ir, gmx_int64_t step,
     }
 }
 
-void rescale_velocities(gmx_ekindata_t *ekind, t_mdatoms *mdatoms,
+void rescale_velocities(const gmx_ekindata_t *ekind, const t_mdatoms *mdatoms,
                         int start, int end, rvec v[])
 {
     t_grp_acc      *gstat;
@@ -1655,7 +1642,7 @@ void update_annealing_target_temp(t_inputrec *ir, real t, gmx_update_t *upd)
                 n     = static_cast<int>(t / pert);
                 thist = t - n*pert; /* modulo time */
                 /* Make sure rounding didn't get us outside the interval */
-                if (fabs(thist-pert) < GMX_REAL_EPS*100)
+                if (std::fabs(thist-pert) < GMX_REAL_EPS*100)
                 {
                     thist = 0;
                 }

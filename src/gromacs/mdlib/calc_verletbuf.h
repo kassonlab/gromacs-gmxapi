@@ -1,7 +1,7 @@
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
- * Copyright (c) 2012,2013,2014,2015,2017, by the GROMACS development team, led by
+ * Copyright (c) 2012,2013,2014,2015,2017,2018, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -36,21 +36,23 @@
 #ifndef GMX_MDLIB_CALC_VERLETBUF_H
 #define GMX_MDLIB_CALC_VERLETBUF_H
 
+#include "gromacs/utility/arrayref.h"
 #include "gromacs/utility/basedefinitions.h"
 #include "gromacs/utility/real.h"
 
 struct gmx_mtop_t;
 struct t_inputrec;
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+namespace gmx
+{
+class RangePartitioning;
+} // namespace gmx
 
-typedef struct
+struct VerletbufListSetup
 {
     int  cluster_size_i;  /* Cluster pair-list i-cluster size atom count */
     int  cluster_size_j;  /* Cluster pair-list j-cluster size atom count */
-} verletbuf_list_setup_t;
+};
 
 
 /* Add a 5% and 10% rlist buffer for simulations without dynamics (EM, NM, ...)
@@ -64,16 +66,23 @@ static const real verlet_buffer_ratio_nodynamics = 0.05;
 static const real verlet_buffer_ratio_NVE_T0     = 0.10;
 
 
-/* Sets the pair-list setup assumed for the current Gromacs configuration.
- * The setup with smallest cluster sizes is return, such that the Verlet
- * buffer size estimated with this setup will be conservative.
- * makeSimdPairList tells if to take into account SIMD, when supported.
- * makeGpuPairList tells to estimate for GPU kernels (makeSimdPairList is ignored with makeGpuPairList==true)
+/* Returns the pair-list setup for the given nbnxn kernel type.
  */
-void verletbuf_get_list_setup(bool                    makeSimdPairList,
-                              bool                    makeGpuPairList,
-                              verletbuf_list_setup_t *list_setup);
+VerletbufListSetup verletbufGetListSetup(int nbnxnKernelType);
 
+/* Enum for choosing the list type for verletbufGetSafeListSetup() */
+enum class ListSetupType
+{
+    CpuNoSimd,            /* CPU Plain-C 4x4 list */
+    CpuSimdWhenSupported, /* CPU 4xN list, where N=4 when the binary doesn't support SIMD or the smallest N supported by SIMD in this binary */
+    Gpu                   /* GPU (8x2x)8x4 list */
+};
+
+/* Returns the pair-list setup assumed for the current Gromacs configuration.
+ * The setup with smallest cluster sizes is returned, such that the Verlet
+ * buffer size estimated with this setup will be conservative.
+ */
+VerletbufListSetup verletbufGetSafeListSetup(ListSetupType listType);
 
 /* Calculate the non-bonded pair-list buffer size for the Verlet list
  * based on the particle masses, temperature, LJ types, charges
@@ -82,7 +91,8 @@ void verletbuf_get_list_setup(bool                    makeSimdPairList,
  * for normal pair-list buffering, are passed separately, as in some cases
  * we want an estimate for different values than the ones set in the inputrec.
  * If reference_temperature < 0, the maximum coupling temperature will be used.
- * The target is a maximum energy drift of ir->verletbuf_tol.
+ * The target is a maximum average energy jump per atom of
+ * ir->verletbuf_tol*nstlist*ir->delta_t over the lifetime of the list.
  * Returns the number of non-linear virtual sites. For these it's difficult
  * to determine their contribution to the drift exaclty, so we approximate.
  * Returns the pair-list cut-off.
@@ -92,9 +102,33 @@ void calc_verlet_buffer_size(const gmx_mtop_t *mtop, real boxvol,
                              int               nstlist,
                              int               list_lifetime,
                              real reference_temperature,
-                             const verletbuf_list_setup_t *list_setup,
+                             const VerletbufListSetup *list_setup,
                              int *n_nonlin_vsite,
                              real *rlist);
+
+/* Convenience type */
+using PartitioningPerMoltype = gmx::ArrayRef<const gmx::RangePartitioning>;
+
+/* Determines the mininum cell size based on atom displacement
+ *
+ * The value returned is the minimum size for which the chance that
+ * an atom or update group crosses to non nearest-neighbor cells
+ * is <= chanceRequested within ir.nstlist steps.
+ * Update groups are used when !updateGrouping.empty().
+ * Without T-coupling, SD or BD, we can not estimate atom displacements
+ * and fall back to the, crude, estimate of using the pairlist buffer size.
+ *
+ * Note: Like the Verlet buffer estimate, this estimate is based on
+ *       non-interacting atoms and constrained atom-pairs. Therefore for
+ *       any system that is not an ideal gas, this will be an overestimate.
+ *
+ * Note: This size increases (very slowly) with system size.
+ */
+real
+minCellSizeForAtomDisplacement(const gmx_mtop_t       &mtop,
+                               const t_inputrec       &ir,
+                               PartitioningPerMoltype  updateGrouping,
+                               real                    chanceRequested);
 
 /* Struct for unique atom type for calculating the energy drift.
  * The atom displacement depends on mass and constraints.
@@ -102,12 +136,12 @@ void calc_verlet_buffer_size(const gmx_mtop_t *mtop, real boxvol,
  */
 struct atom_nonbonded_kinetic_prop_t
 {
-    real     mass;     /* mass */
-    int      type;     /* type (used for LJ parameters) */
-    real     q;        /* charge */
-    gmx_bool bConstr;  /* constrained, if TRUE, use #DOF=2 iso 3 */
-    real     con_mass; /* mass of heaviest atom connected by constraints */
-    real     con_len;  /* constraint length to the heaviest atom */
+    real mass     = 0;     /* mass */
+    int  type     = 0;     /* type (used for LJ parameters) */
+    real q        = 0;     /* charge */
+    bool bConstr  = false; /* constrained, if TRUE, use #DOF=2 iso 3 */
+    real con_mass = 0;     /* mass of heaviest atom connected by constraints */
+    real con_len  = 0;     /* constraint length to the heaviest atom */
 };
 
 /* This function computes two components of the estimate of the variance
@@ -123,9 +157,5 @@ void constrained_atom_sigma2(real                                 kT_fac,
                              const atom_nonbonded_kinetic_prop_t *prop,
                              real                                *sigma2_2d,
                              real                                *sigma2_3d);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

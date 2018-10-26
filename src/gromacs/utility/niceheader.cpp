@@ -1,7 +1,7 @@
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
- * Copyright (c) 2017, by the GROMACS development team, led by
+ * Copyright (c) 2017,2018, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -55,7 +55,6 @@ void niceHeader(TextWriter *writer, const char *fn, char commentChar)
     int            uid;
     char           userbuf[256];
     char           hostbuf[256];
-    char           timebuf[256];
 
     /* Write a nice header for an output file */
     writer->writeLine(formatString("%c", commentChar));
@@ -64,12 +63,11 @@ void niceHeader(TextWriter *writer, const char *fn, char commentChar)
     uid  = gmx_getuid();
     gmx_getusername(userbuf, 256);
     gmx_gethostname(hostbuf, 256);
-    gmx_format_current_time(timebuf, 256);
 
     writer->writeLine(formatString("%c\tBy user: %s (%d)", commentChar, userbuf, uid));
     writer->writeLine(formatString("%c\tOn host: %s", commentChar, hostbuf));
-    writer->writeLine(formatString("%c\tAt date: %s", commentChar, timebuf));
+    writer->writeLine(formatString("%c\tAt date: %s", commentChar, gmx_format_current_time().c_str()));
     writer->writeLine(formatString("%c", commentChar));
 }
 
-} // namespace
+}  // namespace gmx

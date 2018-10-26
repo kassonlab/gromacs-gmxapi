@@ -1,7 +1,7 @@
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
- * Copyright (c) 2013,2014,2016,2017, by the GROMACS development team, led by
+ * Copyright (c) 2013,2014,2016,2017,2018, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -58,7 +58,6 @@ class TrjconvWithIndexGroupSubset : public gmx::test::CommandLineTestBase,
         void runTest(const char *fileName)
         {
             auto &cmdline = commandLine();
-            cmdline.append("trjconv");
 
             setInputFile("-s", "spc2.gro");
             setInputFile("-f", fileName);
@@ -105,4 +104,34 @@ INSTANTIATE_TEST_CASE_P(NoFatalErrorWhenWritingFrom,
                         TrjconvWithIndexGroupSubset,
                             ::testing::ValuesIn(trajectoryFileNames));
 
+class TrjconvWithoutTopologyFile : public gmx::test::CommandLineTestBase,
+                                   public ::testing::WithParamInterface<const char *>
+{
+    public:
+        void runTest(const char *fileName)
+        {
+            auto &cmdline = commandLine();
+
+            setInputFile("-f", fileName);
+            setInputFile("-n", "spc2.ndx");
+            setOutputFile("-o", "spc-traj.trr", gmx::test::NoTextMatch());
+
+            gmx::test::StdioTestHelper stdioHelper(&fileManager());
+            stdioHelper.redirectStringToStdin("SecondWaterMolecule\n");
+
+            /* As mentioned above, the tests don't check much besides
+             * that trjconv does not crash.
+             */
+            ASSERT_EQ(0, gmx_trjconv(cmdline.argc(), cmdline.argv()));
+        }
+};
+
+TEST_P(TrjconvWithoutTopologyFile, WithDifferentInputFormats)
+{
+    runTest(GetParam());
+}
+
+INSTANTIATE_TEST_CASE_P(NoFatalErrorWhenWritingFrom,
+                        TrjconvWithoutTopologyFile,
+                            ::testing::ValuesIn(trajectoryFileNames));
 } // namespace

@@ -1,3 +1,5 @@
+.. _gmx-cmdline:
+
 Command-line reference
 ======================
 
@@ -141,7 +143,10 @@ linked help for the new commands for a full description.
 This section lists only major changes; minor changes like additional/removed
 options or bug fixes are not typically included.
 
-Version 2017
+For more information about changed features, please check out the
+:ref:`release notes <release-notes>`.
+
+Version 2018
 ^^^^^^^^^^^^
 
 gmx trajectory

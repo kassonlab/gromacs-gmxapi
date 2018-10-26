@@ -3,7 +3,7 @@
  *
  * Copyright (c) 1991-2000, University of Groningen, The Netherlands.
  * Copyright (c) 2001-2004, The GROMACS development team.
- * Copyright (c) 2013,2014,2015,2016,2017, by the GROMACS development team, led by
+ * Copyright (c) 2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -59,7 +59,7 @@
 #include <extrae_user_events.h>
 #endif
 
-#if GMX_HWLOC
+#if GMX_USE_HWLOC
 #include <hwloc.h>
 #endif
 
@@ -107,12 +107,14 @@ void printCopyright(gmx::TextWriter *writer)
     static const char * const Contributors[] = {
         "Emile Apol",
         "Rossen Apostolov",
+        "Paul Bauer",
         "Herman J.C. Berendsen",
         "Par Bjelkmar",
         "Aldert van Buuren",
         "Rudi van Drunen",
         "Anton Feenstra",
         "Gerrit Groenhof",
+        "Aleksei Iupinov",
         "Christoph Junghans",
         "Anca Hamuraru",
         "Vincent Hindriksen",
@@ -122,6 +124,7 @@ void printCopyright(gmx::TextWriter *writer)
         "Carsten Kutzner",
         "Per Larsson",
         "Justin A. Lemkul",
+        "Viveca Lindahl",
         "Magnus Lundborg",
         "Pieter Meulenhoff",
         "Erik Marklund",
@@ -144,22 +147,9 @@ void printCopyright(gmx::TextWriter *writer)
         "the Royal Institute of Technology, Sweden.",
         "check out http://www.gromacs.org for more information."
     };
-    static const char * const LicenseText[] = {
-        "GROMACS is free software; you can redistribute it and/or modify it",
-        "under the terms of the GNU Lesser General Public License",
-        "as published by the Free Software Foundation; either version 2.1",
-        "of the License, or (at your option) any later version."
-    };
 
-#define NCONTRIBUTORS (int)asize(Contributors)
-#define NCR (int)asize(CopyrightText)
-
-// FAH has an exception permission from LGPL to allow digital signatures in Gromacs.
-#ifdef GMX_FAHCORE
-#define NLICENSE 0
-#else
-#define NLICENSE (int)asize(LicenseText)
-#endif
+#define NCONTRIBUTORS static_cast<int>(asize(Contributors))
+#define NCR static_cast<int>(asize(CopyrightText))
 
     // TODO a centering behaviour of TextWriter could be useful here
     writer->writeLine(formatCentered(78, "GROMACS is written by:"));
@@ -186,9 +176,16 @@ void printCopyright(gmx::TextWriter *writer)
         writer->writeLine(CopyrightText[i]);
     }
     writer->ensureEmptyLine();
-    for (int i = 0; i < NLICENSE; ++i)
+
+    // Folding At Home has different licence to allow digital
+    // signatures in GROMACS, so does not need to show the normal
+    // license statement.
+    if (!GMX_FAHCORE)
     {
-        writer->writeLine(LicenseText[i]);
+        writer->writeLine("GROMACS is free software; you can redistribute it and/or modify it");
+        writer->writeLine("under the terms of the GNU Lesser General Public License");
+        writer->writeLine("as published by the Free Software Foundation; either version 2.1");
+        writer->writeLine("of the License, or (at your option) any later version.");
     }
 }
 
@@ -236,7 +233,7 @@ void gmx_print_version_info(gmx::TextWriter *writer)
 #else
     writer->writeLine("Precision:          single");
 #endif
-    writer->writeLine(formatString("Memory model:       %u bit", (unsigned)(8*sizeof(void *))));
+    writer->writeLine(formatString("Memory model:       %u bit", static_cast<unsigned>(8*sizeof(void *))));
 
 #if GMX_THREAD_MPI
     writer->writeLine("MPI library:        thread_mpi");
@@ -254,16 +251,13 @@ void gmx_print_version_info(gmx::TextWriter *writer)
     writer->writeLine(formatString("SIMD instructions:  %s", GMX_SIMD_STRING));
     writer->writeLine(formatString("FFT library:        %s", getFftDescriptionString()));
     writer->writeLine(formatString("RDTSCP usage:       %s", HAVE_RDTSCP ? "enabled" : "disabled"));
-#ifdef GMX_USE_TNG
+#if GMX_USE_TNG
     writer->writeLine("TNG support:        enabled");
 #else
     writer->writeLine("TNG support:        disabled");
 #endif
-#if GMX_HWLOC
-    writer->writeLine(formatString("Hwloc support:      hwloc-%d.%d.%d",
-                                   HWLOC_API_VERSION>>16,
-                                   (HWLOC_API_VERSION>>8) & 0xFF,
-                                   HWLOC_API_VERSION & 0xFF));
+#if GMX_USE_HWLOC
+    writer->writeLine(formatString("Hwloc support:      hwloc-%s", HWLOC_VERSION));
 #else
     writer->writeLine("Hwloc support:      disabled");
 #endif
@@ -276,17 +270,9 @@ void gmx_print_version_info(gmx::TextWriter *writer)
 #endif
 
 
-    writer->writeLine(formatString("Built on:           %s", BUILD_TIME));
-    writer->writeLine(formatString("Built by:           %s", BUILD_USER));
-    writer->writeLine(formatString("Build OS/arch:      %s", BUILD_HOST));
-    writer->writeLine(formatString("Build CPU vendor:   %s", BUILD_CPU_VENDOR));
-    writer->writeLine(formatString("Build CPU brand:    %s", BUILD_CPU_BRAND));
-    writer->writeLine(formatString("Build CPU family:   %d   Model: %d   Stepping: %d",
-                                   BUILD_CPU_FAMILY, BUILD_CPU_MODEL, BUILD_CPU_STEPPING));
     /* TODO: The below strings can be quite long, so it would be nice to wrap
      * them. Can wait for later, as the master branch has ready code to do all
      * that. */
-    writer->writeLine(formatString("Build CPU features: %s", BUILD_CPU_FEATURES));
     writer->writeLine(formatString("C compiler:         %s", BUILD_C_COMPILER));
     writer->writeLine(formatString("C compiler flags:   %s", BUILD_CFLAGS));
     writer->writeLine(formatString("C++ compiler:       %s", BUILD_CXX_COMPILER));
@@ -302,12 +288,10 @@ void gmx_print_version_info(gmx::TextWriter *writer)
     writer->writeLine(formatString("OpenCL version:     %s", OPENCL_VERSION_STRING));
 #endif
 #if GMX_GPU == GMX_GPU_CUDA
-    writer->writeLine(formatString("CUDA compiler:      %s\n", CUDA_NVCC_COMPILER_INFO));
-    writer->writeLine(formatString("CUDA compiler flags:%s\n", CUDA_NVCC_COMPILER_FLAGS));
-    auto driverVersion = gmx::getCudaDriverVersion();
-    writer->writeLine(formatString("CUDA driver:        %d.%d\n", driverVersion.first, driverVersion.second));
-    auto runtimeVersion = gmx::getCudaRuntimeVersion();
-    writer->writeLine(formatString("CUDA runtime:       %d.%d\n", runtimeVersion.first, runtimeVersion.second));
+    writer->writeLine(formatString("CUDA compiler:      %s", CUDA_COMPILER_INFO));
+    writer->writeLine(formatString("CUDA compiler flags:%s", CUDA_COMPILER_FLAGS));
+    writer->writeLine("CUDA driver:        " + gmx::getCudaDriverVersionString());
+    writer->writeLine("CUDA runtime:       " + gmx::getCudaRuntimeVersionString());
 #endif
 }
 

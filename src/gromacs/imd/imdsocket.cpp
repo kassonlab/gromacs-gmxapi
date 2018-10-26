@@ -1,7 +1,7 @@
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
- * Copyright (c) 2014,2015,2016,2017, by the GROMACS development team, led by
+ * Copyright (c) 2014,2015,2016,2017,2018, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -52,8 +52,8 @@
 
 #include "config.h"
 
-#include <errno.h>
-#include <string.h>
+#include <cerrno>
+#include <cstring>
 
 #include "gromacs/imd/imd.h"
 #include "gromacs/utility/fatalerror.h"
@@ -81,7 +81,7 @@ extern int imdsock_winsockinit()
 /* On UNIX, we can use nice errors from errno.h */
 #include <unistd.h>
 #ifdef GMX_IMD
-#include <time.h>
+#include <ctime>
 
 #include <sys/select.h>
 #include <sys/time.h>
@@ -147,7 +147,7 @@ extern int imdsock_bind(IMDSocket *sock, int port)
     sock->address.sin_port   = htons(port);
 
     /* Try to bind to address and port ...*/
-    ret = bind(sock->sockfd, (struct sockaddr *) &sock->address, sizeof(sock->address));
+    ret = bind(sock->sockfd, reinterpret_cast<struct sockaddr *>(&sock->address), sizeof(sock->address));
 #else
     ret = -1;
 #endif
@@ -191,7 +191,7 @@ extern IMDSocket* imdsock_accept(IMDSocket *sock)
 
 
     length = sizeof(sock->address);
-    ret    = accept(sock->sockfd, (struct sockaddr *) &sock->address, &length);
+    ret    = accept(sock->sockfd, reinterpret_cast<struct sockaddr *>(&sock->address), &length);
 
     /* successful, redirect to distinct clientsocket */
     if (ret >= 0)
@@ -222,7 +222,7 @@ extern int imdsock_getport(IMDSocket *sock, int *port)
 
 
     len = sizeof(struct sockaddr_in);
-    ret = getsockname(sock->sockfd, (struct sockaddr *) &(sock->address), &len);
+    ret = getsockname(sock->sockfd, reinterpret_cast<struct sockaddr *>(&(sock->address)), &len);
     if (ret)
     {
         fprintf(stderr, "%s getsockname failed with error %d.\n", IMDstr, ret);

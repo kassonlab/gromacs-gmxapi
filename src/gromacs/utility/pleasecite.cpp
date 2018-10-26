@@ -3,7 +3,7 @@
  *
  * Copyright (c) 1991-2000, University of Groningen, The Netherlands.
  * Copyright (c) 2001-2004, The GROMACS development team.
- * Copyright (c) 2013,2014,2015,2016,2017, by the GROMACS development team, led by
+ * Copyright (c) 2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -41,6 +41,7 @@
 #include <cstring>
 
 #include "gromacs/utility/arraysize.h"
+#include "gromacs/utility/baseversion.h"
 #include "gromacs/utility/cstringutil.h"
 #include "gromacs/utility/smalloc.h"
 
@@ -376,8 +377,13 @@ void please_cite(FILE *fp, const char *key)
           "Quantifying Artifacts in Ewald Simulations of Inhomogeneous Systems with a Net Charge",
           "J. Chem. Theory Comput.",
           10, 2014, "381-393" },
+        { "Lindahl2014",
+          "V. Lindahl, J. Lidmar, B. Hess",
+          "Accelerated weight histogram method for exploring free energy landscapes",
+          "J. Chem. Phys.",
+          141, 2014, "044110" },
     };
-#define NSTR (int)asize(citedb)
+#define NSTR static_cast<int>(asize(citedb))
 
     int   index;
     char *author;
@@ -389,7 +395,7 @@ void please_cite(FILE *fp, const char *key)
         return;
     }
 
-    for (index = 0; (index < NSTR) && (strcmp(citedb[index].key, key) != 0); index++)
+    for (index = 0; index < NSTR && (strcmp(citedb[index].key, key) != 0); index++)
     {
         ;
     }
@@ -411,6 +417,31 @@ void please_cite(FILE *fp, const char *key)
     {
         fprintf(fp, "Entry %s not found in citation database\n", key);
     }
+    fprintf(fp, "-------- -------- --- Thank You --- -------- --------\n\n");
+    fflush(fp);
+}
+
+void
+writeSourceDoi(FILE *fp)
+{
+    /* Check if we are in release mode or not.
+     * TODO The check should properly target something else than
+     * the string being empty
+     */
+    if (strlen(gmxDOI()) == 0)
+    {
+        /* Not a release build, return without printing anything */
+        return;
+    }
+
+    const char *doiString = wrap_lines(gmxDOI(), LINE_WIDTH, 0, FALSE);
+
+    if (fp == nullptr)
+    {
+        return;
+    }
+    fprintf(fp, "\n++++ PLEASE CITE THE DOI FOR THIS VERSION OF GROMACS ++++\n");
+    fprintf(fp, "%s%s\n", "https://doi.org/", doiString);
     fprintf(fp, "-------- -------- --- Thank You --- -------- --------\n\n");
     fflush(fp);
 }

@@ -1,7 +1,7 @@
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
- * Copyright (c) 2016,2017, by the GROMACS development team, led by
+ * Copyright (c) 2016,2017,2018, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -56,33 +56,33 @@ class RefDataSerializer : public gmx::ISerializer
         {
         }
 
-        virtual bool reading() const { return false; }
+        bool reading() const override { return false; }
 
-        virtual void doBool(bool *value)
+        void doBool(bool *value) override
         {
             checker_.checkBoolean(*value, nullptr);
         }
-        virtual void doUChar(unsigned char *value)
+        void doUChar(unsigned char *value) override
         {
             checker_.checkUChar(*value, nullptr);
         }
-        virtual void doInt(int *value)
+        void doInt(int *value) override
         {
             checker_.checkInteger(*value, nullptr);
         }
-        virtual void doInt64(gmx_int64_t *value)
+        void doInt64(int64_t *value) override
         {
             checker_.checkInt64(*value, nullptr);
         }
-        virtual void doFloat(float *value)
+        void doFloat(float *value) override
         {
             checker_.checkFloat(*value, nullptr);
         }
-        virtual void doDouble(double *value)
+        void doDouble(double *value) override
         {
             checker_.checkDouble(*value, nullptr);
         }
-        virtual void doString(std::string *value)
+        void doString(std::string *value) override
         {
             checker_.checkString(*value, nullptr);
         }

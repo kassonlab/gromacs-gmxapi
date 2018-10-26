@@ -8,4 +8,4 @@ shift
 fi
 
 export CCACHE_CPP2=true
-exec "${CXX_LAUNCHER}" "${CMAKE_CXX_COMPILER}" "$@"
+exec "${_cxx_launcher}" "${CMAKE_CXX_COMPILER}" "$@"

@@ -32,14 +32,7 @@
 # To help us fund GROMACS development, we humbly ask that you cite
 # the research papers on the package. Check out http://www.gromacs.org.
 
-set(PULLING_SOURCES
-    pulling/pull_internal.h
-    pulling/pull.h
-    pulling/pull.cpp
-    pulling/pull_rotation.h
-    pulling/pull_rotation.cpp
-    pulling/pullutil.cpp
-    )
+file(GLOB PULLING_SOURCES *.cpp)
 set(LIBGROMACS_SOURCES ${LIBGROMACS_SOURCES} ${PULLING_SOURCES} PARENT_SCOPE)
 
 if (BUILD_TESTING)

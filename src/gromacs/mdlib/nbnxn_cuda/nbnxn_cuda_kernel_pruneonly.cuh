@@ -1,7 +1,7 @@
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
- * Copyright (c) 2016,2017, by the GROMACS development team, led by
+ * Copyright (c) 2016,2017,2018, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -110,6 +110,17 @@ __global__ void nbnxn_kernel_prune_cuda(const cu_atomdata_t atdat,
                                         int                 part)
 #ifdef FUNCTION_DECLARATION_ONLY
 ;     /* Only do function declaration, omit the function body. */
+
+// Add extern declarations so each translation unit understands that
+// there will be a definition provided.
+extern template
+__global__ void
+nbnxn_kernel_prune_cuda<true>(const cu_atomdata_t, const cu_nbparam_t,
+                              const cu_plist_t, int, int);
+extern template
+__global__ void
+nbnxn_kernel_prune_cuda<false>(const cu_atomdata_t, const cu_nbparam_t,
+                               const cu_plist_t, int, int);
 #else
 {
 
@@ -133,11 +144,26 @@ __global__ void nbnxn_kernel_prune_cuda(const cu_atomdata_t atdat,
     unsigned int bidx   = blockIdx.x;
     unsigned int widx   = (threadIdx.y * c_clSize) / warp_size; /* warp index */
 
-    /* shmem buffer for i x pre-loading */
-    extern __shared__  float4 xib[];
+    /*********************************************************************
+     * Set up shared memory pointers.
+     * sm_nextSlotPtr should always be updated to point to the "next slot",
+     * that is past the last point where data has been stored.
+     */
+    extern __shared__  char sm_dynamicShmem[];
+    char                   *sm_nextSlotPtr = sm_dynamicShmem;
+    static_assert(sizeof(char) == 1, "The shared memory offset calculation assumes that char is 1 byte");
+
+    /* shmem buffer for i x+q pre-loading */
+    float4 *xib     = (float4 *)sm_nextSlotPtr;
+    sm_nextSlotPtr += (c_numClPerSupercl * c_clSize * sizeof(*xib));
 
     /* shmem buffer for cj, for each warp separately */
-    int        *cjs    = ((int *)(xib + c_numClPerSupercl * c_clSize)) + tidxz * c_nbnxnGpuClusterpairSplit * c_nbnxnGpuJgroupSize;
+    int *cjs        = (int *)(sm_nextSlotPtr);
+    /* the cjs buffer's use expects a base pointer offset for pairs of warps in the j-concurrent execution */
+    cjs            += tidxz * c_nbnxnGpuClusterpairSplit * c_nbnxnGpuJgroupSize;
+    sm_nextSlotPtr += (NTHREAD_Z * c_nbnxnGpuClusterpairSplit * c_nbnxnGpuJgroupSize * sizeof(*cjs));
+    /*********************************************************************/
+
 
     nbnxn_sci_t nb_sci      = pl_sci[bidx*numParts + part]; /* my i super-cluster's index = sciOffset + current bidx * numParts + part */
     int         sci         = nb_sci.sci;                   /* super-cluster */
@@ -158,7 +184,10 @@ __global__ void nbnxn_kernel_prune_cuda(const cu_atomdata_t atdat,
     }
     __syncthreads();
 
-    /* loop over the j clusters = seen by any of the atoms in the current super-cluster */
+    /* loop over the j clusters = seen by any of the atoms in the current super-cluster;
+     * The loop stride NTHREAD_Z ensures that consecutive warps-pairs are assigned
+     * consecutive j4's entries.
+     */
     for (int j4 = cij4_start + tidxz; j4 < cij4_end; j4 += NTHREAD_Z)
     {
         unsigned int imaskFull, imaskCheck, imaskNew;
@@ -188,6 +217,7 @@ __global__ void nbnxn_kernel_prune_cuda(const cu_atomdata_t atdat,
             {
                 cjs[tidxi + tidxj * c_nbnxnGpuJgroupSize/c_splitClSize] = pl_cj4[j4].cj[tidxi];
             }
+            gmx_syncwarp(c_fullWarpMask);
 
 #pragma unroll 4
             for (int jm = 0; jm < c_nbnxnGpuJgroupSize; jm++)
@@ -219,13 +249,13 @@ __global__ void nbnxn_kernel_prune_cuda(const cu_atomdata_t atdat,
                             /* If _none_ of the atoms pairs are in rlistOuter
                                range, the bit corresponding to the current
                                cluster-pair in imask gets set to 0. */
-                            if (haveFreshList && !__any(r2 < rlistOuter_sq))
+                            if (haveFreshList && !gmx_any_sync(c_fullWarpMask, r2 < rlistOuter_sq))
                             {
                                 imaskFull &= ~mask_ji;
                             }
                             /* If any atom pair is within range, set the bit
                                corresponding to the current cluster-pair. */
-                            if (__any(r2 < rlistInner_sq))
+                            if (gmx_any_sync(c_fullWarpMask, r2 < rlistInner_sq))
                             {
                                 imaskNew |= mask_ji;
                             }
@@ -245,6 +275,8 @@ __global__ void nbnxn_kernel_prune_cuda(const cu_atomdata_t atdat,
             /* update the imask with only the pairs up to rlistInner */
             plist.cj4[j4].imei[widx].imask = imaskNew;
         }
+        // avoid shared memory WAR hazards between loop iterations
+        gmx_syncwarp(c_fullWarpMask);
     }
 }
 #endif /* FUNCTION_DECLARATION_ONLY */

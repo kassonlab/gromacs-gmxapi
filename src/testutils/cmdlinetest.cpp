@@ -1,7 +1,7 @@
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
- * Copyright (c) 2012,2013,2014,2015,2016,2017, by the GROMACS development team, led by
+ * Copyright (c) 2012,2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -78,7 +78,8 @@ namespace test
 class CommandLine::Impl
 {
     public:
-        Impl(const char *const cmdline[], size_t count);
+        Impl(const ArrayRef<const char *const> &cmdline);
+        Impl(const ArrayRef<const std::string> &cmdline);
         ~Impl();
 
         std::vector<char *>     args_;
@@ -86,23 +87,42 @@ class CommandLine::Impl
         int                     argc_;
 };
 
-CommandLine::Impl::Impl(const char *const cmdline[], size_t count)
+CommandLine::Impl::Impl(const ArrayRef<const char *const> &cmdline)
 {
-    args_.reserve(count);
-    argv_.reserve(count + 1);
-    argc_ = static_cast<int>(count);
-    for (size_t i = 0; i < count; ++i)
+    args_.reserve(cmdline.size());
+    argv_.reserve(cmdline.size() + 1);
+    argc_ = static_cast<int>(cmdline.size());
+    for (const auto &arg : cmdline)
     {
-        char *arg = strdup(cmdline[i]);
-        if (arg == nullptr)
+        char *argCopy = strdup(arg);
+        if (argCopy == nullptr)
         {
             throw std::bad_alloc();
         }
-        args_.push_back(arg);
-        argv_.push_back(arg);
+        args_.push_back(argCopy);
+        argv_.push_back(argCopy);
     }
     argv_.push_back(nullptr);
 }
+
+namespace
+{
+
+//! Helper function so we can delegate from the std::string constructor to the const char * one.
+std::vector<const char*> convertFromStringArrayRef(const ArrayRef<const std::string> &cmdline)
+{
+    std::vector<const char*> v(cmdline.size());
+    std::transform(cmdline.begin(), cmdline.end(), v.begin(), [](const std::string &s){return s.c_str(); });
+    return v;
+}
+
+}       // namespace
+
+// This makes a new temporary vector of views of the const char * in
+// the view passed in. Those are then deep copied in the constructor
+// delegated to.
+CommandLine::Impl::Impl(const ArrayRef<const std::string> &cmdline)
+    : Impl(convertFromStringArrayRef(cmdline)) {}
 
 CommandLine::Impl::~Impl()
 {
@@ -117,17 +137,22 @@ CommandLine::Impl::~Impl()
  */
 
 CommandLine::CommandLine()
-    : impl_(new Impl(nullptr, 0))
+    : impl_(new Impl(ArrayRef<const char *>{}))
 {
 }
 
-CommandLine::CommandLine(const ConstArrayRef<const char *> &cmdline)
-    : impl_(new Impl(cmdline.data(), cmdline.size()))
+CommandLine::CommandLine(const ArrayRef<const char *const> &cmdline)
+    : impl_(new Impl(cmdline))
+{
+}
+
+CommandLine::CommandLine(const ArrayRef<const std::string> &cmdline)
+    : impl_(new Impl(cmdline))
 {
 }
 
 CommandLine::CommandLine(const CommandLine &other)
-    : impl_(new Impl(other.argv(), other.argc()))
+    : impl_(new Impl(arrayRefFromArray(other.argv(), other.argc())))
 {
 }
 
@@ -135,9 +160,9 @@ CommandLine::~CommandLine()
 {
 }
 
-void CommandLine::initFromArray(const ConstArrayRef<const char *> &cmdline)
+void CommandLine::initFromArray(const ArrayRef<const char *const> &cmdline)
 {
-    impl_.reset(new Impl(cmdline.data(), cmdline.size()));
+    impl_.reset(new Impl(cmdline));
 }
 
 void CommandLine::append(const char *arg)
@@ -294,8 +319,8 @@ int CommandLineTestHelper::runModuleDirect(
 
 // static
 int CommandLineTestHelper::runModuleFactory(
-        std::function<std::unique_ptr<ICommandLineOptionsModule>()>  factory,
-        CommandLine                                                 *commandLine)
+        const std::function<std::unique_ptr<ICommandLineOptionsModule>()> &factory,
+        CommandLine                                                       *commandLine)
 {
     return runModuleDirect(factory(), commandLine);
 }
@@ -322,13 +347,13 @@ void CommandLineTestHelper::setInputFileContents(
 
 void CommandLineTestHelper::setInputFileContents(
         CommandLine *args, const char *option, const char *extension,
-        const ConstArrayRef<const char *> &contents)
+        const ArrayRef<const char *const> &contents)
 {
     GMX_ASSERT(extension[0] != '.', "Extension should not contain a dot");
     std::string fullFilename = impl_->fileManager_.getTemporaryFilePath(
                 formatString("%d.%s", args->argc(), extension));
     TextWriter  file(fullFilename);
-    ConstArrayRef<const char *>::const_iterator i;
+    ArrayRef<const char *const>::const_iterator i;
     for (i = contents.begin(); i != contents.end(); ++i)
     {
         file.writeLine(*i);
@@ -364,7 +389,6 @@ void CommandLineTestHelper::checkOutputFiles(TestReferenceChecker checker) const
     {
         TestReferenceChecker                 outputChecker(
                 checker.checkCompound("OutputFiles", "Files"));
-        Impl::OutputFileList::const_iterator outfile;
         for (const auto &outfile : impl_->outputFiles_)
         {
             TestReferenceChecker fileChecker(
@@ -411,6 +435,12 @@ void CommandLineTestBase::setInputFile(
     impl_->cmdline_.addOption(option, TestFileManager::getInputFilePath(filename));
 }
 
+void CommandLineTestBase::setInputFile(
+        const char *option, const std::string &filename)
+{
+    setInputFile(option, filename.c_str());
+}
+
 void CommandLineTestBase::setInputFileContents(
         const char *option, const char *extension, const std::string &contents)
 {
@@ -420,7 +450,7 @@ void CommandLineTestBase::setInputFileContents(
 
 void CommandLineTestBase::setInputFileContents(
         const char *option, const char *extension,
-        const ConstArrayRef<const char *> &contents)
+        const ArrayRef<const char *const> &contents)
 {
     impl_->helper_.setInputFileContents(&impl_->cmdline_, option, extension,
                                         contents);
@@ -453,6 +483,11 @@ TestFileManager &CommandLineTestBase::fileManager()
 TestReferenceChecker CommandLineTestBase::rootChecker()
 {
     return impl_->data_.rootChecker();
+}
+
+void CommandLineTestBase::setDefaultTolerance(const FloatingPointTolerance &tolerance)
+{
+    impl_->data_.rootChecker().setDefaultTolerance(tolerance);
 }
 
 void CommandLineTestBase::testWriteHelp(ICommandLineModule *module)

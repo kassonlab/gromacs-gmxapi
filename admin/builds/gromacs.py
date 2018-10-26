@@ -1,7 +1,7 @@
 #
 # This file is part of the GROMACS molecular simulation package.
 #
-# Copyright (c) 2015,2016,2017, by the GROMACS development team, led by
+# Copyright (c) 2015,2016,2017,2018, by the GROMACS development team, led by
 # Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
 # and including many others, as listed in the AUTHORS file in the
 # top-level source directory and at http://www.gromacs.org.
@@ -41,18 +41,21 @@ extra_options = {
     'static': Option.simple,
     'reference': Option.simple,
     'release': Option.simple,
+    'release-with-assert': Option.simple,
     'release-with-debug-info': Option.simple,
     'asan': Option.simple,
+    'tng' : Option.bool,
     'mkl': Option.simple,
     'fftpack': Option.simple,
     'double': Option.simple,
     'thread-mpi': Option.bool,
-    'gpu': Option.bool,
-    'opencl': Option.bool,
+    'clang_cuda': Option.bool,
     'openmp': Option.bool,
     'nranks': Option.string,
     'npme': Option.string,
-    'gpu_id': Option.string
+    'gpu_id': Option.string,
+    'hwloc': Option.bool,
+    'tng': Option.bool
 }
 
 extra_projects = [Project.REGRESSIONTESTS]
@@ -66,7 +69,9 @@ def do_build(context):
 
     if context.opts.reference:
         cmake_opts['CMAKE_BUILD_TYPE'] = 'Reference'
-    elif context.opts.release:
+    elif context.opts['release']:
+        cmake_opts['CMAKE_BUILD_TYPE'] = 'Release'
+    elif context.opts['release-with-assert']:
         cmake_opts['CMAKE_BUILD_TYPE'] = 'RelWithAssert'
     elif context.opts['release-with-debug-info']:
         cmake_opts['CMAKE_BUILD_TYPE'] = 'RelWithDebInfo'
@@ -88,15 +93,17 @@ def do_build(context):
         cmake_opts['GMX_SIMD'] = 'None'
     else:
         cmake_opts['GMX_SIMD'] = context.opts.simd
-    if context.opts.gpu or context.opts.opencl:
+    if context.opts.cuda or context.opts.opencl:
         cmake_opts['GMX_GPU'] = 'ON'
         if context.opts.opencl:
             context.env.set_env_var('CUDA_PATH', context.env.cuda_root)
-            context.env.set_env_var('AMDAPPSDKROOT', context.env.amdappsdk_root)
             cmake_opts['GMX_USE_OPENCL'] = 'ON'
         else:
             cmake_opts['CUDA_TOOLKIT_ROOT_DIR'] = context.env.cuda_root
-            cmake_opts['CUDA_HOST_COMPILER'] = context.env.cuda_host_compiler
+            if context.opts.clang_cuda:
+                cmake_opts['GMX_CLANG_CUDA'] = 'ON'
+            else:
+                cmake_opts['CUDA_HOST_COMPILER'] = context.env.cuda_host_compiler
     else:
         cmake_opts['GMX_GPU'] = 'OFF'
     if context.opts.thread_mpi is False:
@@ -105,6 +112,8 @@ def do_build(context):
         cmake_opts['GMX_MPI'] = 'ON'
     if context.opts.openmp is False:
         cmake_opts['GMX_OPENMP'] = 'OFF'
+    if context.opts.tng is False:
+        cmake_opts['GMX_USE_TNG'] = 'OFF'
 
     if context.opts.mkl:
         cmake_opts['GMX_FFT_LIBRARY'] = 'mkl'
@@ -113,9 +122,22 @@ def do_build(context):
     if context.opts.mkl or context.opts.atlas:
         cmake_opts['GMX_EXTERNAL_BLAS'] = 'ON'
         cmake_opts['GMX_EXTERNAL_LAPACK'] = 'ON'
+    if context.opts.clFFT:
+        cmake_opts['GMX_EXTERNAL_CLFFT'] = 'ON'
+        cmake_opts['clFFT_ROOT'] = context.env.clFFT_root
+
+    if context.opts.hwloc is False:
+        cmake_opts['GMX_HWLOC'] = 'OFF'
+
+    if context.opts.tng is False:
+        cmake_opts['GMX_USE_TNG'] = 'OFF'
 
     if context.opts.x11:
         cmake_opts['GMX_X11'] = 'ON'
+
+    if context.opts.tidy:
+        cmake_opts['GMX_CLANG_TIDY'] = 'ON'
+        cmake_opts['CLANG_TIDY'] = context.env.cxx_compiler.replace("clang++", "clang-tidy")
 
     # At least hwloc on Jenkins produces a massive amount of reports about
     # memory leaks, which cannot be reasonably suppressed because ASAN cannot
@@ -166,7 +188,7 @@ def do_build(context):
     else:
         context.build_target(target='tests', keep_going=True)
 
-        context.run_ctest(args=['--output-on-failure'], memcheck=context.opts.asan)
+        context.run_ctest(args=['--output-on-failure', '--label-exclude', 'SlowTest'], memcheck=context.opts.asan)
 
         context.build_target(target='install')
         # TODO: Consider what could be tested about the installed binaries.
@@ -188,6 +210,9 @@ def do_build(context):
                 # OpenMP should always work when compiled in! Currently not set if
                 # not explicitly set
                 cmd += ' -ntomp 2'
+
+            if context.opts.gpuhw == Gpuhw.NONE:
+                context.env.set_env_var('GMX_DISABLE_GPU_DETECTION', '1')
 
             if context.opts.gpu_id:
                 cmd += ' -gpu_id ' + context.opts.gpu_id

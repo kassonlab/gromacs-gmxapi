@@ -1,7 +1,7 @@
 #
 # This file is part of the GROMACS molecular simulation package.
 #
-# Copyright (c) 2009,2010,2011,2012,2013,2014,2015,2016,2017, by the GROMACS development team, led by
+# Copyright (c) 2009,2010,2011,2012,2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
 # Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
 # and including many others, as listed in the AUTHORS file in the
 # top-level source directory and at http://www.gromacs.org.
@@ -40,8 +40,13 @@ list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake ${CMAKE_CURRENT_
 
 project(Gromacs)
 
-# Use ccache if available.
-include(gmxCcache)
+# Use ccache if available to wrap CMAKE_C_COMPILER and CMAKE_CXX_COMPILER.
+# Reference https://ccache.samba.org
+option(ENABLE_CCACHE "Allow CMake to use ccache compiler wrappers if available." ON)
+# CMAKE_C_COMPILER and CMAKE_CXX_COMPILER do not change after this line.
+if(ENABLE_CCACHE)
+    include(gmxCcache)
+endif()
 
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
@@ -195,6 +200,9 @@ gmx_dependent_option(
     ON
     GMX_MPI)
 mark_as_advanced(GMX_MPI_IN_PLACE)
+
+option(GMX_MIMIC "Enable MiMiC QM/MM interface (CPMD is required)" OFF)
+
 option(GMX_FAHCORE "Build a library with mdrun functionality" OFF)
 mark_as_advanced(GMX_FAHCORE)
 
@@ -205,20 +213,17 @@ gmx_add_cache_dependency(GMX_COOL_QUOTES BOOL "NOT GMX_FAHCORE" OFF)
 option(GMX_USE_OPENCL "Enable OpenCL acceleration" OFF)
 
 # Decide on GPU settings based on user-settings and GPU/CUDA
-# detection.  GCC 4.8 requires CUDA 6.0 (but we choose 6.5 for the
-# preliminary C++11 support), icc 15 requires CUDA 7.0, and VS2015
-# requires CUDA 8.0
+# detection. VS2017 requires CUDA 9.0, for the other arch/compilers
+# rest we require CUDA 7.0 or later (including for clang-CUDA).
 if(MSVC)
-    set(REQUIRED_CUDA_VERSION 8.0)
-elseif(CMAKE_CXX_COMPILER_ID MATCHES "Intel")
-    set(REQUIRED_CUDA_VERSION 7.0)
+    set(REQUIRED_CUDA_VERSION 9.0)
 else()
-    set(REQUIRED_CUDA_VERSION 6.5)
+    set(REQUIRED_CUDA_VERSION 7.0)
 endif()
-set(REQUIRED_CUDA_COMPUTE_CAPABILITY 2.0)
+set(REQUIRED_CUDA_COMPUTE_CAPABILITY 3.0)
 
-# OpenCL required version: 1.1 or newer
-set(REQUIRED_OPENCL_MIN_VERSION 1.1)
+# OpenCL required version: 1.2 or newer
+set(REQUIRED_OPENCL_MIN_VERSION 1.2)
 
 if(NOT GMX_USE_OPENCL)
     # CUDA detection is done only if GMX_USE_OPENCL is OFF.
@@ -243,7 +248,7 @@ gmx_option_multichoice(
     GMX_SIMD
     "SIMD instruction set for CPU kernels and compiler optimization"
     "AUTO"
-    AUTO None SSE2 SSE4.1 AVX_128_FMA AVX_256 AVX2_256 AVX2_128 AVX_512 AVX_512_KNL MIC ARM_NEON ARM_NEON_ASIMD IBM_QPX IBM_VMX IBM_VSX Sparc64_HPC_ACE Reference)
+    AUTO None SSE2 SSE4.1 AVX_128_FMA AVX_256 AVX2_256 AVX2_128 AVX_512 AVX_512_KNL MIC ARM_NEON ARM_NEON_ASIMD IBM_VMX IBM_VSX Sparc64_HPC_ACE Reference)
 
 if(GMX_TARGET_MIC)
     set(GMX_FFT_LIBRARY_DEFAULT "mkl")
@@ -318,6 +323,12 @@ option(GMX_BUILD_SHARED_EXE
     ON)
 mark_as_advanced(GMX_BUILD_SHARED_EXE)
 
+option(GMX_PHYSICAL_VALIDATION
+       "Include physical validation tests in ctest environment. These can then be called using 'make check-phys' or
+       'make check-all'. Warning: Running the physical validation tests takes significantly more time than other tests!"
+       OFF)
+mark_as_advanced(GMX_PHYSICAL_VALIDATION)
+
 ######################################################################
 # Detect OpenMP support
 ######################################################################
@@ -336,6 +347,11 @@ gmx_c_flags()
 
 # This variable should be used for additional compiler flags which are not
 # generated in gmxCFlags nor are SIMD or MPI related.
+#
+# TODO These variables should be consolidated into
+# EXTRA_COMPILER_FLAGS so that we we don't perpetrate bugs where
+# things that work in C compilation (e.g. merging from old branches)
+# also work for C++ compilation.
 set(EXTRA_C_FLAGS "")
 set(EXTRA_CXX_FLAGS "")
 
@@ -410,6 +426,7 @@ find_library(HAVE_LIBM m)
 mark_as_advanced(HAVE_LIBM)
 check_library_exists(rt clock_gettime "" HAVE_CLOCK_GETTIME)
 check_library_exists(m feenableexcept "" HAVE_FEENABLEEXCEPT)
+check_library_exists(m fedisableexcept "" HAVE_FEDISABLEEXCEPT)
 
 include(TestSchedAffinity)
 test_sched_affinity(HAVE_SCHED_AFFINITY)
@@ -437,10 +454,6 @@ gmx_set_boolean(GMX_USE_NICE "HAVE_UNISTD_H AND HAVE_NICE")
 # GROMACS defaults or user settings will make sense. Also, any
 # toolchain-related reasons for choosing whether to detect various
 # things can be sorted out now, before the detection takes place.
-if(${CMAKE_SYSTEM_NAME} MATCHES BlueGene)
-    include(gmxManageBlueGene)
-endif()
-
 if(GMX_TARGET_FUJITSU_SPARC64)
     include(gmxManageFujitsuSparc64)
 endif()
@@ -450,6 +463,10 @@ endif()
 ########################################################################
 include(gmxManageMPI)
 
+########################################################################
+#Process MiMiC settings
+########################################################################
+include(gmxManageMimic)
 
 ########################################################################
 #Process shared/static library settings
@@ -484,32 +501,37 @@ include(gmxManageSharedLibraries)
 #    set(XML_LIBRARIES ${LIBXML2_LIBRARIES})
 #endif()
 
-if(DEFINED HWLOC_LIBRARIES)
-  set(Hwloc_FIND_QUIETLY TRUE)
-endif()
-find_package(Hwloc 1.5)
-if (HWLOC_FOUND)
-    if (HWLOC_LIBRARIES MATCHES ".a$")
-        set(_STATIC_HWLOC TRUE)
-    endif()
+gmx_option_trivalue(
+    GMX_HWLOC
+    "Use hwloc portable hardware locality library"
+    "AUTO")
 
-    gmx_check_if_changed(HWLOC_FOUND_CHANGED HWLOC_FOUND)
-    if (_STATIC_HWLOC AND HWLOC_FOUND_CHANGED)
-        message(STATUS "Static hwloc library found, will not attempt using it as it could lead to link-time errors. To use the detected library, manually set GMX_HWLOC=ON and you will likely have to pass appropriate linker flags too to satisfy the link-time dependencies of your hwloc library. Try \"pkg-config --libs --static hwloc\" for suggestions on what you will need.")
-        set(GMX_HWLOC_DEFAULT OFF)
-    else()
-        set(GMX_HWLOC_DEFAULT ON)
+if (GMX_HWLOC)
+    # Find quietly the second time.
+    if(DEFINED HWLOC_LIBRARIES)
+        set(Hwloc_FIND_QUIETLY TRUE)
     endif()
-else()
-    set(GMX_HWLOC_DEFAULT OFF)
-endif()
-option(GMX_HWLOC "Add support for hwloc Portable Hardware locality library" ${GMX_HWLOC_DEFAULT})
-if(GMX_HWLOC)
-    if(HWLOC_FOUND)
-        include_directories(SYSTEM ${HWLOC_INCLUDE_DIRS})
-        list(APPEND GMX_EXTRA_LIBRARIES ${HWLOC_LIBRARIES})
-    else()
-        message(FATAL_ERROR "Hwloc package support requested, but not found.")
+    find_package(Hwloc 1.5)
+
+    if (HWLOC_FOUND)
+        if (HWLOC_LIBRARIES MATCHES ".a$")
+            set(_STATIC_HWLOC TRUE)
+        endif()
+
+        gmx_check_if_changed(HWLOC_FOUND_CHANGED HWLOC_FOUND)
+        if (_STATIC_HWLOC AND HWLOC_FOUND_CHANGED)
+            message(STATUS "Static hwloc library found, will not attempt using it as it could lead to link-time errors. To use the detected library, manually set GMX_HWLOC=ON and you will likely have to pass appropriate linker flags too to satisfy the link-time dependencies of your hwloc library. Try \"pkg-config --libs --static hwloc\" for suggestions on what you will need.")
+            set(GMX_USE_HWLOC OFF)
+        else()
+            set(GMX_USE_HWLOC ON)
+        endif()
+
+        if (GMX_USE_HWLOC)
+            include_directories(SYSTEM ${HWLOC_INCLUDE_DIRS})
+            list(APPEND GMX_EXTRA_LIBRARIES ${HWLOC_LIBRARIES})
+        endif()
+    elseif(GMX_HWLOC_FORCE)
+        message(FATAL_ERROR "Hwloc package support required, but not found.")
     endif()
 endif()
 
@@ -553,8 +575,6 @@ endif()
 include(ThreadMPI)
 # Enable core threading facilities
 tmpi_enable_core("${CMAKE_SOURCE_DIR}/src/external/thread_mpi/include")
-# Enable tMPI C++ support
-tmpi_enable_cxx()
 if(GMX_THREAD_MPI)
     # enable MPI functions
     tmpi_enable()
@@ -572,6 +592,10 @@ include(gmxManageLmfit)
 if(GMX_GPU)
     # now that we have detected the dependencies, do the second configure pass
     gmx_gpu_setup()
+    if (GMX_CLANG_CUDA)
+        list(APPEND GMX_EXTRA_LIBRARIES ${GMX_CUDA_CLANG_LINK_LIBS})
+        link_directories("${GMX_CUDA_CLANG_LINK_DIRS}")
+    endif()
 endif()
 
 if(CYGWIN)
@@ -674,7 +698,15 @@ check_include_file_cxx(regex     HAVE_CXX11_REGEX)
 
 include(gmxTestXDR)
 gmx_test_xdr(GMX_SYSTEM_XDR)
-if(NOT GMX_SYSTEM_XDR)
+# Darwin has system XDR, but it uses a three-argument flavour of
+# xdrproc_t that it guarantees will still work if you pass the normal
+# two-argument xdr filters, but gcc 8 warns about the cast necessary
+# to do that, so it's simpler to just use our own XDR library.
+#
+# TODO It would be better to craft a cmake test which fails if such
+# XDR operations cause warnings, and succeeds otherwise, because it is
+# generally preferable to use system libraries where possible.
+if(NOT GMX_SYSTEM_XDR OR CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     set(GMX_INTERNAL_XDR 1)
 endif()
 
@@ -796,36 +828,28 @@ else()
     set(GMX_SHARED_LINKER_FLAGS ${GMX_SHARED_LINKER_FLAGS} ${OpenMP_SHARED_LINKER_FLAGS})
 endif()
 
+
 ########################################################################
 # Specify install locations
 ########################################################################
 # Use GNUInstallDirs to set paths on multiarch systems.
 include(GNUInstallDirs)
 
-# Customization for the installation tree paths.
-set(GMX_LIB_INSTALL_DIR ${CMAKE_INSTALL_LIBDIR} CACHE STRING
-    "Library installation directory (default: ${CMAKE_INSTALL_LIBDIR})")
-set(GMX_DATA_INSTALL_DIR gromacs CACHE STRING
-    "Data installation directory under share/ (default: gromacs)")
-mark_as_advanced(GMX_LIB_INSTALL_DIR GMX_DATA_INSTALL_DIR)
+set(GMX_INSTALL_DATASUBDIR "gromacs" CACHE STRING "Subdirectory for GROMACS data under CMAKE_INSTALL_DATADIR")
+mark_as_advanced(GMX_INSTALL_DATASUBDIR)
 
-# These variables are used internally to provide a central location for
-# customizing the install locations.
-set(LIB_INSTALL_DIR       ${GMX_LIB_INSTALL_DIR})
-set(BIN_INSTALL_DIR       bin)
-# This variable also gets written into config.h for use in finding the data
-# directories.
-set(DATA_INSTALL_DIR      share/${GMX_DATA_INSTALL_DIR})
-set(MAN_INSTALL_DIR       share/man)
+# Internal convenience so we do not have to join two path segments in the code
+set(GMX_INSTALL_GMXDATADIR ${CMAKE_INSTALL_DATADIR}/${GMX_INSTALL_DATASUBDIR})
+
 # If the nesting level wrt. the installation root is changed,
 # gromacs-config.cmake.cmakein needs to be adapted.
-set(CMAKE_INSTALL_DIR     share/cmake)
-# TODO: Make GMXRC adapt if this is changed
-set(PKGCONFIG_INSTALL_DIR ${LIB_INSTALL_DIR}/pkgconfig)
-set(OCL_INSTALL_DIR       ${DATA_INSTALL_DIR}/opencl)
-set(INCL_INSTALL_DIR      include)
+set(GMX_INSTALL_CMAKEDIR  ${CMAKE_INSTALL_DATAROOTDIR}/cmake)
 
-list(APPEND INSTALLED_HEADER_INCLUDE_DIRS ${INCL_INSTALL_DIR})
+# TODO: Make GMXRC adapt if this is changed
+set(GMX_INSTALL_PKGCONFIGDIR ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
+set(GMX_INSTALL_OCLDIR       ${GMX_INSTALL_GMXDATADIR}/opencl)
+
+list(APPEND INSTALLED_HEADER_INCLUDE_DIRS ${CMAKE_INSTALL_INCLUDEDIR})
 
 # Binary and library suffix options
 include(gmxManageSuffixes)
@@ -843,15 +867,20 @@ else()
     # install to lib/, then the installation RPATH works also in the build
     # tree.  This makes installation slightly faster (no need to rewrite the
     # RPATHs), and makes the binaries in the build tree relocatable.
-    if(GMX_LIB_INSTALL_DIR STREQUAL "lib")
+    if(CMAKE_INSTALL_LIBDIR STREQUAL "lib")
         set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
+        if(POLICY CMP0068)
+            cmake_policy(SET CMP0068 NEW) # From CMake-3.9
+            set(CMAKE_BUILD_WITH_INSTALL_NAME_DIR TRUE)
+        endif()
     endif()
     # Set the RPATH as relative to the executable location to make the
     # binaries relocatable.
-    if(NOT CMAKE_SYSTEM_NAME STREQUAL "Darwin") #Assume OS X >=10.5
-        set(CMAKE_INSTALL_RPATH "\$ORIGIN/../${GMX_LIB_INSTALL_DIR}")
+    if(CMAKE_SYSTEM_NAME STREQUAL "Darwin") #Assume OS X >=10.5
+        set(CMAKE_INSTALL_RPATH "@loader_path/../${CMAKE_INSTALL_LIBDIR}")
+        set(CMAKE_INSTALL_NAME_DIR ${CMAKE_INSTALL_RPATH})
     else()
-        set(CMAKE_INSTALL_RPATH "@executable_path/../${GMX_LIB_INSTALL_DIR}")
+        set(CMAKE_INSTALL_RPATH "\$ORIGIN/../${CMAKE_INSTALL_LIBDIR}")
     endif()
     set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
     set(CMAKE_MACOSX_RPATH 1)
@@ -859,7 +888,7 @@ endif()
 
 #COPYING file: Only necessary for binary distributions.
 #Simpler to always install.
-install(FILES COPYING DESTINATION ${DATA_INSTALL_DIR} COMPONENT data)
+install(FILES COPYING DESTINATION ${GMX_INSTALL_GMXDATADIR} COMPONENT data)
 
 if (GMX_BUILD_FOR_COVERAGE)
     # Code heavy with asserts makes conditional coverage close to useless metric,
@@ -907,4 +936,3 @@ ADD_CUSTOM_TARGET(uninstall
 ###########################
 set_directory_properties(PROPERTIES
             ADDITIONAL_MAKE_CLEAN_FILES "install_manifest.txt")
-

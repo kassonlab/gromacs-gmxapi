@@ -1,7 +1,7 @@
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
- * Copyright (c) 2016,2017, by the GROMACS development team, led by
+ * Copyright (c) 2016,2017,2018, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -111,7 +111,7 @@ class IKeyValueTreeTransformRules
         scopedTransform(const KeyValueTreePath &scope) = 0;
 
     protected:
-        ~IKeyValueTreeTransformRules();
+        virtual ~IKeyValueTreeTransformRules();
 };
 
 /*! \libinternal \brief
@@ -128,9 +128,9 @@ class KeyValueTreeTransformRulesScoped
             internal::KeyValueTreeTransformerImpl *impl,
             const KeyValueTreePath                &prefix);
         //! Supports returning the object from IKeyValueTreeTransformRules::scopedTransform().
-        KeyValueTreeTransformRulesScoped(KeyValueTreeTransformRulesScoped &&other);
+        KeyValueTreeTransformRulesScoped(KeyValueTreeTransformRulesScoped &&other) noexcept;
         //! Supports returning the object from IKeyValueTreeTransformRules::scopedTransform().
-        KeyValueTreeTransformRulesScoped &operator=(KeyValueTreeTransformRulesScoped &&other);
+        KeyValueTreeTransformRulesScoped &operator=(KeyValueTreeTransformRulesScoped &&other) noexcept;
         ~KeyValueTreeTransformRulesScoped();
 
         //! Returns the interface for adding rules to this scope.
@@ -346,8 +346,8 @@ class KeyValueTreeTransformRuleBuilder
         void setExpectedType(const std::type_index &type);
         void setToPath(const KeyValueTreePath &path);
         void setKeyMatchType(StringCompareType keyMatchType);
-        void addTransformToVariant(std::function<Variant(const Variant &)> transform);
-        void addTransformToObject(std::function<void(KeyValueTreeObjectBuilder *, const Variant &)> transform);
+        void addTransformToVariant(const std::function<Variant(const Variant &)> &transform);
+        void addTransformToObject(const std::function<void(KeyValueTreeObjectBuilder *, const Variant &)> &transform);
 
         class Data;
 

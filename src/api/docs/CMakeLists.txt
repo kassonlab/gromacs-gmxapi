@@ -1,7 +1,7 @@
 #
 # This file is part of the GROMACS molecular simulation package.
 #
-# Copyright (c) 2017, by the GROMACS development team, led by
+# Copyright (c) 2017,2018, by the GROMACS development team, led by
 # Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
 # and including many others, as listed in the AUTHORS file in the
 # top-level source directory and at http://www.gromacs.org.
@@ -32,18 +32,27 @@
 # To help us fund GROMACS development, we humbly ask that you cite
 # the research papers on the package. Check out http://www.gromacs.org.
 
+# Define targets gmxapi_cppdocs and gmxapi_cppdocs_dev when GMXAPI is enabled.
+# gmxapi_cppdocs produces public API documentation in docs/api-user
+# extracted from the gmxapi public headers files.
+# gmxapi_cppdocs_dev produces more complete documentation in docs/api-dev
+# with internal interfaces and implementation details.
 
-set(GMXAPI_USERDOC_OUTPUT ${CMAKE_BINARY_DIR}/docs/html/doxygen/api-user)
-set(GMXAPI_DEVDOC_OUTPUT ${CMAKE_BINARY_DIR}/docs/html/doxygen/api-dev)
+file(TO_NATIVE_PATH "${CMAKE_CURRENT_BINARY_DIR}/../../../docs/api-user" GMXAPI_USERDOC_OUTPUT)
+file(TO_NATIVE_PATH "${CMAKE_CURRENT_BINARY_DIR}/../../../docs/api-dev" GMXAPI_DEVDOC_OUTPUT)
+
 file(MAKE_DIRECTORY ${GMXAPI_USERDOC_OUTPUT})
 file(MAKE_DIRECTORY ${GMXAPI_DEVDOC_OUTPUT})
 
-#set(GMXAPI_WEBDOC_OUTPUT ${CMAKE_BINARY_DIR}/docs/html/gmxapi)
-get_target_property(GMXAPI_DEV gmxapi SOURCE_DIR)
-#string (REPLACE ";" " " GMXAPI_PUBLIC "${GMXAPI_PUBLIC_HEADERS}")
-set(GMXAPI_PUBLIC ${GMXAPI_DEV}/gmxapi)
+get_target_property(GMXAPI_SOURCE_DIR gmxapi SOURCE_DIR)
+get_target_property(GMXAPI_BINARY_DIR gmxapi BINARY_DIR)
 
+# Use GMXAPI_PUBLIC_HEADERS to populate source files. Make a local copy with
+# the list converted to a space-delimited string.
+string(REPLACE ";" " " GMXAPI_PUBLIC_HEADERS "${GMXAPI_PUBLIC_HEADERS}")
 configure_file(Doxyfile.in Doxyfile @ONLY)
+
+# Use all gmxapi sources to populate developer docs.
 configure_file(Doxyfile-dev.in Doxyfile-dev @ONLY)
 
 ################################
@@ -51,16 +60,16 @@ configure_file(Doxyfile-dev.in Doxyfile-dev @ONLY)
 ################################
 find_package(Doxygen)
 if (DOXYGEN_FOUND)
-	add_custom_target( gmxapi_cppdocs
-	    COMMAND ${DOXYGEN_EXECUTABLE} Doxyfile
-	    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-	    COMMENT "Generating API user documentation for ${GMXAPI_USERDOC_OUTPUT}"
-	    VERBATIM )
-	add_custom_target( gmxapi_cppdocs_dev
-	    COMMAND ${DOXYGEN_EXECUTABLE} Doxyfile-dev
-	    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-	    COMMENT "Generating API developer documentation for ${GMXAPI_DEVDOC_OUTPUT}"
-	    VERBATIM )
-else (DOXYGEN_FOUND)
-    message("Doxygen need to be installed to generate the doxygen documentation")
-endif (DOXYGEN_FOUND)
+    add_custom_target( gmxapi_cppdocs
+        COMMAND ${DOXYGEN_EXECUTABLE} Doxyfile
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+        COMMENT "Generating API user documentation for ${GMXAPI_USERDOC_OUTPUT}"
+        VERBATIM )
+    add_custom_target( gmxapi_cppdocs_dev
+        COMMAND ${DOXYGEN_EXECUTABLE} Doxyfile-dev
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+        COMMENT "Generating API developer documentation for ${GMXAPI_DEVDOC_OUTPUT}"
+        VERBATIM )
+else ()
+    message(STATUS "Doxygen not found. Documentation targets will not be generated.")
+endif ()

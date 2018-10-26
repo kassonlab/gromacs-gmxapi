@@ -1,7 +1,7 @@
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
- * Copyright (c) 2016,2017, by the GROMACS development team, led by
+ * Copyright (c) 2016,2017,2018, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -72,7 +72,6 @@ typedef std::tuple<Matrix3x3, IVec, SparseComplexGridValuesInput, double, double
 class PmeSolveTest : public ::testing::TestWithParam<SolveInputParameters>
 {
     public:
-        //! Default constructor
         PmeSolveTest() = default;
 
         //! The test
@@ -109,41 +108,75 @@ class PmeSolveTest : public ::testing::TestWithParam<SolveInputParameters>
                     GMX_THROW(InternalError("Unknown PME solver"));
             }
 
-            TestReferenceData                     refData;
-            const std::map<CodePath, std::string> modesToTest = {{CodePath::CPU, "CPU"}};
-            for (const auto &mode : modesToTest)
+            TestReferenceData refData;
+            for (const auto &context : getPmeTestEnv()->getHardwareContexts())
             {
+                CodePath   codePath       = context->getCodePath();
+                const bool supportedInput = pmeSupportsInputForMode(&inputRec, codePath);
+                if (!supportedInput)
+                {
+                    /* Testing the failure for the unsupported input */
+                    EXPECT_THROW(pmeInitEmpty(&inputRec, codePath, nullptr, nullptr, box, ewaldCoeff_q, ewaldCoeff_lj), NotImplementedError);
+                    continue;
+                }
+
                 std::map<GridOrdering, std::string> gridOrderingsToTest = {{GridOrdering::YZX, "YZX"}};
+                if (codePath == CodePath::GPU)
+                {
+                    gridOrderingsToTest[GridOrdering::XYZ] = "XYZ";
+                }
                 for (const auto &gridOrdering : gridOrderingsToTest)
                 {
                     for (bool computeEnergyAndVirial : {false, true})
                     {
                         /* Describing the test*/
-                        SCOPED_TRACE(formatString("Testing solving (%s, %s, %s energy/virial) with %s for PME grid size %d %d %d, Ewald coefficients %g %g",
+                        SCOPED_TRACE(formatString("Testing solving (%s, %s, %s energy/virial) with %s %sfor PME grid size %d %d %d, Ewald coefficients %g %g",
                                                   (method == PmeSolveAlgorithm::LennardJones) ? "Lennard-Jones" : "Coulomb",
-                                                  gridOrdering.second.c_str(), computeEnergyAndVirial ? "with" : "without",
-                                                  mode.second.c_str(),
+                                                  gridOrdering.second.c_str(),
+                                                  computeEnergyAndVirial ? "with" : "without",
+                                                  codePathToString(codePath),
+                                                  context->getDescription().c_str(),
                                                   gridSize[XX], gridSize[YY], gridSize[ZZ],
                                                   ewaldCoeff_q, ewaldCoeff_lj
                                                   ));
 
                         /* Running the test */
-                        PmeSafePointer pmeSafe = pmeInitEmpty(&inputRec, box, ewaldCoeff_q, ewaldCoeff_lj);
-                        pmeSetComplexGrid(pmeSafe.get(), mode.first, gridOrdering.first, nonZeroGridValues);
+                        PmeSafePointer pmeSafe = pmeInitEmpty(&inputRec, codePath, context->getDeviceInfo(),
+                                                              context->getPmeGpuProgram(), box, ewaldCoeff_q, ewaldCoeff_lj);
+                        pmeSetComplexGrid(pmeSafe.get(), codePath, gridOrdering.first, nonZeroGridValues);
                         const real     cellVolume = box[0] * box[4] * box[8];
                         //FIXME - this is box[XX][XX] * box[YY][YY] * box[ZZ][ZZ], should be stored in the PME structure
-                        pmePerformSolve(pmeSafe.get(), mode.first, method, cellVolume, gridOrdering.first, computeEnergyAndVirial);
+                        pmePerformSolve(pmeSafe.get(), codePath, method, cellVolume, gridOrdering.first, computeEnergyAndVirial);
+                        pmeFinalizeTest(pmeSafe.get(), codePath);
 
                         /* Check the outputs */
-                        TestReferenceChecker checker(refData.rootChecker());
-                        const auto           ulpTolerance = 200;
-                        checker.setDefaultTolerance(relativeToleranceAsUlp(10.0, ulpTolerance));
+                        TestReferenceChecker          checker(refData.rootChecker());
 
-                        SparseComplexGridValuesOutput nonZeroGridValuesOutput = pmeGetComplexGrid(pmeSafe.get(), mode.first, gridOrdering.first);
+                        SparseComplexGridValuesOutput nonZeroGridValuesOutput = pmeGetComplexGrid(pmeSafe.get(), codePath, gridOrdering.first);
                         /* Transformed grid */
                         TestReferenceChecker          gridValuesChecker(checker.checkCompound("NonZeroGridValues", "ComplexSpaceGrid"));
-                        const auto                    ulpToleranceGrid = 50;
-                        gridValuesChecker.setDefaultTolerance(relativeToleranceAsUlp(1.0, ulpToleranceGrid));
+
+                        real gridValuesMagnitude = 1.0;
+                        for (const auto &point : nonZeroGridValuesOutput)
+                        {
+                            gridValuesMagnitude = std::max(std::fabs(point.second.re), gridValuesMagnitude);
+                            gridValuesMagnitude = std::max(std::fabs(point.second.im), gridValuesMagnitude);
+                        }
+                        // Spline moduli participate 3 times in the computation; 2 is an additional factor for SIMD exp() precision
+                        uint64_t gridUlpToleranceFactor = DIM * 2;
+                        if (method == PmeSolveAlgorithm::LennardJones)
+                        {
+                            // Lennard Jones is more complex and also uses erfc(), relax more
+                            gridUlpToleranceFactor *= 2;
+                        }
+                        const uint64_t     splineModuliDoublePrecisionUlps
+                            = getSplineModuliDoublePrecisionUlps(inputRec.pme_order + 1);
+                        auto               gridTolerance
+                            = relativeToleranceAsPrecisionDependentUlp(gridValuesMagnitude,
+                                                                       gridUlpToleranceFactor * c_splineModuliSinglePrecisionUlps,
+                                                                       gridUlpToleranceFactor * splineModuliDoublePrecisionUlps);
+                        gridValuesChecker.setDefaultTolerance(gridTolerance);
+
                         for (const auto &point : nonZeroGridValuesOutput)
                         {
                             // we want an additional safeguard for denormal numbers as they cause an exception in string conversion;
@@ -160,14 +193,37 @@ class PmeSolveTest : public ::testing::TestWithParam<SolveInputParameters>
 
                         if (computeEnergyAndVirial)
                         {
+                            // Extract the energy and virial
                             real       energy;
                             Matrix3x3  virial;
-                            std::tie(energy, virial) = pmeGetReciprocalEnergyAndVirial(pmeSafe.get(), mode.first, method);
+                            std::tie(energy, virial) = pmeGetReciprocalEnergyAndVirial(pmeSafe.get(), codePath, method);
+
+                            // These quantities are computed based on the grid values, so must have
+                            // checking relative tolerances at least as large. Virial needs more flops
+                            // than energy, so needs a larger tolerance.
+
                             /* Energy */
-                            checker.checkReal(energy, "Energy");
+                            double       energyMagnitude = 10.0;
+                            // TODO This factor is arbitrary, do a proper error-propagation analysis
+                            uint64_t     energyUlpToleranceFactor = gridUlpToleranceFactor * 2;
+                            auto         energyTolerance
+                                = relativeToleranceAsPrecisionDependentUlp(energyMagnitude,
+                                                                           energyUlpToleranceFactor * c_splineModuliSinglePrecisionUlps,
+                                                                           energyUlpToleranceFactor * splineModuliDoublePrecisionUlps);
+                            TestReferenceChecker energyChecker(checker);
+                            energyChecker.setDefaultTolerance(energyTolerance);
+                            energyChecker.checkReal(energy, "Energy");
+
                             /* Virial */
+                            double       virialMagnitude = 1000.0;
+                            // TODO This factor is arbitrary, do a proper error-propagation analysis
+                            uint64_t     virialUlpToleranceFactor = energyUlpToleranceFactor * 2;
+                            auto         virialTolerance
+                                = relativeToleranceAsPrecisionDependentUlp(virialMagnitude,
+                                                                           virialUlpToleranceFactor * c_splineModuliSinglePrecisionUlps,
+                                                                           virialUlpToleranceFactor * splineModuliDoublePrecisionUlps);
                             TestReferenceChecker virialChecker(checker.checkCompound("Matrix", "Virial"));
-                            virialChecker.setDefaultTolerance(relativeToleranceAsUlp(1000, 30));
+                            virialChecker.setDefaultTolerance(virialTolerance);
                             for (int i = 0; i < DIM; i++)
                             {
                                 for (int j = 0; j <= i; j++)
@@ -179,6 +235,7 @@ class PmeSolveTest : public ::testing::TestWithParam<SolveInputParameters>
                         }
                     }
                 }
+
             }
         }
 };
@@ -192,7 +249,7 @@ TEST_P(PmeSolveTest, ReproducesOutputs)
 /* Valid input instances */
 
 //! A couple of valid inputs for boxes.
-static std::vector<Matrix3x3> const c_sampleBoxes
+std::vector<Matrix3x3> const c_sampleBoxes
 {
     // normal box
     Matrix3x3 {{
@@ -209,7 +266,7 @@ static std::vector<Matrix3x3> const c_sampleBoxes
 };
 
 //! A couple of valid inputs for grid sizes
-static std::vector<IVec> const c_sampleGridSizes
+std::vector<IVec> const c_sampleGridSizes
 {
     IVec {
         16, 12, 28
@@ -225,7 +282,7 @@ const auto c_inputBoxes     = ::testing::ValuesIn(c_sampleBoxes);
 const auto c_inputGridSizes = ::testing::ValuesIn(c_sampleGridSizes);
 
 //! 2 sample complex grids - only non-zero values have to be listed
-static std::vector<SparseComplexGridValuesInput> const c_sampleGrids
+std::vector<SparseComplexGridValuesInput> const c_sampleGrids
 {
     SparseComplexGridValuesInput {{
                                       IVec {
@@ -305,9 +362,11 @@ INSTANTIATE_TEST_CASE_P(DifferentEwaldCoeffQ, PmeSolveTest, ::testing::Combine(c
                                                                                c_inputEpsilon_r, ::testing::Values(0.4), c_inputEwaldCoeff_lj,
                                                                                    ::testing::Values(PmeSolveAlgorithm::Coulomb)));
 
-//! A few more instances to check that different ewaldCoeff_lj actually affects results of the Lennard-Jones solver
+//! A few more instances to check that different ewaldCoeff_lj actually affects results of the Lennard-Jones solver.
+//! The value has to be approximately larger than 1 / (box dimensions) to have a meaningful output grid.
+//! Previous value of 0.3 caused one of the grid cells to be less or greater than GMX_FLOAT_MIN, depending on the architecture.
 INSTANTIATE_TEST_CASE_P(DifferentEwaldCoeffLJ, PmeSolveTest, ::testing::Combine(c_inputBoxes, c_inputGridSizes, c_inputGrids,
-                                                                                c_inputEpsilon_r, c_inputEwaldCoeff_q, ::testing::Values(0.3),
+                                                                                c_inputEpsilon_r, c_inputEwaldCoeff_q, ::testing::Values(2.35),
                                                                                     ::testing::Values(PmeSolveAlgorithm::LennardJones)));
 
 //! A few more instances to check that different epsilon_r actually affects results of all solvers
@@ -315,6 +374,6 @@ INSTANTIATE_TEST_CASE_P(DifferentEpsilonR, PmeSolveTest, ::testing::Combine(c_in
                                                                             testing::Values(1.9), c_inputEwaldCoeff_q, c_inputEwaldCoeff_lj,
                                                                             c_inputMethods));
 
-}
-}
-}
+}  // namespace
+}  // namespace test
+}  // namespace gmx

@@ -3,7 +3,7 @@
  *
  * Copyright (c) 1991-2000, University of Groningen, The Netherlands.
  * Copyright (c) 2001-2004, The GROMACS development team.
- * Copyright (c) 2013,2014,2015,2016,2017, by the GROMACS development team, led by
+ * Copyright (c) 2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -101,7 +101,7 @@ void write_sto_conf_indexed(const char *outfile, const char *title,
         case efENT:
         case efPQR:
             out = gmx_fio_fopen(outfile, "w");
-            write_pdbfile_indexed(out, title, atoms, x, ePBC, box, ' ', -1, nindex, index, nullptr, TRUE);
+            write_pdbfile_indexed(out, title, atoms, x, ePBC, box, ' ', -1, nindex, index, nullptr, TRUE, ftp == efPQR);
             gmx_fio_fclose(out);
             break;
         case efESP:
@@ -111,7 +111,6 @@ void write_sto_conf_indexed(const char *outfile, const char *title,
             break;
         case efTPR:
             gmx_fatal(FARGS, "Sorry, can not write a topology to %s", outfile);
-            break;
         default:
             gmx_incons("Not supported in write_sto_conf_indexed");
     }
@@ -162,7 +161,6 @@ void write_sto_conf(const char *outfile, const char *title, const t_atoms *atoms
             break;
         case efTPR:
             gmx_fatal(FARGS, "Sorry, can not write a topology to %s", outfile);
-            break;
         default:
             gmx_incons("Not supported in write_sto_conf");
     }
@@ -239,6 +237,7 @@ static void get_stx_coordnum(const char *infile, int *natoms)
     }
 }
 
+// TODO molecule index handling is suspected of being broken here
 static void tpx_make_chain_identifiers(t_atoms *atoms, t_block *mols)
 {
     /* We always assign a new chain number, but save the chain id characters
@@ -351,10 +350,10 @@ static void read_stx_conf(const char *infile,
     }
 }
 
-static void readConfAndAtoms(const char *infile,
-                             t_symtab *symtab, char **name, t_atoms *atoms,
-                             int *ePBC,
-                             rvec **x, rvec **v, matrix box)
+void readConfAndAtoms(const char *infile,
+                      t_symtab *symtab, char **name, t_atoms *atoms,
+                      int *ePBC,
+                      rvec **x, rvec **v, matrix box)
 {
     int natoms;
     get_stx_coordnum(infile, &natoms);
@@ -426,7 +425,6 @@ void readConfAndTopology(const char *infile,
 
         readConfAndAtoms(infile, &symtab, &name, &atoms, ePBC, x, v, box);
 
-        init_mtop(mtop);
         convertAtomsToMtop(&symtab, put_symtab(&symtab, name), &atoms, mtop);
         sfree(name);
     }
@@ -436,14 +434,11 @@ gmx_bool read_tps_conf(const char *infile, t_topology *top, int *ePBC,
                        rvec **x, rvec **v, matrix box, gmx_bool requireMasses)
 {
     bool        haveTopology;
-    gmx_mtop_t *mtop;
+    gmx_mtop_t  mtop;
 
-    // Note: We should have an initializer instead of relying on snew
-    snew(mtop, 1);
-    readConfAndTopology(infile, &haveTopology, mtop, ePBC, x, v, box);
+    readConfAndTopology(infile, &haveTopology, &mtop, ePBC, x, v, box);
 
-    *top = gmx_mtop_t_to_t_topology(mtop, true);
-    sfree(mtop);
+    *top = gmx_mtop_t_to_t_topology(&mtop, true);
 
     tpx_make_chain_identifiers(&top->atoms, &top->mols);
 

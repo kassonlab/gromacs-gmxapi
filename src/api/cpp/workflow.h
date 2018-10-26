@@ -1,19 +1,51 @@
-//
-// Created by Eric Irrgang on 11/27/17.
-//
+/*
+ * This file is part of the GROMACS molecular simulation package.
+ *
+ * Copyright (c) 2018, by the GROMACS development team, led by
+ * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
+ * and including many others, as listed in the AUTHORS file in the
+ * top-level source directory and at http://www.gromacs.org.
+ *
+ * GROMACS is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public License
+ * as published by the Free Software Foundation; either version 2.1
+ * of the License, or (at your option) any later version.
+ *
+ * GROMACS is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with GROMACS; if not, see
+ * http://www.gnu.org/licenses, or write to the Free Software Foundation,
+ * Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA.
+ *
+ * If you want to redistribute modifications to GROMACS, please
+ * consider that scientific software is very special. Version
+ * control is crucial - bugs must be traceable. We will be happy to
+ * consider code for inclusion in the official distribution, but
+ * derived work must not be called official GROMACS. Details are found
+ * in the README & COPYING files - if they are missing, get the
+ * official version at http://www.gromacs.org.
+ *
+ * To help us fund GROMACS development, we humbly ask that you cite
+ * the research papers on the package. Check out http://www.gromacs.org.
+ */
 
 #ifndef GMXAPI_WORKFLOW_H
 #define GMXAPI_WORKFLOW_H
 
-/*! \libinternal \file
+/*! \internal \file
  * \brief Declare public interface for Workflow and related infrastructure.
  *
  * \ingroup gmxapi
  */
 
-#include "gmxapi/gmxapi.h"
-#include <map>
 #include <forward_list>
+#include <map>
+#include <memory>
+#include <string>
 
 namespace gmxapi
 {
@@ -48,28 +80,21 @@ namespace gmxapi
  * several names get reused a lot. Some sort of checksum of the file should also be included so that the inputs of the
  * workflow at execution time can be checked against the inputs when the workflow was specified.
  *
- * Uniqueness of inputs could be more elaborate. For instance, a node may require the trajectory of a specific simulation
- * as input, but flexibly handle starting from an arbitrary step in that trajectory to allow check-pointed workflows.
+ * Uniqueness of inputs could be more elaborate. For instance, a node may require the trajectory of a specific
+ * simulation as input, but flexibly handle starting from an arbitrary step in that trajectory to allow check-pointed
+ * workflows.
  *
  * The workflow object can have a list of keys that can be instantiated with no input dependencies, the scheduler could
  * scan for keys that represent source nodes, or workflow containers could be turned into graphs through an additional
  * preprocessing or clustering phase, but it will be easiest if we assert a protocol such as a node is not instantiated
  * or activated until its inputs are ready.
+ *
+ * This is just a type alias until more elaborate implementation is needed.
  */
-//class NodeKey final
-//{
-//    public:
-//        std::string name();
-//    private:
-//        std::string name_;
-//};
-// Type alias until more elaborate implementation is needed.
 using NodeKey = std::string;
 
 // Forward declarations for definitions below.
-class NodeKeyIterator;
 class NodeSpecification;
-class WorkflowKeyError;
 
 /*!
  * \brief Recipe for a computational workflow.
@@ -82,7 +107,8 @@ class WorkflowKeyError;
 class Workflow final
 {
     public:
-        using Impl = typename std::map<NodeKey, std::unique_ptr<NodeSpecification>>;
+        //! In initial version, Implementation class is just a type alias.
+        using Impl = typename std::map< NodeKey, std::unique_ptr<NodeSpecification> >;
 
         /*! \brief Use create() to get Workflow objects.
          *
@@ -93,11 +119,22 @@ class Workflow final
         Workflow() = delete;
 
         /*!
-         * \brief Construct from implementation
+         * \brief Construct by transfering ownership of an implementation object.
          *
-         * \param impl
+         * \param impl Implementation object to wrap.
+         *
+         * Usage:
+         *
+         *     gmxapi::Workflow::Impl newGraph;
+         *     // ...
+         *     // configure graph...
+         *     // ...
+         *     // Create workflow container
+         *     gmxapi::Workflow work {std::move(newGraph)};
+         *     gmxapi::launchSession(&context, work);
+         *
          */
-        explicit Workflow(Impl&& impl);
+        explicit Workflow(Impl &&impl);
 
         /*!
          * \brief Add a node to the workflow graph.
@@ -105,8 +142,14 @@ class Workflow final
          * The work specification must already have its inputs assigned to existing
          * nodes. This operation should only be permitted if it does not render a
          * valid workflow invalid.
+         *
+         * \param spec Operational node to add to the Workflow.
+         *
+         * \return Key for the new node in the Workflow container.
+         *
+         * \todo Not yet implemented.
          */
-        NodeKey addNode(std::unique_ptr<NodeSpecification> &&spec) noexcept;
+        NodeKey addNode(std::unique_ptr<NodeSpecification> spec);
 
         /*!
          * \brief Get the node specification for a provided key.
@@ -117,27 +160,19 @@ class Workflow final
         std::unique_ptr<NodeSpecification> getNode(const gmxapi::NodeKey &key) const noexcept;
 
         /*!
-         * \brief Get an iterator to the described node keys.
-         *
-         * The order in which the nodes are returned is unspecified. Only forward iterator is provided.
-         *
-         * \return iterator of keys for nodes that can be retrieved by the client if needed.
-         *
-         */
-//        NodeKey::iterator keys() noexcept;
-//        NodeKey::const_iterator keys() const noexcept;
-
-        /*!
          * \brief Get an iterator to the node key--value pairs.
          *
+         * \return iterator across nodes in container.
          *
          * The order in which the nodes are returned is unspecified. Only forward iterator is provided.
+         * \{
          */
         Impl::const_iterator cbegin() const;
         Impl::const_iterator cend() const;
         // Allow range based for loop to work before C++17
         Impl::const_iterator begin() const;
         Impl::const_iterator end() const;
+        /*! \} */
 
         /*!
          * \brief Create a new workflow.
@@ -145,7 +180,7 @@ class Workflow final
          * \param filename TPR filename accessible both to the client and library.
          * \return Ownership of a new Workflow instance.
          */
-        static std::unique_ptr<Workflow> create(const std::string& filename);
+        static std::unique_ptr<Workflow> create(const std::string &filename);
     private:
         /*!
          * \brief Storage structure.
@@ -172,37 +207,52 @@ class Workflow final
  * appropriate exception indicating the specified work is not possible on the targeted
  * execution context.
  *
- * Different node types will have different sorts of parameters and such. Should we
- * try to identify some sort of class hierarchy to aid control flow in looking for
- * parameters?
+ * Different node types will have different sorts of parameters and such.
+ * \todo Clarify chain of responsibility for defining param type.
  */
 class NodeSpecification
 {
     public:
-        /// Base class destructor.
+        //! Base class is heritable.
         virtual ~NodeSpecification();
 
-//        using paramsType = std::map<std::string, std::string>;
+        //! Nodes can use arbitrary param type, but string is default.
         using paramsType = std::string;
 
         /*!
-         * \brief Get a copy of a node.
+         * \brief Get an equivalent node for a new graph.
          *
          * \return ownership of a new node specification
          *
+         * Allows a derived class to define its own copy behavior when accessed
+         * through a base class pointer.
+         *
+         * \internal
          * Future versions may use this function to translate a node spec from one
-         * context to another.
+         * context to another, in which case the context would likely be passed
+         * as an argument. E.g. clone(&context) or cloneTo(&workspec). It may
+         * be confusing for developers to manage the distinction between replicating
+         * a node in a graph versus using helper methods to copy the node-specific
+         * parameters to a node in a new graph, so it is probably better to
+         * reserve copy/move construction/assignment for internal code and use
+         * well-named well-documented free functions for such higher level operations.
+         * Furthermore, it is not universally intuitive what is meant by copying
+         * a node without specifying what happens to edges and connected nodes.
          */
         virtual std::unique_ptr<NodeSpecification> clone() = 0;
 
-        paramsType params_{};
-
+        /*!
+         * \brief Fetch current params value.
+         *
+         * \return copy of internal params value.
+         */
         virtual paramsType params() const noexcept = 0;
 
-//        Node build() = 0;
+        //! Parameters for the operation represented by this node.
+        paramsType params_ {};
 
 };
 
-} //end namespace gmxapi
+}      //end namespace gmxapi
 
 #endif //GMXAPI_WORKFLOW_H

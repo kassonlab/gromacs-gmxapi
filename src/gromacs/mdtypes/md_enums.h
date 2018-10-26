@@ -3,7 +3,7 @@
  *
  * Copyright (c) 1991-2000, University of Groningen, The Netherlands.
  * Copyright (c) 2001-2004, The GROMACS development team.
- * Copyright (c) 2013,2014,2015,2016, by the GROMACS development team, led by
+ * Copyright (c) 2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -159,12 +159,7 @@ extern const char *eintmod_names[eintmodNR+1];
 //! Macro to select the correct string for modifiers
 #define INTMODIFIER(e) enum_name(e, eintmodNR, eintmod_names)
 
-/*! \brief Cut-off treatment for Coulomb
- *
- * eelNOTUSED1 used to be GB, but to enable generalized born with different
- * forms of electrostatics (RF, switch, etc.) in the future it is now selected
- * separately (through the implicit_solvent option).
- */
+/*! \brief Cut-off treatment for Coulomb */
 enum {
     eelCUT,     eelRF,     eelGRF,   eelPME,  eelEWALD,  eelP3M_AD,
     eelPOISSON, eelSWITCH, eelSHIFT, eelUSER, eelGB_NOTUSED, eelRF_NEC_UNSUPPORTED, eelENCADSHIFT,
@@ -234,16 +229,18 @@ extern const char *ens_names[ensNR+1];
  * and the half step kinetic energy for temperature control
  */
 enum {
-    eiMD, eiSteep, eiCG, eiBD, eiSD2_REMOVED, eiNM, eiLBFGS, eiTPI, eiTPIC, eiSD1, eiVV, eiVVAK, eiNR
+    eiMD, eiSteep, eiCG, eiBD, eiSD2_REMOVED, eiNM, eiLBFGS, eiTPI, eiTPIC, eiSD1, eiVV, eiVVAK, eiMimic, eiNR
 };
 //! Name of the integrator algorithm
 extern const char *ei_names[eiNR+1];
 //! Macro returning integrator string
 #define EI(e)          enum_name(e, eiNR, ei_names)
+//! Do we use MiMiC QM/MM?
+#define EI_MIMIC(e) ((e) == eiMimic)
 //! Do we use velocity Verlet
 #define EI_VV(e) ((e) == eiVV || (e) == eiVVAK)
 //! Do we use molecular dynamics
-#define EI_MD(e) ((e) == eiMD || EI_VV(e))
+#define EI_MD(e) ((e) == eiMD || EI_VV(e) || EI_MIMIC(e))
 //! Do we use stochastic dynamics
 #define EI_SD(e) ((e) == eiSD1)
 //! Do we use any stochastic integrator
@@ -453,7 +450,7 @@ extern const char *edispc_names[edispcNR+1];
 
 //! Center of mass motion removal algorithm.
 enum {
-    ecmLINEAR, ecmANGULAR, ecmNO, ecmNR
+    ecmLINEAR, ecmANGULAR, ecmNO, ecmLINEAR_ACCELERATION_CORRECTION, ecmNR
 };
 //! String corresponding to COM removal
 extern const char *ecm_names[ecmNR+1];
@@ -468,33 +465,6 @@ enum {
 extern const char *eann_names[eannNR+1];
 //! And macro for simulated annealing string
 #define EANNEAL(e)      enum_name(e, eannNR, eann_names)
-
-//! Implicit solvent algorithms.
-enum {
-    eisNO, eisGBSA, eisNR
-};
-//! String corresponding to implicit solvent.
-extern const char *eis_names[eisNR+1];
-//! Macro for implicit solvent string.
-#define EIMPLICITSOL(e) enum_name(e, eisNR, eis_names)
-
-//! Algorithms for calculating GB radii.
-enum {
-    egbSTILL, egbHCT, egbOBC, egbNR
-};
-//! String for GB algorithm name.
-extern const char *egb_names[egbNR+1];
-//! Macro for GB string.
-#define EGBALGORITHM(e) enum_name(e, egbNR, egb_names)
-
-//! Surface area algorithm for implicit solvent.
-enum {
-    esaAPPROX, esaNO, esaSTILL, esaNR
-};
-//! String corresponding to surface area algorithm.
-extern const char *esa_names[esaNR+1];
-//! brief Macro for SA algorithm string.
-#define ESAALGORITHM(e) enum_name(e, esaNR, esa_names)
 
 //! Wall types.
 enum {
@@ -636,7 +606,6 @@ enum gmx_nbkernel_elec
     GMX_NBKERNEL_ELEC_COULOMB,
     GMX_NBKERNEL_ELEC_REACTIONFIELD,
     GMX_NBKERNEL_ELEC_CUBICSPLINETABLE,
-    GMX_NBKERNEL_ELEC_GENERALIZEDBORN,
     GMX_NBKERNEL_ELEC_EWALD,
     GMX_NBKERNEL_ELEC_NR
 };
@@ -671,4 +640,10 @@ enum gmx_nblist_interaction_type
 //! String corresponding to interactions in neighborlist code
 extern const char *gmx_nblist_interaction_names[GMX_NBLIST_INTERACTION_NR+1];
 
+
+//! \brief QM/MM mode
+enum struct GmxQmmmMode {
+    GMX_QMMM_ORIGINAL,
+    GMX_QMMM_MIMIC
+};
 #endif /* GMX_MDTYPES_MD_ENUMS_H */

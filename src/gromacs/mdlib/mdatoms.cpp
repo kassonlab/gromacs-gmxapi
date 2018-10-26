@@ -3,7 +3,7 @@
  *
  * Copyright (c) 1991-2000, University of Groningen, The Netherlands.
  * Copyright (c) 2001-2004, The GROMACS development team.
- * Copyright (c) 2012,2013,2014,2015,2016,2017, by the GROMACS development team, led by
+ * Copyright (c) 2012,2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -38,8 +38,13 @@
 
 #include "mdatoms.h"
 
-#include <math.h>
+#include <cmath>
 
+#include <memory>
+
+#include "gromacs/compat/make_unique.h"
+#include "gromacs/ewald/pme.h"
+#include "gromacs/gpu_utils/hostallocator.h"
 #include "gromacs/math/functions.h"
 #include "gromacs/mdlib/gmx_omp_nthreads.h"
 #include "gromacs/mdlib/qmmm.h"
@@ -53,19 +58,89 @@
 
 #define ALMOST_ZERO 1e-30
 
-t_mdatoms *init_mdatoms(FILE *fp, const gmx_mtop_t *mtop, gmx_bool bFreeEnergy)
+namespace gmx
 {
+
+MDAtoms::MDAtoms()
+    : mdatoms_(nullptr)
+{
+}
+
+MDAtoms::~MDAtoms()
+{
+    if (mdatoms_ == nullptr)
+    {
+        return;
+    }
+    sfree(mdatoms_->massA);
+    sfree(mdatoms_->massB);
+    sfree(mdatoms_->massT);
+    gmx::AlignedAllocationPolicy::free(mdatoms_->invmass);
+    sfree(mdatoms_->invMassPerDim);
+    sfree(mdatoms_->typeA);
+    sfree(mdatoms_->chargeB);
+    sfree(mdatoms_->typeB);
+    sfree(mdatoms_->sqrt_c6A);
+    sfree(mdatoms_->sigmaA);
+    sfree(mdatoms_->sigma3A);
+    sfree(mdatoms_->sqrt_c6B);
+    sfree(mdatoms_->sigmaB);
+    sfree(mdatoms_->sigma3B);
+    sfree(mdatoms_->ptype);
+    sfree(mdatoms_->cTC);
+    sfree(mdatoms_->cENER);
+    sfree(mdatoms_->cACC);
+    sfree(mdatoms_->cFREEZE);
+    sfree(mdatoms_->cVCM);
+    sfree(mdatoms_->cORF);
+    sfree(mdatoms_->bPerturbed);
+    sfree(mdatoms_->cU1);
+    sfree(mdatoms_->cU2);
+    sfree(mdatoms_->bQM);
+}
+
+void MDAtoms::resize(int newSize)
+{
+    chargeA_.resizeWithPadding(newSize);
+    mdatoms_->chargeA = chargeA_.data();
+}
+
+void MDAtoms::reserve(int newCapacity)
+{
+    chargeA_.reserveWithPadding(newCapacity);
+    mdatoms_->chargeA = chargeA_.data();
+}
+
+std::unique_ptr<MDAtoms>
+makeMDAtoms(FILE *fp, const gmx_mtop_t &mtop, const t_inputrec &ir,
+            const bool rankHasPmeGpuTask)
+{
+    auto       mdAtoms = compat::make_unique<MDAtoms>();
+    // GPU transfers may want to use a suitable pinning mode.
+    if (rankHasPmeGpuTask)
+    {
+        changePinningPolicy(&mdAtoms->chargeA_, pme_get_pinning_policy());
+    }
     t_mdatoms *md;
     snew(md, 1);
+    mdAtoms->mdatoms_.reset(md);
 
-    md->nenergrp = mtop->groups.grps[egcENER].nr;
-    md->bVCMgrps = (mtop->groups.grps[egcVCM].nr > 1);
+    md->nenergrp = mtop.groups.grps[egcENER].nr;
+    md->bVCMgrps = FALSE;
+    for (int i = 0; i < mtop.natoms; i++)
+    {
+        if (getGroupType(&mtop.groups, egcVCM, i) > 0)
+        {
+            md->bVCMgrps = TRUE;
+        }
+    }
 
     /* Determine the total system mass and perturbed atom counts */
     double                     totalMassA = 0.0;
     double                     totalMassB = 0.0;
 
-    gmx_mtop_atomloop_block_t  aloop = gmx_mtop_atomloop_block_init(mtop);
+    md->haveVsites = FALSE;
+    gmx_mtop_atomloop_block_t  aloop = gmx_mtop_atomloop_block_init(&mtop);
     const t_atom              *atom;
     int                        nmol;
     while (gmx_mtop_atomloop_block_next(aloop, &atom, &nmol))
@@ -73,7 +148,12 @@ t_mdatoms *init_mdatoms(FILE *fp, const gmx_mtop_t *mtop, gmx_bool bFreeEnergy)
         totalMassA += nmol*atom->m;
         totalMassB += nmol*atom->mB;
 
-        if (bFreeEnergy && PERTURBED(*atom))
+        if (atom->ptype == eptVSite)
+        {
+            md->haveVsites = TRUE;
+        }
+
+        if (ir.efep != efepNO && PERTURBED(*atom))
         {
             md->nPerturbed++;
             if (atom->mB != atom->m)
@@ -94,22 +174,36 @@ t_mdatoms *init_mdatoms(FILE *fp, const gmx_mtop_t *mtop, gmx_bool bFreeEnergy)
     md->tmassA = totalMassA;
     md->tmassB = totalMassB;
 
-    if (bFreeEnergy && fp)
+    if (ir.efep != efepNO && fp)
     {
         fprintf(fp,
                 "There are %d atoms and %d charges for free energy perturbation\n",
                 md->nPerturbed, md->nChargePerturbed);
     }
 
-    md->bOrires = gmx_mtop_ftype_count(mtop, F_ORIRES);
+    md->havePartiallyFrozenAtoms = FALSE;
+    for (int g = 0; g < ir.opts.ngfrz; g++)
+    {
+        for (int d = YY; d < DIM; d++)
+        {
+            if (ir.opts.nFreeze[g][d] != ir.opts.nFreeze[g][XX])
+            {
+                md->havePartiallyFrozenAtoms = TRUE;
+            }
+        }
+    }
 
-    return md;
+    md->bOrires = (gmx_mtop_ftype_count(&mtop, F_ORIRES) != 0);
+
+    return mdAtoms;
 }
+
+}  // namespace gmx
 
 void atoms2md(const gmx_mtop_t *mtop, const t_inputrec *ir,
               int nindex, const int *index,
               int homenr,
-              t_mdatoms *md)
+              gmx::MDAtoms *mdAtoms)
 {
     gmx_bool              bLJPME;
     const t_grpopts      *opts;
@@ -122,6 +216,7 @@ void atoms2md(const gmx_mtop_t *mtop, const t_inputrec *ir,
 
     groups = &mtop->groups;
 
+    auto md = mdAtoms->mdatoms();
     /* nindex>=0 indicates DD where we use an index */
     if (nindex >= 0)
     {
@@ -142,9 +237,18 @@ void atoms2md(const gmx_mtop_t *mtop, const t_inputrec *ir,
             srenew(md->massB, md->nalloc);
         }
         srenew(md->massT, md->nalloc);
-        srenew(md->invmass, md->nalloc);
+        /* The SIMD version of the integrator needs this aligned and padded.
+         * The padding needs to be with zeros, which we set later below.
+         */
+        gmx::AlignedAllocationPolicy::free(md->invmass);
+        md->invmass = new(gmx::AlignedAllocationPolicy::malloc((md->nalloc + GMX_REAL_MAX_SIMD_WIDTH)*sizeof(*md->invmass)))real;
         srenew(md->invMassPerDim, md->nalloc);
-        srenew(md->chargeA, md->nalloc);
+        // TODO eventually we will have vectors and just resize
+        // everything, but for now the semantics of md->nalloc being
+        // the capacity are preserved by keeping vectors within
+        // mdAtoms having the same properties as the other arrays.
+        mdAtoms->reserve(md->nalloc);
+        mdAtoms->resize(md->nr);
         srenew(md->typeA, md->nalloc);
         if (md->nPerturbed)
         {
@@ -215,7 +319,6 @@ void atoms2md(const gmx_mtop_t *mtop, const t_inputrec *ir,
 
     int molb = 0;
 
-    // cppcheck-suppress unreadVariable
     nthreads = gmx_omp_nthreads_get(emntDefault);
 #pragma omp parallel for num_threads(nthreads) schedule(static) firstprivate(molb)
     for (int i = 0; i < md->nr; i++)
@@ -238,7 +341,7 @@ void atoms2md(const gmx_mtop_t *mtop, const t_inputrec *ir,
 
             if (md->cFREEZE)
             {
-                md->cFREEZE[i] = ggrpnr(groups, egcFREEZE, ag);
+                md->cFREEZE[i] = getGroupType(groups, egcFREEZE, ag);
             }
             if (EI_ENERGY_MINIMIZATION(ir->eI))
             {
@@ -365,7 +468,7 @@ void atoms2md(const gmx_mtop_t *mtop, const t_inputrec *ir,
             {
                 md->cTC[i]    = groups->grpnr[egcTC][ag];
             }
-            md->cENER[i]    = ggrpnr(groups, egcENER, ag);
+            md->cENER[i]    = getGroupType(groups, egcENER, ag);
             if (md->cACC)
             {
                 md->cACC[i]   = groups->grpnr[egcACC][ag];
@@ -376,7 +479,7 @@ void atoms2md(const gmx_mtop_t *mtop, const t_inputrec *ir,
             }
             if (md->cORF)
             {
-                md->cORF[i]       = ggrpnr(groups, egcORFIT, ag);
+                md->cORF[i]       = getGroupType(groups, egcORFIT, ag);
             }
 
             if (md->cU1)
@@ -404,6 +507,15 @@ void atoms2md(const gmx_mtop_t *mtop, const t_inputrec *ir,
         GMX_CATCH_ALL_AND_EXIT_WITH_FATAL_ERROR;
     }
 
+    if (md->nr > 0)
+    {
+        /* Pad invmass with 0 so a SIMD MD update does not change v and x */
+        for (int i = md->nr; i < md->nr + GMX_REAL_MAX_SIMD_WIDTH; i++)
+        {
+            md->invmass[i] = 0;
+        }
+    }
+
     md->homenr = homenr;
     /* We set mass, invmass, invMassPerDim and tmass for lambda=0.
      * For free-energy runs, these should be updated using update_mdatoms().
@@ -419,7 +531,6 @@ void update_mdatoms(t_mdatoms *md, real lambda)
         real L1 = 1 - lambda;
 
         /* Update masses of perturbed atoms for the change in lambda */
-        // cppcheck-suppress unreadVariable
         int gmx_unused nthreads = gmx_omp_nthreads_get(emntDefault);
 #pragma omp parallel for num_threads(nthreads) schedule(static)
         for (int i = 0; i < md->nr; i++)

@@ -1,7 +1,7 @@
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
- * Copyright (c) 2012,2013,2014,2015,2016,2017, by the GROMACS development team, led by
+ * Copyright (c) 2012,2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -40,22 +40,20 @@
 
 #include <cstdlib>
 
-#include <algorithm>
 #include <string>
 #include <vector>
 
 #include "gromacs/gpu_utils/gpu_utils.h"
 #include "gromacs/hardware/cpuinfo.h"
-#include "gromacs/hardware/gpu_hw_info.h"
 #include "gromacs/hardware/hardwaretopology.h"
 #include "gromacs/hardware/hw_info.h"
+#include "gromacs/hardware/identifyavx512fmaunits.h"
 #include "gromacs/mdtypes/commrec.h"
 #include "gromacs/simd/support.h"
 #include "gromacs/utility/basedefinitions.h"
 #include "gromacs/utility/basenetwork.h"
 #include "gromacs/utility/cstringutil.h"
 #include "gromacs/utility/fatalerror.h"
-#include "gromacs/utility/gmxassert.h"
 #include "gromacs/utility/logger.h"
 #include "gromacs/utility/programcontext.h"
 #include "gromacs/utility/stringutil.h"
@@ -63,50 +61,6 @@
 
 //! Constant used to help minimize preprocessed code
 static const bool bGPUBinary     = GMX_GPU != GMX_GPU_NONE;
-
-/*! \brief Return the number of PP rank pairs that share a GPU device between them.
- *
- * Sharing GPUs among multiple PP ranks is possible via either user or
- * automated selection. */
-static int gmx_count_gpu_dev_shared(const std::vector<int> &gpuTaskAssignment,
-                                    bool                    userSetGpuIds)
-{
-    int      same_count    = 0;
-
-    if (userSetGpuIds)
-    {
-        GMX_RELEASE_ASSERT(!gpuTaskAssignment.empty(),
-                           "The user cannot choose an empty set of GPU IDs, code is wrong somewhere");
-        size_t ngpu = gpuTaskAssignment.size();
-
-        for (size_t i = 0; i < ngpu - 1; i++)
-        {
-            for (size_t j = i + 1; j < ngpu; j++)
-            {
-                same_count      += (gpuTaskAssignment[i] ==
-                                    gpuTaskAssignment[j]);
-            }
-        }
-    }
-
-    return same_count;
-}
-
-/* Count and return the number of unique GPUs (per node) selected.
- *
- * As sharing GPUs among multiple PP ranks is possible, the number of
- * GPUs used (per node) can be different from the number of GPU IDs
- * used.
- */
-static size_t gmx_count_gpu_dev_unique(const std::vector<int> &gpuTaskAssignment)
-{
-    std::set<int> uniqIds;
-    for (const auto &deviceId : gpuTaskAssignment)
-    {
-        uniqIds.insert(deviceId);
-    }
-    return uniqIds.size();
-}
 
 /*! \internal \brief
  * Returns the GPU information text, one GPU per line.
@@ -121,62 +75,6 @@ static std::string sprint_gpus(const gmx_gpu_info_t &gpu_info)
         gpuStrings.push_back(gmx::formatString("    %s", stmp));
     }
     return gmx::joinStrings(gpuStrings, "\n");
-}
-
-void reportGpuUsage(const gmx::MDLogger    &mdlog,
-                    const gmx_gpu_info_t   &gpu_info,
-                    bool                    userSetGpuIds,
-                    const std::vector<int> &gpuTaskAssignment,
-                    size_t                  numPpRanks,
-                    bool                    bPrintHostName)
-{
-    if (gpuTaskAssignment.empty())
-    {
-        return;
-    }
-
-    std::string output;
-    {
-        std::string gpuIdsString =
-            formatAndJoin(gpuTaskAssignment, ",", gmx::StringFormatter("%d"));
-        size_t      numGpusInUse = gmx_count_gpu_dev_unique(gpuTaskAssignment);
-        bool        bPluralGpus  = numGpusInUse > 1;
-
-        if (bPrintHostName)
-        {
-            char host[STRLEN];
-            gmx_gethostname(host, STRLEN);
-            output += gmx::formatString("On host %s", host);
-        }
-        output += gmx::formatString("%zu GPU%s %sselected for this run.\n"
-                                    "Mapping of GPU ID%s to the %d PP rank%s in this node: %s\n",
-                                    numGpusInUse, bPluralGpus ? "s" : "",
-                                    userSetGpuIds ? "user-" : "auto-",
-                                    bPluralGpus ? "s" : "",
-                                    numPpRanks,
-                                    (numPpRanks > 1) ? "s" : "",
-                                    gpuIdsString.c_str());
-    }
-
-    int same_count = gmx_count_gpu_dev_shared(gpuTaskAssignment, userSetGpuIds);
-
-    if (same_count > 0)
-    {
-        output += gmx::formatString("NOTE: You assigned %s to multiple ranks.\n",
-                                    same_count > 1 ? "GPU IDs" : "a GPU ID");
-    }
-
-    if (static_cast<size_t>(gpu_info.n_dev_compatible) > numPpRanks)
-    {
-        /* TODO In principle, this warning could be warranted only on
-         * ranks on some nodes, but we lack the infrastructure to do a
-         * good job of reporting that. */
-        output += gmx::formatString("NOTE: potentially sub-optimal launch configuration using fewer\n"
-                                    "      PP ranks on a node than GPUs available on that node.\n");
-    }
-
-    /* NOTE: this print is only for and on one physical node */
-    GMX_LOG(mdlog.warning).appendText(output);
 }
 
 /* Give a suitable fatal error or warning if the build configuration
@@ -325,24 +223,29 @@ static std::string detected_hardware_string(const gmx_hw_info_t *hwinfo,
         s += gmx::formatString("    Features:");
         for (auto &f : cpuInfo.featureSet())
         {
-            s += gmx::formatString(" %s", cpuInfo.featureString(f).c_str());;
+            s += gmx::formatString(" %s", gmx::CpuInfo::featureString(f).c_str());
         }
         s += gmx::formatString("\n");
     }
 
-    s += gmx::formatString("    SIMD instructions most likely to fit this hardware: %s",
-                           gmx::simdString(static_cast<gmx::SimdType>(hwinfo->simd_suggest_min)).c_str());
-
-    if (hwinfo->simd_suggest_max > hwinfo->simd_suggest_min)
+    if (cpuInfo.feature(gmx::CpuInfo::Feature::X86_Avx512F))
     {
-        s += gmx::formatString(" - %s", gmx::simdString(static_cast<gmx::SimdType>(hwinfo->simd_suggest_max)).c_str());
+        int avx512fmaunits = gmx::identifyAvx512FmaUnits();
+        s += gmx::formatString("    Number of AVX-512 FMA units:");
+        if (avx512fmaunits > 0)
+        {
+            s += gmx::formatString(" %d", avx512fmaunits);
+            if (avx512fmaunits == 1)
+            {
+                s += gmx::formatString(" (AVX2 is faster w/o 2 AVX-512 FMA units)");
+            }
+        }
+        else
+        {
+            s += gmx::formatString(" Cannot run AVX-512 detection - assuming 2");
+        }
+        s += gmx::formatString("\n");
     }
-    s += gmx::formatString("\n");
-
-    s += gmx::formatString("    SIMD instructions selected at GROMACS compile time: %s\n",
-                           gmx::simdString(gmx::simdCompiled()).c_str());
-
-    s += gmx::formatString("\n");
 
     s += gmx::formatString("  Hardware topology: ");
     switch (hwTop.supportLevel())
@@ -399,7 +302,7 @@ static std::string detected_hardware_string(const gmx_hw_info_t *hwinfo,
             s += gmx::formatString("    Numa nodes:\n");
             for (auto &n : hwTop.machine().numa.nodes)
             {
-                s += gmx::formatString("      Node %2d (%" GMX_PRIu64 " bytes mem):", n.id, n.memory);
+                s += gmx::formatString("      Node %2d (%zu bytes mem):", n.id, n.memory);
                 for (auto &l : n.logicalProcessorId)
                 {
                     s += gmx::formatString(" %3d", l);
@@ -409,12 +312,12 @@ static std::string detected_hardware_string(const gmx_hw_info_t *hwinfo,
             s += gmx::formatString("      Latency:\n          ");
             for (std::size_t j = 0; j < hwTop.machine().numa.nodes.size(); j++)
             {
-                s += gmx::formatString(" %5d", j);
+                s += gmx::formatString(" %5zu", j);
             }
             s += gmx::formatString("\n");
             for (std::size_t i = 0; i < hwTop.machine().numa.nodes.size(); i++)
             {
-                s += gmx::formatString("     %5d", i);
+                s += gmx::formatString("     %5zu", i);
                 for (std::size_t j = 0; j < hwTop.machine().numa.nodes.size(); j++)
                 {
                     s += gmx::formatString(" %5.2f", hwTop.machine().numa.relativeLatency[i][j]);
@@ -426,7 +329,7 @@ static std::string detected_hardware_string(const gmx_hw_info_t *hwinfo,
             s += gmx::formatString("    Caches:\n");
             for (auto &c : hwTop.machine().caches)
             {
-                s += gmx::formatString("      L%d: %" GMX_PRIu64 " bytes, linesize %d bytes, assoc. %d, shared %d ways\n",
+                s += gmx::formatString("      L%d: %zu bytes, linesize %d bytes, assoc. %d, shared %d ways\n",
                                        c.level, c.size, c.linesize, c.associativity, c.shared);
             }
         }
@@ -441,21 +344,18 @@ static std::string detected_hardware_string(const gmx_hw_info_t *hwinfo,
         }
     }
 
-    if (bGPUBinary && (hwinfo->ngpu_compatible_tot > 0 ||
-                       hwinfo->gpu_info.n_dev > 0))
+    if (bGPUBinary && hwinfo->gpu_info.n_dev > 0)
     {
         s += gmx::formatString("  GPU info:\n");
         s += gmx::formatString("    Number of GPUs detected: %d\n",
                                hwinfo->gpu_info.n_dev);
-        if (hwinfo->gpu_info.n_dev > 0)
-        {
-            s += sprint_gpus(hwinfo->gpu_info) + "\n";
-        }
+        s += sprint_gpus(hwinfo->gpu_info) + "\n";
     }
     return s;
 }
 
 void gmx_print_detected_hardware(FILE *fplog, const t_commrec *cr,
+                                 const gmx_multisim_t *ms,
                                  const gmx::MDLogger &mdlog,
                                  const gmx_hw_info_t *hwinfo)
 {
@@ -470,21 +370,16 @@ void gmx_print_detected_hardware(FILE *fplog, const t_commrec *cr,
         fprintf(fplog, "%s\n", detected.c_str());
     }
 
-    if (MULTIMASTER(cr))
-    {
-        std::string detected;
-
-        detected = detected_hardware_string(hwinfo, FALSE);
-
-        fprintf(stderr, "%s\n", detected.c_str());
-    }
+    // Do not spam stderr with all our internal information unless
+    // there was something that actually went wrong; general information
+    // belongs in the logfile.
 
     /* Check the compiled SIMD instruction set against that of the node
      * with the lowest SIMD level support (skip if SIMD detection did not work)
      */
     if (cpuInfo.supportLevel() >= gmx::CpuInfo::SupportLevel::Features)
     {
-        gmx::simdCheck(static_cast<gmx::SimdType>(hwinfo->simd_suggest_min), fplog, MULTIMASTER(cr));
+        gmx::simdCheck(static_cast<gmx::SimdType>(hwinfo->simd_suggest_min), fplog, isMasterSimMasterRank(ms, cr));
     }
 
     /* For RDTSCP we only check on our local node and skip the MPI reduction */
