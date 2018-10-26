@@ -51,7 +51,7 @@ const std::string             gmxapi::testing::sample_tprfilename = "${CMAKE_CUR
 const std::vector<std::string> gmxapi::testing::mdArgs {
 // Number of OMP threads must be set to a reasonable non-default value to avoid
 // failures when testing on large nodes.
-//    "-ntomp", "1"
+    "-ntomp", "1"
 };
 
 // Time step size provided during build configuration through

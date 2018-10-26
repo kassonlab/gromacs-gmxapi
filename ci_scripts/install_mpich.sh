@@ -18,6 +18,7 @@ pushd $HOME
         $SOURCEDIR/configure \
             --prefix=$INSTALLDIR \
             --enable-shared \
+            --disable-fortran \
             CC=`which gcc-${GCC}` \
             CXX=`which g++-${GCC}`
         make -j2 install
