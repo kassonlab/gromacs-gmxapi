@@ -15,6 +15,7 @@ rm -rf build
 mkdir build
 pushd build
     cmake -DGMX_BUILD_HELP=OFF \
+         -DGMX_ENABLE_CCACHE=ON \
          -DCMAKE_CXX_COMPILER=$CXX \
          -DCMAKE_C_COMPILER=$CC \
          -DGMX_DOUBLE=$GMX_DOUBLE \
