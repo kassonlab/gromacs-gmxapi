@@ -1,7 +1,7 @@
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
- * Copyright (c) 2018, by the GROMACS development team, led by
+ * Copyright (c) 2014,2015,2016,2017,2018, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -32,40 +32,32 @@
  * To help us fund GROMACS development, we humbly ask that you cite
  * the research papers on the package. Check out http://www.gromacs.org.
  */
-#ifndef GMX_MDTYPES_TYPES_ENERDATA_H
-#define GMX_MDTYPES_TYPES_ENERDATA_H
+/*! \internal
+ * \file
+ *
+ * \brief This file declares inline utility functionality.
+ *
+ * \author Mark Abraham <mark.j.abraham@gmail.com>
+ *
+ * \ingroup module_listed-forces
+ */
+#ifndef GMX_LISTED_FORCES_UTILITIES_H
+#define GMX_LISTED_FORCES_UTILITIES_H
 
-#include "gromacs/mdtypes/md_enums.h"
-#include "gromacs/topology/idef.h"
-#include "gromacs/utility/real.h"
+#include "gromacs/topology/ifunc.h"
 
-enum {
-    egCOULSR, egLJSR, egBHAMSR,
-    egCOUL14, egLJ14, egNR
-};
-
-struct gmx_grppairener_t
+/*! \brief Return whether this is an interaction that actually
+ * calculates a potential and works on multiple atoms (not e.g. a
+ * connection or a position restraint).
+ *
+ * \todo This function could go away when idef is not a big bucket of
+ * everything. */
+static bool
+ftype_is_bonded_potential(int ftype)
 {
-    int   nener;      /* The number of energy group pairs     */
-    real *ener[egNR]; /* Energy terms for each pair of groups */
-};
-
-struct gmx_enerdata_t
-{
-    real                     term[F_NRE];         /* The energies for all different interaction types */
-    struct gmx_grppairener_t grpp;
-    double                   dvdl_lin[efptNR];    /* Contributions to dvdl with linear lam-dependence */
-    double                   dvdl_nonlin[efptNR]; /* Idem, but non-linear dependence                  */
-    /* The idea is that dvdl terms with linear lambda dependence will be added
-     * automatically to enerpart_lambda. Terms with non-linear lambda dependence
-     * should explicitly determine the energies at foreign lambda points
-     * when n_lambda > 0. */
-
-    int                      n_lambda;
-    int                      fep_state;           /*current fep state -- just for printing */
-    double                  *enerpart_lambda;     /* Partial Hamiltonian for lambda and flambda[], includes at least all perturbed terms */
-    real                     foreign_term[F_NRE]; /* alternate array for storing foreign lambda energies */
-    struct gmx_grppairener_t foreign_grpp;        /* alternate array for storing foreign lambda energies */
-};
+    return
+        ((interaction_function[ftype].flags & IF_BOND) != 0u) &&
+        !(ftype == F_CONNBONDS || ftype == F_POSRES || ftype == F_FBPOSRES);
+}
 
 #endif

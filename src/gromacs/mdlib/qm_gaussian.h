@@ -32,40 +32,41 @@
  * To help us fund GROMACS development, we humbly ask that you cite
  * the research papers on the package. Check out http://www.gromacs.org.
  */
-#ifndef GMX_MDTYPES_TYPES_ENERDATA_H
-#define GMX_MDTYPES_TYPES_ENERDATA_H
+#ifndef GMX_MDLIB_QMGAUSSIAN_H
+#define GMX_MDLIB_QMGAUSSIAN_H
 
-#include "gromacs/mdtypes/md_enums.h"
-#include "gromacs/topology/idef.h"
-#include "gromacs/utility/real.h"
+#include "gromacs/math/vectypes.h"
+#include "gromacs/mdlib/qmmm.h"
 
-enum {
-    egCOULSR, egLJSR, egBHAMSR,
-    egCOUL14, egLJ14, egNR
-};
+struct t_forcerec;
 
-struct gmx_grppairener_t
-{
-    int   nener;      /* The number of energy group pairs     */
-    real *ener[egNR]; /* Energy terms for each pair of groups */
-};
+/*! \brief
+ * Initialize gaussian datastructures.
+ *
+ * \param[in] qm QM forcerec.
+ */
+void init_gaussian(t_QMrec *qm);
 
-struct gmx_enerdata_t
-{
-    real                     term[F_NRE];         /* The energies for all different interaction types */
-    struct gmx_grppairener_t grpp;
-    double                   dvdl_lin[efptNR];    /* Contributions to dvdl with linear lam-dependence */
-    double                   dvdl_nonlin[efptNR]; /* Idem, but non-linear dependence                  */
-    /* The idea is that dvdl terms with linear lambda dependence will be added
-     * automatically to enerpart_lambda. Terms with non-linear lambda dependence
-     * should explicitly determine the energies at foreign lambda points
-     * when n_lambda > 0. */
+/*! \brief
+ * Call gaussian to do qm calculation.
+ *
+ * \param[in] fr Global forcerec.
+ * \param[in] qm QM part of forcerec.
+ * \param[in] mm mm part of forcerec.
+ * \param[in] f  force vector.
+ * \param[in] fshift shift of force vector.
+ */
+real call_gaussian(const t_forcerec *fr, t_QMrec *qm, t_MMrec *mm, rvec f[], rvec fshift[]);
 
-    int                      n_lambda;
-    int                      fep_state;           /*current fep state -- just for printing */
-    double                  *enerpart_lambda;     /* Partial Hamiltonian for lambda and flambda[], includes at least all perturbed terms */
-    real                     foreign_term[F_NRE]; /* alternate array for storing foreign lambda energies */
-    struct gmx_grppairener_t foreign_grpp;        /* alternate array for storing foreign lambda energies */
-};
+/*! \brief
+ * Call gaussian SH(?) to do qm calculation.
+ *
+ * \param[in] fr Global forcerec.
+ * \param[in] qm QM part of forcerec.
+ * \param[in] mm mm part of forcerec.
+ * \param[in] f  force vector.
+ * \param[in] fshift shift of force vector.
+ */
+real call_gaussian_SH(const t_forcerec *fr, t_QMrec *qm, t_MMrec *mm, rvec f[], rvec fshift[]);
 
 #endif

@@ -32,40 +32,57 @@
  * To help us fund GROMACS development, we humbly ask that you cite
  * the research papers on the package. Check out http://www.gromacs.org.
  */
-#ifndef GMX_MDTYPES_TYPES_ENERDATA_H
-#define GMX_MDTYPES_TYPES_ENERDATA_H
 
-#include "gromacs/mdtypes/md_enums.h"
-#include "gromacs/topology/idef.h"
-#include "gromacs/utility/real.h"
+#include "gromacs/pbcutil/ishift.h"
 
-enum {
-    egCOULSR, egLJSR, egBHAMSR,
-    egCOUL14, egLJ14, egNR
-};
-
-struct gmx_grppairener_t
+struct PbcAiuc
 {
-    int   nener;      /* The number of energy group pairs     */
-    real *ener[egNR]; /* Energy terms for each pair of groups */
+    float invBoxDiagZ;
+    float boxZX;
+    float boxZY;
+    float boxZZ;
+    float invBoxDiagY;
+    float boxYX;
+    float boxYY;
+    float invBoxDiagX;
+    float boxXX;
 };
 
-struct gmx_enerdata_t
+template <bool returnShift>
+static __forceinline__ __device__
+int pbcDxAiuc(const PbcAiuc &pbcAiuc,
+              const float4  &x1,
+              const float4  &x2,
+              fvec           dx)
 {
-    real                     term[F_NRE];         /* The energies for all different interaction types */
-    struct gmx_grppairener_t grpp;
-    double                   dvdl_lin[efptNR];    /* Contributions to dvdl with linear lam-dependence */
-    double                   dvdl_nonlin[efptNR]; /* Idem, but non-linear dependence                  */
-    /* The idea is that dvdl terms with linear lambda dependence will be added
-     * automatically to enerpart_lambda. Terms with non-linear lambda dependence
-     * should explicitly determine the energies at foreign lambda points
-     * when n_lambda > 0. */
+    dx[XX] = x1.x - x2.x;
+    dx[YY] = x1.y - x2.y;
+    dx[ZZ] = x1.z - x2.z;
 
-    int                      n_lambda;
-    int                      fep_state;           /*current fep state -- just for printing */
-    double                  *enerpart_lambda;     /* Partial Hamiltonian for lambda and flambda[], includes at least all perturbed terms */
-    real                     foreign_term[F_NRE]; /* alternate array for storing foreign lambda energies */
-    struct gmx_grppairener_t foreign_grpp;        /* alternate array for storing foreign lambda energies */
-};
+    float shz  = rintf(dx[ZZ]*pbcAiuc.invBoxDiagZ);
+    dx[XX]    -= shz*pbcAiuc.boxZX;
+    dx[YY]    -= shz*pbcAiuc.boxZY;
+    dx[ZZ]    -= shz*pbcAiuc.boxZZ;
 
-#endif
+    float shy  = rintf(dx[YY]*pbcAiuc.invBoxDiagY);
+    dx[XX]    -= shy*pbcAiuc.boxYX;
+    dx[YY]    -= shy*pbcAiuc.boxYY;
+
+    float shx  = rintf(dx[XX]*pbcAiuc.invBoxDiagX);
+    dx[XX]    -= shx*pbcAiuc.boxXX;
+
+    if (returnShift)
+    {
+        ivec ishift;
+
+        ishift[XX] = -__float2int_rn(shx);
+        ishift[YY] = -__float2int_rn(shy);
+        ishift[ZZ] = -__float2int_rn(shz);
+
+        return IVEC2IS(ishift);
+    }
+    else
+    {
+        return 0;
+    }
+}
