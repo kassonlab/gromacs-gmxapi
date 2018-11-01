@@ -2,7 +2,7 @@
 set -ev
 
 pushd $HOME
-# git clone --depth=1 --no-single-branch https://github.com/kassonlab/gmxapi.git
+ git clone --depth=1 --no-single-branch https://github.com/kassonlab/gmxapi.git
  pushd gmxapi
   git checkout devel
   rm -rf build
