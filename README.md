@@ -49,9 +49,19 @@ report this version through the `gmxapi::Version` interface. Client code should 
 `gmxapi/version.h` header in order to embed the constants `gmxapi::GMXAPI_MAJOR`, `gmxapi::GMXAPI_MINOR`,
 and `gmxapi::GMXAPI_PATCH` so that API compatibility checks can be performed at runtime.
 
-When a new software release is tagged, the next commit on the development branch should increment the patch level to distinguish development builds from the tagged release. As incompatibilities are introduced
-in feature branches, minor or major version number should be incremented as appropriate. At this time,
+When a new software release is tagged, the next commit on the development branch 
+should increment the patch level to distinguish development builds from the tagged release. 
+As incompatibilities are introduced
+in feature branches, minor or major version number should be incremented as appropriate. 
+At this time,
 client code has no indication of whether the version presented in a development build of gmxapi is an
-officially specified API revision or is subject to change. Developers coding against development branches
-should keep this in mind. If this becomes problematic, please offer your suggestions or propose a revision
+officially specified API revision or is subject to change. 
+Furthermore, the pre-release gmxapi in the official upstream GROMACS master branch
+may deviate from the pre-release API at the tip of the `devel` branch at
+[the Kasson Lab fork](https://github.com/kassonlab/gromacs-gmxapi) (although the
+installed `gmxapi-config.cmake` causes CMake's `find_package(gmxapi)` to set
+`gmxapi_EXPERIMENTAL=TRUE` to allow identification of the fork).
+Developers coding against development branches
+should keep this in mind. 
+If this becomes problematic, please offer your suggestions or propose a revision
 to the `gmxapi::Version` API.
