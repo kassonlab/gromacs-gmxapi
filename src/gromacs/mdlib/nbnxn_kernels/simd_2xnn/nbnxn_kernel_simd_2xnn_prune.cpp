@@ -1,7 +1,7 @@
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
- * Copyright (c) 2016,2017, by the GROMACS development team, led by
+ * Copyright (c) 2016,2017,2018, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -54,6 +54,7 @@ nbnxn_kernel_prune_2xnn(nbnxn_pairlist_t *         nbl,
                         real                       rlistInner)
 {
 #ifdef GMX_NBNXN_SIMD_2XNN
+    using namespace gmx;
     const nbnxn_ci_t * gmx_restrict ciOuter  = nbl->ciOuter;
     nbnxn_ci_t       * gmx_restrict ciInner  = nbl->ci;
 
@@ -87,23 +88,20 @@ nbnxn_kernel_prune_2xnn(nbnxn_pairlist_t *         nbl,
         SimdReal shZ_S   = SimdReal(shiftvec[ish3 + 2]);
 
 #if UNROLLJ <= 4
-        int      sci     = ci*STRIDE;
-        int      scix    = sci*DIM;
+        int      scix    = ci*STRIDE*DIM;
 #else
-        int      sci     = (ci >> 1)*STRIDE;
-        int      scix    = sci*DIM + (ci & 1)*(STRIDE >> 1);
-        sci             += (ci & 1)*(STRIDE >> 1);
+        int      scix    = (ci >> 1)*STRIDE*DIM + (ci & 1)*(STRIDE >> 1);
 #endif
 
         /* Load i atom data */
         int      sciy    = scix + STRIDE;
         int      sciz    = sciy + STRIDE;
-        SimdReal ix_S0   = load1DualHsimd(x + scix    ) + shX_S;
-        SimdReal ix_S2   = load1DualHsimd(x + scix + 2) + shX_S;
-        SimdReal iy_S0   = load1DualHsimd(x + sciy    ) + shY_S;
-        SimdReal iy_S2   = load1DualHsimd(x + sciy + 2) + shY_S;
-        SimdReal iz_S0   = load1DualHsimd(x + sciz    ) + shZ_S;
-        SimdReal iz_S2   = load1DualHsimd(x + sciz + 2) + shZ_S;
+        SimdReal ix_S0   = loadU1DualHsimd(x + scix    ) + shX_S;
+        SimdReal ix_S2   = loadU1DualHsimd(x + scix + 2) + shX_S;
+        SimdReal iy_S0   = loadU1DualHsimd(x + sciy    ) + shY_S;
+        SimdReal iy_S2   = loadU1DualHsimd(x + sciy + 2) + shY_S;
+        SimdReal iz_S0   = loadU1DualHsimd(x + sciz    ) + shZ_S;
+        SimdReal iz_S2   = loadU1DualHsimd(x + sciz + 2) + shZ_S;
 
         for (int cjind = ciEntry->cj_ind_start; cjind < ciEntry->cj_ind_end; cjind++)
         {
@@ -111,8 +109,8 @@ nbnxn_kernel_prune_2xnn(nbnxn_pairlist_t *         nbl,
             int cj      = cjOuter[cjind].cj;
 
             /* Atom indices (of the first atom in the cluster) */
-            int aj      = cj*UNROLLJ;
 #if UNROLLJ == STRIDE
+            int aj      = cj*UNROLLJ;
             int ajx     = aj*DIM;
 #else
             int ajx     = (cj >> 1)*DIM*STRIDE + (cj & 1)*UNROLLJ;

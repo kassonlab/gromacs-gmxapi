@@ -3,7 +3,7 @@
  *
  * Copyright (c) 1991-2000, University of Groningen, The Netherlands.
  * Copyright (c) 2001-2004, The GROMACS development team.
- * Copyright (c) 2013,2014,2015,2016, by the GROMACS development team, led by
+ * Copyright (c) 2013,2014,2015,2016,2018, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -43,13 +43,10 @@
 #include "gromacs/gmxpreprocess/gpp_bond_atomtype.h"
 #include "gromacs/gmxpreprocess/toputil.h"
 
-typedef struct {
-    int       nr;   /* The number of entries in the list            */
-    int       nra2; /* The total number of entries in a			*/
-    int      *nra;  /* The number of entries in each a array (dim nr)   */
-    int     **a;    /* The atom numbers (dim nr) the length of each element	*/
-    /* i is nra[i]						*/
-} t_block2;
+namespace gmx
+{
+struct ExclusionBlocks;
+} // namespace gmx
 
 void generate_nbparams(int comb, int funct, t_params plist[],
                        gpp_atomtype_t atype,
@@ -76,11 +73,6 @@ void push_nbt(directive d, t_nbparam **nbt, gpp_atomtype_t atype,
               char *plines, int nb_funct,
               warninp_t wi);
 
-void
-push_gb_params(gpp_atomtype_t atype,
-               char          *line,
-               warninp_t      wi);
-
 void push_atom(struct t_symtab *symtab,
                t_block         *cgs,
                t_atoms         *at,
@@ -91,8 +83,8 @@ void push_atom(struct t_symtab *symtab,
 
 void push_bond(directive d, t_params bondtype[], t_params bond[],
                t_atoms *at, gpp_atomtype_t atype, char *line,
-               gmx_bool bBonded, gmx_bool bGenPairs, real fudgeQQ,
-               gmx_bool bZero, gmx_bool *bWarn_copy_A_B,
+               bool bBonded, bool bGenPairs, real fudgeQQ,
+               bool bZero, bool *bWarn_copy_A_B,
                warninp_t wi);
 
 void push_cmap(directive d, t_params bondtype[], t_params bond[],
@@ -110,17 +102,7 @@ void push_mol(int nrmols, t_molinfo mols[], char *pline,
 void push_molt(struct t_symtab *symtab, int *nmol, t_molinfo **mol, char *line,
                warninp_t wi);
 
-void init_block2(t_block2 *b2, int natom);
-
-void done_block2(t_block2 *b2);
-
-void push_excl(char *line, t_block2 *b2, warninp_t wi);
-
-void merge_excl(t_blocka *excl, t_block2 *b2, warninp_t wi);
-
-void b_to_b2(t_blocka *b, t_block2 *b2);
-
-void b2_to_b(t_block2 *b2, t_blocka *b);
+void push_excl(char *line, gmx::ExclusionBlocks *b2, warninp_t wi);
 
 int add_atomtype_decoupled(struct t_symtab *symtab, gpp_atomtype_t at,
                            t_nbparam ***nbparam, t_nbparam ***pair);
@@ -131,7 +113,7 @@ int add_atomtype_decoupled(struct t_symtab *symtab, gpp_atomtype_t at,
 void convert_moltype_couple(t_molinfo *mol, int atomtype_decouple,
                             real fudgeQQ,
                             int couple_lam0, int couple_lam1,
-                            gmx_bool bCoupleIntra,
+                            bool bCoupleIntra,
                             int nb_funct, t_params *nbp,
                             warninp_t wi);
 /* Setup mol such that the B-state has no interaction with the rest

@@ -1,7 +1,7 @@
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
- * Copyright (c) 2015,2016,2017, by the GROMACS development team, led by
+ * Copyright (c) 2015,2016,2017,2018, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -58,7 +58,7 @@ namespace
 {
 
 //! Whether printing of cool quotes is enabled
-bool beCool(void)
+bool beCool()
 {
     /* Yes, it is bad to check the environment variable every call,
      * but we dont call this routine often, and it avoids using
@@ -74,7 +74,7 @@ bool beCool(void)
 
 //! Return a valid random index into \c arrayRef
 template <typename T>
-const T &getRandomElement(gmx::ConstArrayRef<T> arrayRef)
+const T &getRandomElement(gmx::ArrayRef<const T> arrayRef)
 {
     std::random_device                    generator;
     std::uniform_int_distribution<size_t> distribution(0, arrayRef.size()-1);
@@ -736,7 +736,7 @@ std::string getCoolQuote()
         { "They don't have half hours in the north", "Carl Caleman" },
         { "Safety lights are for dudes", "Ghostbusters 2016" },
         { "It's 2040 now. Our President is a plant.",  "Ghostbusters 2016" },
-        { "It's just B I O L O G Y, can't you see?" "Joe Jackson" },
+        { "It's just B I O L O G Y, can't you see?", "Joe Jackson" },
         { "Input, output, electricity", "Joni Mitchell" },
         { "Your daddy ain't your daddy but your daddy don't know", "Dalahan" },
         { "Why is the Earth moving 'round the sun? Floating in the vacuum with no purpose, not a one", "Fleet Foxes" },
@@ -805,9 +805,15 @@ std::string getCoolQuote()
         { "An intellectual is someone who has found something more interesting than sex.", "Edgar Wallace" },
         { "Base eight is just like base ten really, if you’re missing two fingers.", "Tom Lehrer" },
         { "If 10 years from now, when you are doing something quick and dirty, you suddenly visualize that I am looking over your shoulders and say to yourself: ‘Dijkstra would not have liked this’, well that would be enough immortality for me.", "Edsger Dijkstra" },
-        { "Memory is like an orgasm. It’s a lot better of you don’t have to fake it.", "Seymour Cray, on virtual memory" },
+        { "Memory is like an orgasm. It’s a lot better if you don’t have to fake it.", "Seymour Cray, on virtual memory" },
         { "A computer once beat me at chess, but it was no match for me at kick boxing.", "Emo Philips" },
-        { "Home computers are being called upon to perform many new functions, including the consumption of homework formerly eaten by the dog.", "Doug Larson" }
+        { "Home computers are being called upon to perform many new functions, including the consumption of homework formerly eaten by the dog.", "Doug Larson" },
+        { "Forcefields are like dating; things go fine for a while and then sometimes it goes really bad.", "Alex MacKerell" },
+        { "This type of advanced sampling techniques... which are not so advanced, really.", "Viveca Lindahl, on AWH, at her thesis defense." },
+        { "C++ is tricky. You can do everything. You can even make every mistake.", "Nicolai Josuttis, CppCon2017" },
+        { "Why would the backup server database get corrupted anyway?", "Stefan Fleischmann -- system administrator, physicist, optimist." },
+        { "Teaching quantum computing is like teaching computer science at Hogwarts.", "Thomas Sterling, ISC2018 keynote" },
+        { "It is unfortunate that the authors did not make better use of all the electric power energy that went into these massive computations.", "An anonymous referee" },
     };
 
     if (beCool())
@@ -821,4 +827,4 @@ std::string getCoolQuote()
     }
 }
 
-} // namespace
+}  // namespace gmx

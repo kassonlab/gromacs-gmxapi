@@ -15,7 +15,6 @@ sudo: false
 # https://docs.travis-ci.com/user/caching/#Caches-and-build-matrices
 cache:
   pip: true
-  apt: true
   directories:
     # Note: if a cache store forks due to a stage with parallel jobs that Travis identifies as part of the same flow,
     # we must make sure that the parallel jobs do not write to any of the same caches. Also note that all stages use the
@@ -37,8 +36,6 @@ addons:
     sources:
     - ubuntu-toolchain-r-test
     packages:
-    - cmake
-    - cmake-data
     - doxygen
     - g++-5
     - gcc-5
@@ -48,7 +45,6 @@ addons:
     - libcr-dev
     - libfftw3-dev
     - liblapack-dev
-    - libmpich-dev
     - libxml2-dev
 
 # Set up for all jobs
@@ -80,9 +76,9 @@ before_script:
   - pip install pytest numpy networkx sphinx sphinx_rtd_theme
 
 script:
-  # Note that as of gromacs-gmxapi 0.0.6, gmxapi ensemble management is not compatible with MPI-enabled gromacs-gmxapi
-  - if [ "${CI_MPI}" = 0 ] ; then source $HOME/install/gromacs/bin/GMXRC && ./ci_scripts/pygmx_0_0_6.sh ; fi
-  - if [ "${CI_MPI}" = 0 ] ; then ./ci_scripts/sample_restraint.sh release-0_0_6 ; fi
+#  # Note that as of gromacs-gmxapi 0.0.6, gmxapi ensemble management is not compatible with MPI-enabled gromacs-gmxapi
+#  - if [ "${CI_MPI}" = 0 ] ; then source $HOME/install/gromacs/bin/GMXRC && ./ci_scripts/pygmx_0_0_7.sh ; fi
+#  - if [ "${CI_MPI}" = 0 ] ; then ./ci_scripts/sample_restraint.sh release-0_0_7 ; fi
   - |
     if [ "${TRAVIS_BRANCH}" != master -a "${CI_MPI}" = 0 ]
         then source $HOME/install/gromacs/bin/GMXRC && ./ci_scripts/pygmx_devel.sh

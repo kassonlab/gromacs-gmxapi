@@ -1,202 +1,255 @@
+/*
+ * This file is part of the GROMACS molecular simulation package.
+ *
+ * Copyright (c) 2018, by the GROMACS development team, led by
+ * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
+ * and including many others, as listed in the AUTHORS file in the
+ * top-level source directory and at http://www.gromacs.org.
+ *
+ * GROMACS is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public License
+ * as published by the Free Software Foundation; either version 2.1
+ * of the License, or (at your option) any later version.
+ *
+ * GROMACS is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with GROMACS; if not, see
+ * http://www.gnu.org/licenses, or write to the Free Software Foundation,
+ * Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA.
+ *
+ * If you want to redistribute modifications to GROMACS, please
+ * consider that scientific software is very special. Version
+ * control is crucial - bugs must be traceable. We will be happy to
+ * consider code for inclusion in the official distribution, but
+ * derived work must not be called official GROMACS. Details are found
+ * in the README & COPYING files - if they are missing, get the
+ * official version at http://www.gromacs.org.
+ *
+ * To help us fund GROMACS development, we humbly ask that you cite
+ * the research papers on the package. Check out http://www.gromacs.org.
+ */
 /*! \file
  * \brief Implementation details of gmxapi::Context
  *
+ * \todo Share mdrun input handling implementation via modernized modular options framework.
+ * Initial implementation of `launch` relies on borrowed code from the mdrun command
+ * line input processing.
+ *
+ * \author M. Eric Irrgang <ericirrgang@gmail.com>
+ * \ingroup gmxapi
  */
 
 #include "gmxapi/context.h"
 
+#include <cstring>
+
 #include <memory>
 #include <utility>
-
-#include <cassert>
 #include <vector>
-#include "programs/mdrun/runner.h"
-#include "gromacs/mdtypes/tpxstate.h"
+
+#include "gromacs/commandline/pargs.h"
+#include "gromacs/commandline/filenm.h"
+#include "gromacs/commandline/pargs.h"
+#include "gromacs/compat/make_unique.h"
+#include "gromacs/gmxlib/network.h"
+#include "gromacs/mdlib/stophandler.h"
+#include "gromacs/mdrun/logging.h"
+#include "gromacs/mdrun/multisim.h"
+#include "gromacs/mdrun/runner.h"
+#include "gromacs/mdrunutility/handlerestart.h"
+#include "gromacs/mdtypes/commrec.h"
+#include "gromacs/utility/arraysize.h"
+#include "gromacs/utility/fatalerror.h"
+#include "gromacs/utility/smalloc.h"
 
 #include "gmxapi/exceptions.h"
-#include "gmxapi/gmxapi.h"
 #include "gmxapi/session.h"
 #include "gmxapi/status.h"
+#include "gmxapi/version.h"
 
-#include "workflow.h"
-#include "workflow-impl.h"
+#include "context-impl.h"
+#include "createsession.h"
 #include "session-impl.h"
-#include "gromacs/compat/make_unique.h"
+#include "workflow.h"
 
 namespace gmxapi
 {
 
-/*! \brief Temporary shim until proper messaging.
- *
- */
-class warn
+ContextImpl::ContextImpl()
 {
-    public:
-        /*! \brief Create a warning message.
-         *
-         * \param message must outlive warn instance...
-         */
-        explicit warn(const char* message) :
-            message_ {message}
-        { };
-        /// pointer to string managed somewhere else.
-        const char* message_;
-};
-
-using gmxapi::MDArgs;
-
-/*!
- * \brief Context implementation base class.
- *
- * Execution contexts have a uniform interface specified by the API. Implementations for
- * particular execution environments can specialize / derive from this base.
- *
- * \todo Separate interface and implementation.
- */
-class ContextImpl final : public std::enable_shared_from_this<ContextImpl>
-{
-    public:
-        static std::shared_ptr<gmxapi::ContextImpl> create();
-
-        /*!
-         * \brief Default constructor.
-         *
-         * Don't use this. Use create() to get a shared pointer right away.
-         * Otherwise, shared_from_this() is potentially dangerous.
-         */
-        ContextImpl();
-
-        /*!
-         * \brief Get a reference to the current status object.
-         *
-         * \return shared ownership of the current status.
-         */
-        std::shared_ptr<const Status> status() const noexcept;
-
-        /*!
-         * \brief Translate the workflow to the execution context and launch.
-         *
-         * \param work workflow graph
-         * \return ownership of a new session
-         *
-         * \todo This probably makes more sense as a free function.
-         */
-        std::shared_ptr<Session> launch(const Workflow &work);
-
-        /*!
-         * \brief Status of the last operation in the local context.
-         *
-         * This pointer should always be valid while the context handle exists and
-         * client code can extend the life of the object. We use a shared_ptr because
-         * it may be expensive or dangerous to copy the object when it is most needed.
-         */
-        std::shared_ptr<Status> status_;
-        std::weak_ptr<Session> session_;
-
-        MDArgs mdArgs_;
-};
-
-ContextImpl::ContextImpl() :
-    status_{std::make_shared<Status>(true)},
-    session_{}
-{
-    assert(status_->success());
-    assert(session_.expired());
+    GMX_ASSERT(session_.expired(), "This implementation assumes an expired weak_ptr at initialization.");
 }
 
 std::shared_ptr<gmxapi::ContextImpl> ContextImpl::create()
 {
-    auto impl = std::make_shared<gmxapi::ContextImpl>();
+    std::shared_ptr<ContextImpl> impl = std::make_shared<ContextImpl>();
     return impl;
-}
-
-std::shared_ptr<const Status> ContextImpl::status() const noexcept
-{
-    return status_;
 }
 
 std::shared_ptr<Session> ContextImpl::launch(const Workflow &work)
 {
-    // Assume failure until proven otherwise.
-    assert(status_ != nullptr);
-    *status_ = false;
-
+    using namespace gmx;
     // Much of this implementation is not easily testable: we need tools to inspect simulation results and to modify
     // simulation inputs.
 
-    // As default behavior, automatically extend trajectories from the checkpoint file.
-    // In the future, our API for objects used to initialize a simulation needs to address the fact that currently a
-    // microstate requires data from both the TPR and checkpoint file to be fully specified. Put another way, current
-    // GROMACS simulations can take a "configuration" as input that does not constitute a complete microstate in terms
-    // of hidden degrees of freedom (integrator/thermostat/barostat/PRNG state), but we want a clear notion of a
-    // microstate for gmxapi interfaces.
-    mdArgs_.emplace_back("-cpi");
-    mdArgs_.emplace_back("state.cpt");
-
-    std::shared_ptr<Session> session{nullptr};
+    std::shared_ptr<Session> launchedSession = nullptr;
 
     // This implementation can only run one workflow at a time.
+    // Check whether we are already aware of an active session.
     if (session_.expired())
     {
         // Check workflow spec, build graph for current context, launch and return new session.
         // \todo This is specific to the session implementation...
-        auto mdNode = work.getNode("MD");
-        std::string filename{};
+        auto        mdNode = work.getNode("MD");
+        std::string filename {};
         if (mdNode != nullptr)
         {
             filename = mdNode->params();
         }
-        auto newMdRunner = gmx::compat::make_unique<gmx::Mdrunner>();
-        if (!filename.empty())
+
+        /* As default behavior, automatically extend trajectories from the checkpoint file.
+         * In the future, our API for objects used to initialize a simulation needs to address the fact that currently a
+         * microstate requires data from both the TPR and checkpoint file to be fully specified. Put another way,
+         * current
+         * GROMACS simulations can take a "configuration" as input that does not constitute a complete microstate in
+         * terms of hidden degrees of freedom (integrator/thermostat/barostat/PRNG state), but we want a clear notion of
+         * a microstate for gmxapi interfaces.
+         */
+
+        // Note: these output options normalize the file names, but not their
+        // paths. gmxapi 0.0.7 changes working directory for each session, so the
+        // relative paths are appropriate, but a near-future version will avoid
+        // changing directories once the process starts and manage file paths explicitly.
+        using gmxapi::c_majorVersion;
+        using gmxapi::c_minorVersion;
+        using gmxapi::c_patchVersion;
+        static_assert(!(c_majorVersion != 0 || c_minorVersion != 0 || c_patchVersion > 7),
+                      "Developer notice: check assumptions about working directory and relative file paths for this "
+                      "software version.");
+
+        // Set input TPR name
+        mdArgs_.emplace_back("-s");
+        mdArgs_.emplace_back(filename);
+        // Set checkpoint file name
+        mdArgs_.emplace_back("-cpi");
+        mdArgs_.emplace_back("state.cpt");
+
+        // Create a mock argv. Note that argv[0] is expected to hold the program name.
+        const int  offset = 1;
+        const auto argc   = static_cast<size_t>(mdArgs_.size() + offset);
+        auto       argv   = std::vector<char *>(argc, nullptr);
+        // argv[0] is ignored, but should be a valid string (e.g. null terminated array of char)
+        argv[0]  = new char[1];
+        *argv[0] = '\0';
+        for (size_t argvIndex = offset; argvIndex < argc; ++argvIndex)
         {
-            auto tpxState = gmx::TpxState::initializeFromFile(filename);
-            newMdRunner->setTpx(std::move(tpxState));
-            newMdRunner->initFromAPI(mdArgs_);
+            const auto &mdArg = mdArgs_[argvIndex - offset];
+            argv[argvIndex] = new char[mdArg.length() + 1];
+            strcpy(argv[argvIndex], mdArg.c_str());
         }
 
+        // pointer-to-t_commrec is the de facto handle type for communications record.
+        // Complete shared / borrowed ownership requires a reference to this stack variable
+        // (or pointer-to-pointer-to-t_commrec) since borrowing code may update the pointer.
+        // \todo Define the ownership and lifetime management semantics for a communication record, handle or value type.
+
+        // Note: this communications record initialization acts directly on
+        // MPI_COMM_WORLD and is incompatible with MPI environment sharing in
+        // gmxapi through 0.0.7, at least.
+        options_.cr = init_commrec();
+
+        const char *desc[]  = {"gmxapi placeholder text"};
+        if (options_.updateFromCommandLine(argc, argv.data(), desc) == 0)
         {
-            auto newSession = SessionImpl::create(shared_from_this(),
-                                                  std::move(newMdRunner));
-            session = std::make_shared<Session>(std::move(newSession));
+            return nullptr;
         }
 
+        if (MASTER(options_.cr))
+        {
+            options_.logFileGuard = openLogFile(ftp2fn(efLOG,
+                                                       options_.filenames.size(),
+                                                       options_.filenames.data()),
+                                                options_.mdrunOptions.continuationOptions.appendFiles,
+                                                options_.cr->nodeid,
+                                                options_.cr->nnodes);
+        }
 
-//        for (auto&& node : work)
-//        {
-//            // If we can do something with the node, do it. If the spec is bad, error.
-//        }
+        auto simulationContext = createSimulationContext(options_.cr);
+
+        auto builder = MdrunnerBuilder(compat::not_null<decltype( &simulationContext)>(&simulationContext));
+        builder.addSimulationMethod(options_.mdrunOptions, options_.pforce);
+        builder.addDomainDecomposition(options_.domdecOptions);
+        // \todo pass by value
+        builder.addNonBonded(options_.nbpu_opt_choices[0]);
+        // \todo pass by value
+        builder.addElectrostatics(options_.pme_opt_choices[0], options_.pme_fft_opt_choices[0]);
+        builder.addBondedTaskAssignment(options_.bonded_opt_choices[0]);
+        builder.addNeighborList(options_.nstlist_cmdline);
+        builder.addReplicaExchange(options_.replExParams);
+        // \todo take ownership of multisim resources (ms)
+        builder.addMultiSim(options_.ms);
+        // \todo Provide parallelism resources through SimulationContext.
+        // Need to establish run-time values from various inputs to provide a resource handle to Mdrunner
+        builder.addHardwareOptions(options_.hw_opt);
+        // \todo File names are parameters that should be managed modularly through further factoring.
+        builder.addFilenames(options_.filenames);
+        // Note: The gmx_output_env_t life time is not managed after the call to parse_common_args.
+        // \todo Implement lifetime management for gmx_output_env_t.
+        // \todo Output environment should be configured outside of Mdrunner and provided as a resource.
+        builder.addOutputEnvironment(options_.oenv);
+        builder.addLogFile(options_.logFileGuard.get());
+
+        // Note, creation is not mature enough to be exposed in the external API yet.
+        launchedSession = createSession(shared_from_this(),
+                                        std::move(builder),
+                                        simulationContext,
+                                        std::move(options_.logFileGuard),
+                                        options_.ms);
+
+        // Clean up argv once builder is no longer in use
+        for (auto && string : argv)
+        {
+            if (string != nullptr)
+            {
+                delete[] string;
+                string = nullptr;
+            }
+        }
+
     }
     else
     {
         throw gmxapi::ProtocolError("Tried to launch a session while a session is still active.");
     }
 
-    if (session != nullptr)
+    if (launchedSession != nullptr)
     {
         // Update weak reference.
-        session_ = session;
-        // Set successful status.
-        *status_ = true;
+        session_ = launchedSession;
     }
-    return session;
+    return launchedSession;
 }
 
-// In 0.0.3 there is only one Context type
+// As of gmxapi 0.0.3 there is only one Context type
 Context::Context() :
-    Context{std::make_shared<ContextImpl>()}
+    Context {ContextImpl::create()}
 {
-    assert(impl_ != nullptr);
+    GMX_ASSERT(impl_, "Context requires a non-null implementation member.");
 }
 
-std::shared_ptr<Session> Context::launch(const Workflow& work)
+std::shared_ptr<Session> Context::launch(const Workflow &work)
 {
     return impl_->launch(work);
 }
 
-Context::Context(std::shared_ptr<ContextImpl> &&impl) :
-    impl_{std::move(impl)}
+Context::Context(std::shared_ptr<ContextImpl> impl) :
+    impl_ {std::move(impl)}
 {
-    assert(impl_ != nullptr);
+    GMX_ASSERT(impl_, "Context requires a non-null implementation member.");
 }
 
 void Context::setMDArgs(const MDArgs &mdArgs)
@@ -205,12 +258,5 @@ void Context::setMDArgs(const MDArgs &mdArgs)
 }
 
 Context::~Context() = default;
-
-std::unique_ptr<Context> defaultContext()
-{
-    auto impl = gmx::compat::make_unique<ContextImpl>();
-    auto context = gmx::compat::make_unique<Context>(std::move(impl));
-    return context;
-}
 
 } // end namespace gmxapi

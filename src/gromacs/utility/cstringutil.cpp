@@ -3,7 +3,7 @@
  *
  * Copyright (c) 1991-2000, University of Groningen, The Netherlands.
  * Copyright (c) 2001-2004, The GROMACS development team.
- * Copyright (c) 2013,2014,2015,2016,2017, by the GROMACS development team, led by
+ * Copyright (c) 2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -39,11 +39,10 @@
 
 #include "cstringutil.h"
 
-#include <stdio.h>
-#include <stdlib.h>
-
 #include <cassert>
 #include <cctype>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 #include <string>
@@ -127,7 +126,7 @@ void upstring (char *str)
 {
     int i;
 
-    for (i = 0; (i < (int)strlen(str)); i++)
+    for (i = 0; (i < static_cast<int>(strlen(str))); i++)
     {
         str[i] = toupper(str[i]);
     }
@@ -202,7 +201,7 @@ int gmx_strcasecmp_min(const char *str1, const char *str2)
             return (ch1-ch2);
         }
     }
-    while (ch1);
+    while (ch1 != 0);
     return 0;
 }
 
@@ -211,8 +210,8 @@ int gmx_strncasecmp_min(const char *str1, const char *str2, int n)
     char  ch1, ch2;
     char *stri1, *stri2;
 
-    stri1 = (char *)str1;
-    stri2 = (char *)str2;
+    stri1 = const_cast<char *>(str1);
+    stri2 = const_cast<char *>(str2);
     do
     {
         do
@@ -231,7 +230,7 @@ int gmx_strncasecmp_min(const char *str1, const char *str2, int n)
             return (ch1-ch2);
         }
     }
-    while (ch1 && (str1-stri1 < n) && (str2-stri2 < n));
+    while ((ch1 != 0) && (str1-stri1 < n) && (str2-stri2 < n));
     return 0;
 }
 
@@ -248,7 +247,7 @@ int gmx_strcasecmp(const char *str1, const char *str2)
             return (ch1-ch2);
         }
     }
-    while (ch1);
+    while (ch1 != 0);
     return 0;
 }
 
@@ -271,7 +270,7 @@ int gmx_strncasecmp(const char *str1, const char *str2, int n)
         }
         n--;
     }
-    while (ch1 && n);
+    while ((ch1 != 0) && (n != 0));
     return 0;
 }
 
@@ -498,13 +497,13 @@ char *wrap_lines(const char *buf, int line_width, int indent, gmx_bool bIndentFi
             }
         }
     }
-    while (buf[i]);
+    while (buf[i] != 0);
     b2[i2] = '\0';
 
     return b2;
 }
 
-gmx_int64_t
+int64_t
 str_to_int64_t(const char *str, char **endptr)
 {
 #ifndef _MSC_VER
@@ -514,8 +513,8 @@ str_to_int64_t(const char *str, char **endptr)
 #endif
 }
 
-char *gmx_step_str(gmx_int64_t i, char *buf)
+char *gmx_step_str(int64_t i, char *buf)
 {
-    sprintf(buf, "%" GMX_PRId64, i);
+    sprintf(buf, "%" PRId64, i);
     return buf;
 }

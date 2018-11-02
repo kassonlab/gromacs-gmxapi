@@ -3,7 +3,7 @@
  *
  * Copyright (c) 1991-2000, University of Groningen, The Netherlands.
  * Copyright (c) 2001-2004, The GROMACS development team.
- * Copyright (c) 2013,2014,2015,2017, by the GROMACS development team, led by
+ * Copyright (c) 2013,2014,2015,2017,2018, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -38,55 +38,56 @@
 
 #include "gmxcpp.h"
 
-#include <ctype.h>
-#include <errno.h>
-#include <limits.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-
+#include <cctype>
+#include <cerrno>
+#include <climits>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 
 #include <algorithm>
+#include <memory>
 
 #include <sys/types.h>
 
+#include "gromacs/utility/arrayref.h"
 #include "gromacs/utility/cstringutil.h"
 #include "gromacs/utility/dir_separator.h"
 #include "gromacs/utility/fatalerror.h"
 #include "gromacs/utility/futil.h"
-#include "gromacs/utility/smalloc.h"
+#include "gromacs/utility/gmxassert.h"
 
-typedef struct {
-    char *name;
-    char *def;
-} t_define;
-
-static int        ndef   = 0;
-static t_define  *defs   = nullptr;
-static int        nincl  = 0;
-static char     **incl   = nullptr;
+struct t_define
+{
+    std::string name;
+    std::string def;
+};
 
 /* enum used for handling ifdefs */
 enum {
     eifTRUE, eifFALSE, eifIGNORE, eifNR
 };
 
-typedef struct gmx_cpp {
-    FILE             *fp;
-    char             *path, *cwd;
-    char             *fn;
-    int               line_len;
-    char             *line;
-    int               line_nr;
-    int               nifdef;
-    int              *ifdefs;
-    struct   gmx_cpp *child, *parent;
-} gmx_cpp;
-
-static gmx_bool is_word_end(char c)
+struct gmx_cpp
 {
-    return !(isalnum(c) || c == '_');
+    std::shared_ptr < std::vector < t_define>>    defines;
+    std::shared_ptr < std::vector < std::string>> includes;
+
+    FILE             *fp = nullptr;
+    std::string       path;
+    std::string       cwd;
+    std::string       fn;
+    std::string       line;
+    int               line_nr;
+    std::vector<int>  ifdefs;
+    struct gmx_cpp   *child  = nullptr;
+    struct gmx_cpp   *parent = nullptr;
+};
+
+static bool is_word_end(char c)
+{
+    return !((isalnum(c) != 0) || c == '_');
 }
 
 static const char *strstrw(const char *buf, const char *word)
@@ -108,7 +109,13 @@ static const char *strstrw(const char *buf, const char *word)
     return nullptr;
 }
 
-static gmx_bool find_directive(char *buf, char **name, char **val)
+/* Finds a preprocessor directive, whose name (after the '#') is
+ * returned in *name, and the remainder of the line after leading
+ * whitespace, without trailing whitespace, is returned in *val
+ */
+static bool find_directive(const char  *buf,
+                           std::string *name,
+                           std::string *val)
 {
     /* Skip initial whitespace */
     while (isspace(*buf))
@@ -127,15 +134,15 @@ static gmx_bool find_directive(char *buf, char **name, char **val)
         ++buf;
     }
     /* Set the name pointer and find the next space */
-    *name = buf;
-    while (*buf != 0 && !isspace(*buf))
+    name->clear();
+    while (*buf != '\0' && !isspace(*buf))
     {
+        *name += *buf;
         ++buf;
     }
     /* Set the end of the name here, and skip any space */
-    if (*buf != 0)
+    if (*buf != '\0')
     {
-        *buf = 0;
         ++buf;
         while (isspace(*buf))
         {
@@ -143,228 +150,184 @@ static gmx_bool find_directive(char *buf, char **name, char **val)
         }
     }
     /* Check if anything is remaining */
-    *val = (*buf != 0) ? buf : nullptr;
-    return TRUE;
-}
-
-static gmx_bool is_ifdeffed_out(gmx_cpp_t handle)
-{
-    return ((handle->nifdef > 0) && (handle->ifdefs[handle->nifdef-1] != eifTRUE));
-}
-
-static void add_include(const char *include)
-{
-    int i;
-
-    if (include == nullptr)
+    if (*buf != '\0')
     {
-        return;
-    }
-
-    for (i = 0; (i < nincl); i++)
-    {
-        if (strcmp(incl[i], include) == 0)
+        *val = buf;
+        // Remove trailing whitespace
+        while (!val->empty() && isspace(val->back()))
         {
-            break;
+            val->resize(val->size() - 1);
         }
-    }
-    if (i == nincl)
-    {
-        nincl++;
-        srenew(incl, nincl);
-        incl[nincl-1] = gmx_strdup(include);
-    }
-}
-
-static void done_includes()
-{
-    int i;
-    for (i = 0; (i < nincl); i++)
-    {
-        sfree(incl[i]);
-    }
-    sfree(incl);
-    incl  = nullptr;
-    nincl = 0;
-}
-
-static void add_define(const char *name, const char *value)
-{
-    int  i;
-
-    for (i = 0; (i < ndef); i++)
-    {
-        if (strcmp(defs[i].name, name) == 0)
-        {
-            break;
-        }
-    }
-    if (i == ndef)
-    {
-        ndef++;
-        srenew(defs, ndef);
-        i            = ndef - 1;
-        defs[i].name = gmx_strdup(name);
-    }
-    else if (defs[i].def)
-    {
-        if (debug)
-        {
-            fprintf(debug, "Overriding define %s\n", name);
-        }
-        sfree(defs[i].def);
-    }
-    if (value && strlen(value) > 0)
-    {
-        defs[i].def  = gmx_strdup(value);
     }
     else
     {
-        defs[i].def  = nullptr;
+        val->clear();
     }
+
+    return TRUE;
 }
 
-static void done_defines()
+static bool is_ifdeffed_out(gmx::ArrayRef<const int> ifdefs)
 {
-    int i;
-    for (i = 0; (i < ndef); i++)
+    return (!ifdefs.empty() && ifdefs.back() != eifTRUE);
+}
+
+static void add_include(std::vector<std::string> *includes,
+                        const char               *includePath)
+{
+    GMX_RELEASE_ASSERT(includes, "Need valid includes");
+    GMX_RELEASE_ASSERT(includePath, "Need a valid include path");
+
+    for (const std::string &include : *includes)
     {
-        sfree(defs[i].name);
-        sfree(defs[i].def);
+        if (strcmp(include.c_str(), includePath) == 0)
+        {
+            return;
+        }
     }
-    sfree(defs);
-    defs = nullptr;
-    ndef = 0;
+
+    includes->push_back(includePath);
+}
+
+static void add_define(std::vector<t_define> *defines,
+                       const std::string     &name,
+                       const char            *value)
+{
+    GMX_RELEASE_ASSERT(defines, "Need defines");
+    GMX_RELEASE_ASSERT(value, "Need a value");
+
+    for (t_define &define : *defines)
+    {
+        if (define.name == name)
+        {
+            define.def = value;
+            return;
+        }
+    }
+
+    defines->push_back({ name, value });
 }
 
 /* Open the file to be processed. The handle variable holds internal
    info for the cpp emulator. Return integer status */
-int cpp_open_file(const char *filenm, gmx_cpp_t *handle, char **cppopts)
+static int
+cpp_open_file(const char                                     *filenm,
+              gmx_cpp_t                                      *handle,
+              char                                          **cppopts,
+              std::shared_ptr < std::vector < t_define>>     *definesFromParent,
+              std::shared_ptr < std::vector < std::string>>  *includesFromParent)
 {
-    gmx_cpp_t    cpp;
-    char        *buf;
-    char        *ptr, *ptr2;
-    int          i;
+    // TODO: We should avoid new/delete, we should use Pimpl instead
+    gmx_cpp *cpp = new gmx_cpp;
+    *handle      = cpp;
+
+    if (definesFromParent)
+    {
+        cpp->defines = *definesFromParent;
+    }
+    else
+    {
+        cpp->defines = std::make_shared < std::vector < t_define>>();
+    }
+
+    if (includesFromParent)
+    {
+        cpp->includes = *includesFromParent;
+    }
+    else
+    {
+        cpp->includes = std::make_shared < std::vector < std::string>>();
+    }
 
     /* First process options, they might be necessary for opening files
        (especially include statements). */
-    i  = 0;
+    int i = 0;
     if (cppopts)
     {
         while (cppopts[i])
         {
             if (strstr(cppopts[i], "-I") == cppopts[i])
             {
-                add_include(cppopts[i]+2);
+                add_include(cpp->includes.get(), cppopts[i] + 2);
             }
             if (strstr(cppopts[i], "-D") == cppopts[i])
             {
                 /* If the option contains a =, split it into name and value. */
-                ptr = strchr(cppopts[i], '=');
+                char *ptr = strchr(cppopts[i], '=');
                 if (ptr)
                 {
-                    buf = gmx_strndup(cppopts[i] + 2, ptr - cppopts[i] - 2);
-                    add_define(buf, ptr + 1);
-                    sfree(buf);
+                    std::string buf = cppopts[i] + 2;
+                    buf.resize(ptr - cppopts[i] - 2);
+
+                    add_define(cpp->defines.get(), buf, ptr + 1);
                 }
                 else
                 {
-                    add_define(cppopts[i] + 2, nullptr);
+                    add_define(cpp->defines.get(), cppopts[i] + 2, "");
                 }
             }
             i++;
         }
     }
-    if (debug)
-    {
-        fprintf(debug, "GMXCPP: added %d command line arguments\n", i);
-    }
 
-    snew(cpp, 1);
-    *handle      = cpp;
-    cpp->fn      = nullptr;
     /* Find the file. First check whether it is in the current directory. */
     if (gmx_fexist(filenm))
     {
-        cpp->fn = gmx_strdup(filenm);
+        cpp->fn = filenm;
     }
     else
     {
         /* If not, check all the paths given with -I. */
-        for (i = 0; i < nincl; ++i)
+        for (const std::string &include : *cpp->includes)
         {
-            snew(buf, strlen(incl[i]) + strlen(filenm) + 2);
-            sprintf(buf, "%s/%s", incl[i], filenm);
+            std::string buf = include + "/" + filenm;
             if (gmx_fexist(buf))
             {
                 cpp->fn = buf;
                 break;
             }
-            sfree(buf);
         }
         /* If still not found, check the Gromacs library search path. */
-        if (!cpp->fn)
+        if (cpp->fn.empty())
         {
-            cpp->fn = low_gmxlibfn(filenm, FALSE, FALSE);
+            cpp->fn = gmx::findLibraryFile(filenm, false, false);
         }
     }
-    if (!cpp->fn)
+    if (cpp->fn.empty())
     {
         gmx_fatal(FARGS, "Topology include file \"%s\" not found", filenm);
-    }
-    if (nullptr != debug)
-    {
-        fprintf(debug, "GMXCPP: cpp file open %s\n", cpp->fn);
     }
     /* If the file name has a path component, we need to change to that
      * directory. Note that we - just as C - always use UNIX path separators
      * internally in include file names.
      */
-    ptr  = strrchr(cpp->fn, '/');
-    ptr2 = strrchr(cpp->fn, DIR_SEPARATOR);
+    size_t pos  = cpp->fn.rfind('/');
+    size_t pos2 = cpp->fn.rfind(DIR_SEPARATOR);
 
-    if (ptr == nullptr || (ptr2 != nullptr && ptr2 > ptr))
+    if (pos == std::string::npos || (pos2 != std::string::npos && pos2 > pos))
     {
-        ptr = ptr2;
+        pos = pos2;
     }
-    if (ptr == nullptr)
-    {
-        cpp->path = nullptr;
-        cpp->cwd  = nullptr;
-    }
-    else
+    if (pos != std::string::npos)
     {
         cpp->path = cpp->fn;
-        *ptr      = '\0';
-        cpp->fn   = gmx_strdup(ptr+1);
-        snew(cpp->cwd, STRLEN);
+        cpp->path.resize(pos);
+        cpp->fn.erase(0, pos + 1);
 
-        gmx_getcwd(cpp->cwd, STRLEN);
-        if (nullptr != debug)
-        {
-            fprintf(debug, "GMXCPP: cwd %s\n", cpp->cwd);
-        }
-        gmx_chdir(cpp->path);
+        char buf[STRLEN];
+        gmx_getcwd(buf, STRLEN);
+        cpp->cwd = buf;
 
-        if (nullptr != debug)
-        {
-            fprintf(debug, "GMXCPP: chdir to %s\n", cpp->path);
-        }
+        gmx_chdir(cpp->path.c_str());
     }
-    cpp->line_len = 0;
-    cpp->line     = nullptr;
+    cpp->line.clear();
     cpp->line_nr  = 0;
-    cpp->nifdef   = 0;
-    cpp->ifdefs   = nullptr;
+    cpp->ifdefs.clear();
     cpp->child    = nullptr;
     cpp->parent   = nullptr;
     if (cpp->fp == nullptr)
     {
-        if (nullptr != debug)
-        {
-            fprintf(debug, "GMXCPP: opening file %s\n", cpp->fn);
-        }
-        cpp->fp = fopen(cpp->fn, "r");
+        cpp->fp = fopen(cpp->fn.c_str(), "r");
     }
     if (cpp->fp == nullptr)
     {
@@ -378,96 +341,108 @@ int cpp_open_file(const char *filenm, gmx_cpp_t *handle, char **cppopts)
     return eCPP_OK;
 }
 
-static int
-process_directive(gmx_cpp_t *handlep, const char *dname, const char *dval)
+/* Open the file to be processed. The handle variable holds internal
+   info for the cpp emulator. Return integer status */
+int cpp_open_file(const char *filenm, gmx_cpp_t *handle, char **cppopts)
 {
-    gmx_cpp_t    handle = (gmx_cpp_t)*handlep;
-    int          i, i0, len, status;
-    unsigned int i1;
-    char        *inc_fn, *name;
-    const char  *ptr;
-    int          bIfdef, bIfndef;
+    return cpp_open_file(filenm, handle, cppopts, nullptr, nullptr);
+}
+
+/* Note that dval might be null, e.g. when handling a line like '#define */
+static int
+process_directive(gmx_cpp_t         *handlep,
+                  const std::string &dname,
+                  const std::string &dval)
+{
+    gmx_cpp_t         handle = *handlep;
+
+    std::vector<int> &ifdefs = handle->ifdefs;
 
     /* #ifdef or ifndef statement */
-    bIfdef  = (strcmp(dname, "ifdef") == 0);
-    bIfndef = (strcmp(dname, "ifndef") == 0);
+    bool bIfdef  = (dname == "ifdef");
+    bool bIfndef = (dname == "ifndef");
     if (bIfdef || bIfndef)
     {
-        if ((handle->nifdef > 0) && (handle->ifdefs[handle->nifdef-1] != eifTRUE))
+        if (is_ifdeffed_out(ifdefs))
         {
-            handle->nifdef++;
-            srenew(handle->ifdefs, handle->nifdef);
-            handle->ifdefs[handle->nifdef-1] = eifIGNORE;
+            handle->ifdefs.push_back(eifIGNORE);
         }
         else
         {
-            snew(name, strlen(dval)+1);
-            sscanf(dval, "%s", name);
-            for (i = 0; (i < ndef); i++)
+            // A bare '#ifdef' or '#ifndef' is invalid
+            if (dval.empty())
             {
-                if (strcmp(defs[i].name, name) == 0)
+                return eCPP_SYNTAX;
+            }
+            bool found = false;
+            for (const t_define &define : *handle->defines)
+            {
+                if (define.name == dval)
                 {
+                    found = true;
                     break;
                 }
             }
-            handle->nifdef++;
-            srenew(handle->ifdefs, handle->nifdef);
-            if ((bIfdef && (i < ndef)) || (bIfndef && (i == ndef)))
+            if ((bIfdef && found) || (bIfndef && !found))
             {
-                handle->ifdefs[handle->nifdef-1] = eifTRUE;
+                ifdefs.push_back(eifTRUE);
             }
             else
             {
-                handle->ifdefs[handle->nifdef-1] = eifFALSE;
+                ifdefs.push_back(eifFALSE);
             }
-            sfree(name);
         }
         return eCPP_OK;
     }
 
     /* #else statement */
-    if (strcmp(dname, "else") == 0)
+    if (dname == "else")
     {
-        if (handle->nifdef <= 0)
+        if (ifdefs.empty())
         {
             return eCPP_SYNTAX;
         }
-        if (handle->ifdefs[handle->nifdef-1] == eifTRUE)
+        if (ifdefs.back() == eifTRUE)
         {
-            handle->ifdefs[handle->nifdef-1] = eifFALSE;
+            ifdefs.back() = eifFALSE;
         }
-        else if (handle->ifdefs[handle->nifdef-1] == eifFALSE)
+        else if (ifdefs.back() == eifFALSE)
         {
-            handle->ifdefs[handle->nifdef-1] = eifTRUE;
+            ifdefs.back() = eifTRUE;
         }
         return eCPP_OK;
     }
 
     /* #endif statement */
-    if (strcmp(dname, "endif") == 0)
+    if (dname ==  "endif")
     {
-        if (handle->nifdef <= 0)
+        if (ifdefs.empty())
         {
             return eCPP_SYNTAX;
         }
-        handle->nifdef--;
+        ifdefs.erase(ifdefs.end() - 1);
         return eCPP_OK;
     }
 
     /* Check whether we're not ifdeffed out. The order of this statement
        is important. It has to come after #ifdef, #else and #endif, but
        anything else should be ignored. */
-    if (is_ifdeffed_out(handle))
+    if (is_ifdeffed_out(ifdefs))
     {
         return eCPP_OK;
     }
 
     /* Check for include statements */
-    if (strcmp(dname, "include") == 0)
+    if (dname == "include")
     {
-        len = -1;
-        i0  = 0;
-        for (i1 = 0; (i1 < strlen(dval)); i1++)
+        int len = -1;
+        int i0  = 0;
+        // A bare '#include' is an invalid line
+        if (dval.empty())
+        {
+            return eCPP_SYNTAX;
+        }
+        for (size_t i1 = 0; i1 < dval.size(); i1++)
         {
             if ((dval[i1] == '"') || (dval[i1] == '<') || (dval[i1] == '>'))
             {
@@ -490,18 +465,11 @@ process_directive(gmx_cpp_t *handlep, const char *dname, const char *dval)
         {
             return eCPP_SYNTAX;
         }
-        snew(inc_fn, len+1);
-        strncpy(inc_fn, dval+i0, len);
-        inc_fn[len] = '\0';
+        std::string inc_fn = dval.substr(i0, len);
 
-        if (debug)
-        {
-            fprintf(debug, "Going to open include file '%s' i0 = %d, strlen = %d\n",
-                    inc_fn, i0, len);
-        }
         /* Open include file and store it as a child in the handle structure */
-        status = cpp_open_file(inc_fn, &(handle->child), nullptr);
-        sfree(inc_fn);
+        int status = cpp_open_file(inc_fn.c_str(), &(handle->child), nullptr,
+                                   &handle->defines, &handle->includes);
         if (status != eCPP_OK)
         {
             handle->child = nullptr;
@@ -514,47 +482,47 @@ process_directive(gmx_cpp_t *handlep, const char *dname, const char *dval)
     }
 
     /* #define statement */
-    if (strcmp(dname, "define") == 0)
+    if (dname == "define")
     {
+        // A bare '#define' is an invalid line
+        if (dval.empty())
+        {
+            return eCPP_SYNTAX;
+        }
         /* Split it into name and value. */
-        ptr = dval;
+        const char *ptr = dval.c_str();
         while ((*ptr != '\0') && !isspace(*ptr))
         {
             ptr++;
         }
-        name = gmx_strndup(dval, ptr - dval);
+        std::string name = dval.substr(0, ptr - dval.c_str());
 
         while ((*ptr != '\0') && isspace(*ptr))
         {
             ptr++;
         }
 
-        add_define(name, ptr);
-        sfree(name);
+        add_define(handle->defines.get(), name, ptr);
         return eCPP_OK;
     }
 
     /* #undef statement */
-    if (strcmp(dname, "undef") == 0)
+    if (dname ==  "undef")
     {
-        snew(name, strlen(dval)+1);
-        sscanf(dval, "%s", name);
-        for (i = 0; (i < ndef); i++)
+        // A bare '#undef' is an invalid line
+        if (dval.empty())
         {
-            if (strcmp(defs[i].name, name) == 0)
+            return eCPP_SYNTAX;
+        }
+        std::vector<t_define> &defines = *handle->defines;
+        for (size_t i = 0; i < defines.size(); i++)
+        {
+            if (defines[i].name == dval)
             {
-                sfree(defs[i].name);
-                sfree(defs[i].def);
+                defines.erase(defines.begin() + i);
                 break;
             }
         }
-        sfree(name);
-        for (; (i < ndef-1); i++)
-        {
-            defs[i].name = defs[i+1].name;
-            defs[i].def  = defs[i+1].def;
-        }
-        ndef--;
 
         return eCPP_OK;
     }
@@ -570,12 +538,9 @@ process_directive(gmx_cpp_t *handlep, const char *dname, const char *dval)
    recursively and no cpp directives are printed. */
 int cpp_read_line(gmx_cpp_t *handlep, int n, char buf[])
 {
-    gmx_cpp_t   handle = (gmx_cpp_t)*handlep;
-    int         i, nn, len, status;
-    const char *ptr, *ptr2;
-    char       *name;
-    char       *dname, *dval;
-    gmx_bool    bEOF;
+    gmx_cpp_t   handle = *handlep;
+    int         status;
+    bool        bEOF;
 
     if (!handle)
     {
@@ -586,7 +551,7 @@ int cpp_read_line(gmx_cpp_t *handlep, int n, char buf[])
         return eCPP_FILE_NOT_OPEN;
     }
 
-    bEOF = feof(handle->fp);
+    bEOF = (feof(handle->fp) != 0);
     if (!bEOF)
     {
         /* Read the actual line now. */
@@ -595,7 +560,7 @@ int cpp_read_line(gmx_cpp_t *handlep, int n, char buf[])
             /* Recheck EOF, since we could have been at the end before
              * the fgets2 call, but we need to read past the end to know.
              */
-            bEOF = feof(handle->fp);
+            bEOF = (feof(handle->fp) != 0);
             if (!bEOF)
             {
                 /* Something strange happened, fgets returned NULL,
@@ -614,26 +579,18 @@ int cpp_read_line(gmx_cpp_t *handlep, int n, char buf[])
         }
         cpp_close_file(handlep);
         *handlep      = handle->parent;
-        handle->child = nullptr;
+        delete handle;
         return cpp_read_line(handlep, n, buf);
     }
     else
     {
-        if (n > handle->line_len)
-        {
-            handle->line_len = n;
-            srenew(handle->line, n);
-        }
-        strcpy(handle->line, buf);
+        handle->line = buf;
         handle->line_nr++;
-    }
-    /* Now we've read a line! */
-    if (debug)
-    {
-        fprintf(debug, "%s : %4d : %s\n", handle->fn, handle->line_nr, buf);
-    }
+    } /* Now we've read a line! */
 
     /* Process directives if this line contains one */
+    std::string dname;
+    std::string dval;
     if (find_directive(buf, &dname, &dval))
     {
         status = process_directive(handlep, dname, dval);
@@ -648,7 +605,7 @@ int cpp_read_line(gmx_cpp_t *handlep, int n, char buf[])
     /* Check whether we're not ifdeffed out. The order of this statement
        is important. It has to come after #ifdef, #else and #endif, but
        anything else should be ignored. */
-    if (is_ifdeffed_out(handle))
+    if (is_ifdeffed_out(handle->ifdefs))
     {
         return cpp_read_line(handlep, n, buf);
     }
@@ -657,33 +614,32 @@ int cpp_read_line(gmx_cpp_t *handlep, int n, char buf[])
        that we have to use a best fit algorithm, rather than first come
        first go. We do this by sorting the defines on length first, and
        then on alphabetical order. */
-    for (i = 0; (i < ndef); i++)
+    for (t_define &define : *handle->defines)
     {
-        if (defs[i].def)
+        if (!define.def.empty())
         {
-            nn  = 0;
-            ptr = buf;
-            while ((ptr = strstrw(ptr, defs[i].name)) != nullptr)
+            int         nn  = 0;
+            const char *ptr = buf;
+            while ((ptr = strstrw(ptr, define.name.c_str())) != nullptr)
             {
                 nn++;
-                ptr += strlen(defs[i].name);
+                ptr += strlen(define.name.c_str());
             }
             if (nn > 0)
             {
-                size_t four = 4;
-
-                len = strlen(buf) + nn*std::max(four, four+strlen(defs[i].def)-strlen(defs[i].name));
-                snew(name, len);
-                ptr = buf;
-                while ((ptr2 = strstrw(ptr, defs[i].name)) != nullptr)
+                std::string  name;
+                const char  *ptr = buf;
+                const char  *ptr2;
+                while ((ptr2 = strstrw(ptr, define.name.c_str())) != nullptr)
                 {
-                    strncat(name, ptr, (int)(ptr2-ptr));
-                    strcat(name, defs[i].def);
-                    ptr = ptr2 + strlen(defs[i].name);
+                    name.append(ptr, ptr2 - ptr);
+                    name += define.def;
+                    ptr   = ptr2 + define.name.size();
                 }
-                strcat(name, ptr);
-                strcpy(buf, name);
-                sfree(name);
+                name += ptr;
+                GMX_RELEASE_ASSERT(name.size() < static_cast<size_t>(n),
+                                   "The line should fit in buf");
+                strcpy(buf, name.c_str());
             }
         }
     }
@@ -691,9 +647,9 @@ int cpp_read_line(gmx_cpp_t *handlep, int n, char buf[])
     return eCPP_OK;
 }
 
-char *cpp_cur_file(const gmx_cpp_t *handlep)
+const char *cpp_cur_file(const gmx_cpp_t *handlep)
 {
-    return (*handlep)->fn;
+    return (*handlep)->fn.c_str();
 }
 
 int cpp_cur_linenr(const gmx_cpp_t *handlep)
@@ -704,7 +660,7 @@ int cpp_cur_linenr(const gmx_cpp_t *handlep)
 /* Close the file! Return integer status. */
 int cpp_close_file(gmx_cpp_t *handlep)
 {
-    gmx_cpp_t handle = (gmx_cpp_t)*handlep;
+    gmx_cpp_t handle = *handlep;
 
     if (!handle)
     {
@@ -714,73 +670,42 @@ int cpp_close_file(gmx_cpp_t *handlep)
     {
         return eCPP_FILE_NOT_OPEN;
     }
-    if (debug)
-    {
-        fprintf(debug, "GMXCPP: closing file %s\n", handle->fn);
-    }
     fclose(handle->fp);
-    if (nullptr != handle->cwd)
+
+    if (!handle->cwd.empty())
     {
-        if (nullptr != debug)
-        {
-            fprintf(debug, "GMXCPP: chdir to %s\n", handle->cwd);
-        }
-        gmx_chdir(handle->cwd);
+        gmx_chdir(handle->cwd.c_str());
     }
 
-    if (0)
-    {
-        switch (errno)
-        {
-            case 0:
-                break;
-            case ENOENT:
-                return eCPP_FILE_NOT_FOUND;
-            case EBADF:
-                return eCPP_FILE_NOT_OPEN;
-            case EINTR:
-                return eCPP_INTERRUPT;
-            default:
-                if (debug)
-                {
-                    fprintf(debug, "Strange stuff closing file, errno = %d", errno);
-                }
-                return eCPP_UNKNOWN;
-        }
-    }
     handle->fp      = nullptr;
     handle->line_nr = 0;
-    if (nullptr != handle->fn)
-    {
-        sfree(handle->fn);
-        handle->fn = nullptr;
-    }
-    if (nullptr != handle->line)
-    {
-        sfree(handle->line);
-        handle->line = nullptr;
-    }
-    if (nullptr != handle->ifdefs)
-    {
-        sfree(handle->ifdefs);
-    }
-    handle->nifdef = 0;
-    if (nullptr != handle->path)
-    {
-        sfree(handle->path);
-    }
-    if (nullptr != handle->cwd)
-    {
-        sfree(handle->cwd);
-    }
+    handle->line.clear();
 
     return eCPP_OK;
 }
 
-void cpp_done()
+const std::string *cpp_find_define(const gmx_cpp_t   *handlep,
+                                   const std::string &defineName)
 {
-    done_includes();
-    done_defines();
+    for (const t_define &define : *(*handlep)->defines)
+    {
+        if (define.name == defineName)
+        {
+            return &define.def;
+        }
+    }
+
+    return nullptr;
+}
+
+void cpp_done(gmx_cpp_t handle)
+{
+    int status = cpp_close_file(&handle);
+    if (status != eCPP_OK)
+    {
+        gmx_fatal(FARGS, "%s", cpp_error(&handle, status));
+    }
+    delete handle;
 }
 
 /* Return a string containing the error message coresponding to status
@@ -793,11 +718,11 @@ char *cpp_error(gmx_cpp_t *handlep, int status)
         "Invalid file handle",
         "File not open", "Unknown error", "Error status out of range"
     };
-    gmx_cpp_t   handle = (gmx_cpp_t)*handlep;
+    gmx_cpp_t   handle = *handlep;
 
     if (!handle)
     {
-        return (char *)ecpp[eCPP_INVALID_HANDLE];
+        return const_cast<char *>(ecpp[eCPP_INVALID_HANDLE]);
     }
 
     if ((status < 0) || (status >= eCPP_NR))
@@ -807,9 +732,9 @@ char *cpp_error(gmx_cpp_t *handlep, int status)
 
     sprintf(buf, "%s - File %s, line %d\nLast line read:\n'%s'",
             ecpp[status],
-            (handle && handle->fn) ? handle->fn : "unknown",
+            (handle && !handle->fn.empty()) ? handle->fn.c_str() : "unknown",
             (handle) ? handle->line_nr : -1,
-            handle->line ? handle->line : "");
+            !handle->line.empty() ? handle->line.c_str() : "");
 
     return gmx_strdup(buf);
 }

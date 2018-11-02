@@ -3,7 +3,7 @@
  *
  * Copyright (c) 1991-2000, University of Groningen, The Netherlands.
  * Copyright (c) 2001-2004, The GROMACS development team.
- * Copyright (c) 2013,2014,2015,2016,2017, by the GROMACS development team, led by
+ * Copyright (c) 2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -47,28 +47,36 @@
 
 #include "config.h"
 
-#include <assert.h>
-#include <limits.h>
-#include <stdlib.h>
+#include <cassert>
+#include <cinttypes>
+#include <climits>
+#include <cstdlib>
 
 #include <algorithm>
+#include <array>
+#include <string>
 
 #include "gromacs/listed-forces/listed-forces.h"
 #include "gromacs/mdlib/gmx_omp_nthreads.h"
+#include "gromacs/mdtypes/inputrec.h"
 #include "gromacs/pbcutil/ishift.h"
 #include "gromacs/topology/ifunc.h"
+#include "gromacs/topology/topology.h"
+#include "gromacs/utility/arrayref.h"
 #include "gromacs/utility/exceptions.h"
 #include "gromacs/utility/fatalerror.h"
+#include "gromacs/utility/gmxassert.h"
 #include "gromacs/utility/smalloc.h"
 #include "gromacs/utility/stringutil.h"
 
 #include "listed-internal.h"
+#include "utilities.h"
 
 /*! \brief struct for passing all data required for a function type */
 typedef struct {
-    int      ftype; /**< the function type index */
-    t_ilist *il;    /**< pointer to t_ilist entry corresponding to ftype */
-    int      nat;   /**< nr of atoms involved in a single ftype interaction */
+    const t_ilist *il;    /**< pointer to t_ilist entry corresponding to ftype */
+    int            ftype; /**< the function type index */
+    int            nat;   /**< nr of atoms involved in a single ftype interaction */
 } ilist_data_t;
 
 /*! \brief Divides listed interactions over threads
@@ -78,10 +86,9 @@ typedef struct {
  * equal load and different threads avoid touching the same atoms as much
  * as possible.
  */
-static void divide_bondeds_by_locality(int                 ntype,
-                                       const ilist_data_t *ild,
-                                       int                 nthread,
-                                       t_idef             *idef)
+static void divide_bondeds_by_locality(bonded_threading_t *bt,
+                                       int                 ntype,
+                                       const ilist_data_t *ild)
 {
     int nat_tot, nat_sum;
     int ind[F_NRE];    /* index into the ild[].il->iatoms */
@@ -103,8 +110,8 @@ static void divide_bondeds_by_locality(int                 ntype,
     }
 
     nat_sum = 0;
-    /* Loop over the end bounds of the nthread threads to determine
-     * which interactions threads 0 to nthread shall calculate.
+    /* Loop over the end bounds of the nthreads threads to determine
+     * which interactions threads 0 to nthreads shall calculate.
      *
      * NOTE: The cost of these combined loops is #interactions*ntype.
      * This code is running single threaded (difficult to parallelize
@@ -114,7 +121,7 @@ static void divide_bondeds_by_locality(int                 ntype,
      * be negligble. At high thread count many other parts of the code
      * scale the same way, so it's (currently) not worth improving this.
      */
-    for (t = 1; t <= nthread; t++)
+    for (t = 1; t <= bt->nthreads; t++)
     {
         int nat_thread;
 
@@ -125,7 +132,7 @@ static void divide_bondeds_by_locality(int                 ntype,
          * uniformly. Proper and RB dihedrals are often distributed
          * non-uniformly, but their cost is roughly equal.
          */
-        nat_thread = (nat_tot*t)/nthread;
+        nat_thread = (nat_tot*t)/bt->nthreads;
 
         while (nat_sum < nat_thread)
         {
@@ -177,7 +184,7 @@ static void divide_bondeds_by_locality(int                 ntype,
         /* Store the bonded end boundaries (at index t) for thread t-1 */
         for (f = 0; f < ntype; f++)
         {
-            idef->il_thread_division[ild[f].ftype*(nthread + 1) + t] = ind[f];
+            bt->il_thread_division[ild[f].ftype*(bt->nthreads + 1) + t] = ind[f];
         }
     }
 
@@ -187,94 +194,115 @@ static void divide_bondeds_by_locality(int                 ntype,
     }
 }
 
-//! Divides bonded interactions over threads
-static void divide_bondeds_over_threads(t_idef *idef,
-                                        int     nthread,
-                                        int     max_nthread_uniform,
-                                        bool   *haveBondeds)
+//! Return whether function type \p ftype in \p idef has perturbed interactions
+static bool ftypeHasPerturbedEntries(const t_idef  &idef,
+                                     int            ftype)
+{
+    GMX_ASSERT(idef.ilsort == ilsortNO_FE || idef.ilsort == ilsortFE_SORTED,
+               "Perturbed interations should be sorted here");
+
+    const t_ilist &ilist = idef.il[ftype];
+
+    return (idef.ilsort != ilsortNO_FE && ilist.nr_nonperturbed != ilist.nr);
+}
+
+//! Divides bonded interactions over threads and GPU
+static void divide_bondeds_over_threads(bonded_threading_t *bt,
+                                        bool                useGpuForBondeds,
+                                        const t_idef       &idef)
 {
     ilist_data_t ild[F_NRE];
-    int          ntype;
-    int          f;
 
-    assert(nthread > 0);
+    assert(bt->nthreads > 0);
 
-    idef->nthreads = nthread;
-
-    if (F_NRE*(nthread + 1) > idef->il_thread_division_nalloc)
+    if (F_NRE*(bt->nthreads + 1) > bt->il_thread_division_nalloc)
     {
-        idef->il_thread_division_nalloc = F_NRE*(nthread + 1);
-        snew(idef->il_thread_division, idef->il_thread_division_nalloc);
+        bt->il_thread_division_nalloc = F_NRE*(bt->nthreads + 1);
+        srenew(bt->il_thread_division, bt->il_thread_division_nalloc);
     }
 
-    *haveBondeds = false;
-    ntype        = 0;
-    for (f = 0; f < F_NRE; f++)
+    bt->haveBondeds      = false;
+    int    ntype         = 0;
+    size_t ftypeGpuIndex = 0;
+    for (int ftype = 0; ftype < F_NRE; ftype++)
     {
-        if (!ftype_is_bonded_potential(f))
+        if (!ftype_is_bonded_potential(ftype))
         {
             continue;
         }
 
-        if (idef->il[f].nr > 0)
-        {
-            *haveBondeds = true;
-        }
+        const t_ilist &il                     = idef.il[ftype];
+        int            nrToAssignToCpuThreads = il.nr;
 
-        if (idef->il[f].nr == 0)
+        if (useGpuForBondeds &&
+            ftypeGpuIndex < ftypesOnGpu.size() &&
+            ftypesOnGpu[ftypeGpuIndex] == ftype)
         {
-            /* No interactions, avoid all the integer math below */
-            int t;
-            for (t = 0; t <= nthread; t++)
+            ftypeGpuIndex++;
+
+            /* Perturbation is not implemented in the GPU bonded kernels.
+             * But instead of doing all on the CPU, we could do only
+             * the actually perturbed interactions on the CPU.
+             */
+            if (!ftypeHasPerturbedEntries(idef, ftype))
             {
-                idef->il_thread_division[f*(nthread + 1) + t] = 0;
+                /* We will assign this interaction type to the GPU */
+                nrToAssignToCpuThreads = 0;
             }
         }
-        else if (nthread <= max_nthread_uniform || f == F_DISRES)
+
+        if (nrToAssignToCpuThreads > 0)
+        {
+            bt->haveBondeds = true;
+        }
+
+        if (nrToAssignToCpuThreads == 0)
+        {
+            /* No interactions, avoid all the integer math below */
+            for (int t = 0; t <= bt->nthreads; t++)
+            {
+                bt->il_thread_division[ftype*(bt->nthreads + 1) + t] = 0;
+            }
+        }
+        else if (bt->nthreads <= bt->max_nthread_uniform || ftype == F_DISRES)
         {
             /* On up to 4 threads, load balancing the bonded work
              * is more important than minimizing the reduction cost.
              */
-            int nat1, t;
 
-            /* nat1 = 1 + #atoms(ftype) which is the stride use for iatoms */
-            nat1 = 1 + NRAL(f);
+            const int stride = 1 + NRAL(ftype);
 
-            for (t = 0; t <= nthread; t++)
+            for (int t = 0; t <= bt->nthreads; t++)
             {
-                int nr_t;
-
                 /* Divide equally over the threads */
-                nr_t = (((idef->il[f].nr/nat1)*t)/nthread)*nat1;
+                int nr_t = (((nrToAssignToCpuThreads/stride)*t)/bt->nthreads)*stride;
 
-                if (f == F_DISRES)
+                if (ftype == F_DISRES)
                 {
                     /* Ensure that distance restraint pairs with the same label
                      * end up on the same thread.
                      */
-                    while (nr_t > 0 && nr_t < idef->il[f].nr &&
-                           idef->iparams[idef->il[f].iatoms[nr_t]].disres.label ==
-                           idef->iparams[idef->il[f].iatoms[nr_t-nat1]].disres.label)
+                    while (nr_t > 0 && nr_t < nrToAssignToCpuThreads &&
+                           idef.iparams[il.iatoms[nr_t]].disres.label ==
+                           idef.iparams[il.iatoms[nr_t - stride]].disres.label)
                     {
-                        nr_t += nat1;
+                        nr_t += stride;
                     }
                 }
 
-                idef->il_thread_division[f*(nthread + 1) + t] = nr_t;
+                bt->il_thread_division[ftype*(bt->nthreads + 1) + t] = nr_t;
             }
         }
         else
         {
             /* Add this ftype to the list to be distributed */
-            int nat;
-
-            nat              = NRAL(f);
-            ild[ntype].ftype = f;
-            ild[ntype].il    = &idef->il[f];
+            int nat          = NRAL(ftype);
+            ild[ntype].ftype = ftype;
+            ild[ntype].il    = &il;
             ild[ntype].nat   = nat;
 
             /* The first index for the thread division is always 0 */
-            idef->il_thread_division[f*(nthread + 1)] = 0;
+            bt->il_thread_division[ftype*(bt->nthreads + 1)] = 0;
 
             ntype++;
         }
@@ -282,7 +310,7 @@ static void divide_bondeds_over_threads(t_idef *idef,
 
     if (ntype > 0)
     {
-        divide_bondeds_by_locality(ntype, ild, nthread, idef);
+        divide_bondeds_by_locality(bt, ntype, ild);
     }
 
     if (debug)
@@ -292,16 +320,16 @@ static void divide_bondeds_over_threads(t_idef *idef,
         fprintf(debug, "Division of bondeds over threads:\n");
         for (f = 0; f < F_NRE; f++)
         {
-            if (ftype_is_bonded_potential(f) && idef->il[f].nr > 0)
+            if (ftype_is_bonded_potential(f) && idef.il[f].nr > 0)
             {
                 int t;
 
                 fprintf(debug, "%16s", interaction_function[f].name);
-                for (t = 0; t < nthread; t++)
+                for (t = 0; t < bt->nthreads; t++)
                 {
                     fprintf(debug, " %4d",
-                            (idef->il_thread_division[f*(nthread + 1) + t + 1] -
-                             idef->il_thread_division[f*(nthread + 1) + t])/
+                            (bt->il_thread_division[f*(bt->nthreads + 1) + t + 1] -
+                             bt->il_thread_division[f*(bt->nthreads + 1) + t])/
                             (1 + NRAL(f)));
                 }
                 fprintf(debug, "\n");
@@ -309,24 +337,184 @@ static void divide_bondeds_over_threads(t_idef *idef,
         }
     }
 }
+//! Converts \p src with atom indices in state order to \p dest in nbnxn order
+static void convertIlistToNbnxnOrder(const t_ilist            &src,
+                                     HostInteractionList      *dest,
+                                     int                       numAtomsPerInteraction,
+                                     gmx::ArrayRef<const int>  nbnxnAtomOrder)
+{
+    GMX_ASSERT(src.size() == 0 || !nbnxnAtomOrder.empty(), "We need the nbnxn atom order");
+
+    dest->iatoms.resize(src.size());
+
+    for (int i = 0; i < src.size(); i += 1 + numAtomsPerInteraction)
+    {
+        dest->iatoms[i] = src.iatoms[i];
+        for (int a = 0; a < numAtomsPerInteraction; a++)
+        {
+            dest->iatoms[i + 1 + a] = nbnxnAtomOrder[src.iatoms[i + 1 + a]];
+        }
+    }
+}
+
+namespace gmx
+{
+
+//! Returns whether there are any interactions suitable for a GPU.
+static bool someInteractionsCanRunOnGpu(const InteractionLists &ilists)
+{
+    for (int ftype : ftypesOnGpu)
+    {
+        if (!ilists[ftype].iatoms.empty())
+        {
+            // Perturbation is not implemented in the GPU bonded
+            // kernels. If all the interactions were actually
+            // perturbed, then that will be detected later on each
+            // domain, and work will never run on the GPU. This is
+            // very unlikely to occur, and has little run-time cost,
+            // so we don't complicate the code by catering for it
+            // here.
+            return true;
+        }
+    }
+    return false;
+}
+
+//! Returns whether there are any interactions suitable for a GPU.
+static bool bondedInteractionsCanRunOnGpu(const gmx_mtop_t &mtop)
+{
+    // Check the regular molecule types
+    for (const auto &moltype : mtop.moltype)
+    {
+        if (someInteractionsCanRunOnGpu(moltype.ilist))
+        {
+            return true;
+        }
+    }
+    // Check the inter-molecular interactions.
+    if (mtop.intermolecular_ilist)
+    {
+        if (someInteractionsCanRunOnGpu(*mtop.intermolecular_ilist))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+/*! \brief Help build a descriptive message in \c error if there are
+ * \c errorReasons why bondeds on a GPU are not supported.
+ *
+ * \returns Whether the lack of errorReasons indicate there is support. */
+static bool
+addMessageIfNotSupported(ArrayRef <const std::string> errorReasons,
+                         std::string                 *error)
+{
+    bool isSupported = errorReasons.empty();
+    if (!isSupported && error)
+    {
+        *error  = "Bonded interactions cannot run on GPUs: ";
+        *error += joinStrings(errorReasons, "; ") + ".";
+    }
+    return isSupported;
+}
+
+bool buildSupportsGpuBondeds(std::string *error)
+{
+    std::vector<std::string> errorReasons;
+
+    if (GMX_DOUBLE)
+    {
+        errorReasons.emplace_back("not supported with double precision");
+    }
+    if (GMX_GPU == GMX_GPU_OPENCL)
+    {
+        errorReasons.emplace_back("not supported with OpenCL build of GROMACS");
+    }
+    else if (GMX_GPU == GMX_GPU_NONE)
+    {
+        errorReasons.emplace_back("not supported with CPU-only build of GROMACS");
+    }
+    return addMessageIfNotSupported(errorReasons, error);
+}
+
+bool inputSupportsGpuBondeds(const t_inputrec &ir,
+                             const gmx_mtop_t &mtop,
+                             std::string      *error)
+{
+    std::vector<std::string> errorReasons;
+
+    if (!bondedInteractionsCanRunOnGpu(mtop))
+    {
+        errorReasons.emplace_back("No supported bonded interactions are present");
+    }
+    if (ir.cutoff_scheme == ecutsGROUP)
+    {
+        errorReasons.emplace_back("group cutoff scheme");
+    }
+    if (!EI_DYNAMICS(ir.eI))
+    {
+        errorReasons.emplace_back("not a dynamical integrator");
+    }
+    if (EI_MIMIC(ir.eI))
+    {
+        errorReasons.emplace_back("MiMiC");
+    }
+    if (ir.opts.ngener > 1)
+    {
+        errorReasons.emplace_back("Cannot run with multiple energy groups");
+    }
+    return addMessageIfNotSupported(errorReasons, error);
+}
+
+} // namespace gmx
+
+//! Divides bonded interactions over threads and GPU
+void assign_bondeds_to_gpu(GpuBondedLists           *gpuBondedLists,
+                           gmx::ArrayRef<const int>  nbnxnAtomOrder,
+                           const t_idef             &idef)
+{
+    gpuBondedLists->haveInteractions = false;
+
+    for (int ftype : ftypesOnGpu)
+    {
+        /* Perturbation is not implemented in the GPU bonded kernels.
+         * But instead of doing all on the CPU, we could do only
+         * the actually perturbed interactions on the CPU.
+         */
+        if (idef.il[ftype].nr > 0 && !ftypeHasPerturbedEntries(idef, ftype))
+        {
+            gpuBondedLists->haveInteractions = true;
+
+            convertIlistToNbnxnOrder(idef.il[ftype],
+                                     &gpuBondedLists->iLists[ftype],
+                                     NRAL(ftype), nbnxnAtomOrder);
+        }
+        else
+        {
+            gpuBondedLists->iLists[ftype].iatoms.clear();
+        }
+    }
+}
 
 //! Construct a reduction mask for which parts (blocks) of the force array are touched on which thread task
 static void
-calc_bonded_reduction_mask(int natoms,
-                           f_thread_t *f_thread,
-                           const t_idef *idef,
-                           int thread, int nthread)
+calc_bonded_reduction_mask(int                       natoms,
+                           f_thread_t               *f_thread,
+                           const t_idef             &idef,
+                           int                       thread,
+                           const bonded_threading_t &bondedThreading)
 {
     static_assert(BITMASK_SIZE == GMX_OPENMP_MAX_THREADS, "For the error message below we assume these two are equal.");
 
-    if (nthread > BITMASK_SIZE)
+    if (bondedThreading.nthreads > BITMASK_SIZE)
     {
 #pragma omp master
         gmx_fatal(FARGS, "You are using %d OpenMP threads, which is larger than GMX_OPENMP_MAX_THREADS (%d). Decrease the number of OpenMP threads or rebuild GROMACS with a larger value for GMX_OPENMP_MAX_THREADS.",
-                  nthread, GMX_OPENMP_MAX_THREADS);
+                  bondedThreading.nthreads, GMX_OPENMP_MAX_THREADS);
 #pragma omp barrier
     }
-    GMX_ASSERT(nthread <= BITMASK_SIZE, "We need at least nthread bits in the mask");
+    GMX_ASSERT(bondedThreading.nthreads <= BITMASK_SIZE, "We need at least nthreads bits in the mask");
 
     int nblock = (natoms + reduction_block_size - 1) >> reduction_block_bits;
 
@@ -350,19 +538,19 @@ calc_bonded_reduction_mask(int natoms,
     {
         if (ftype_is_bonded_potential(ftype))
         {
-            int nb = idef->il[ftype].nr;
+            int nb = idef.il[ftype].nr;
             if (nb > 0)
             {
                 int nat1 = interaction_function[ftype].nratoms + 1;
 
-                int nb0 = idef->il_thread_division[ftype*(nthread + 1) + thread];
-                int nb1 = idef->il_thread_division[ftype*(nthread + 1) + thread + 1];
+                int nb0 = bondedThreading.il_thread_division[ftype*(bondedThreading.nthreads + 1) + thread];
+                int nb1 = bondedThreading.il_thread_division[ftype*(bondedThreading.nthreads + 1) + thread + 1];
 
                 for (int i = nb0; i < nb1; i += nat1)
                 {
                     for (int a = 1; a < nat1; a++)
                     {
-                        bitmask_set_bit(&mask[idef->il[ftype].iatoms[i+a] >> reduction_block_bits], thread);
+                        bitmask_set_bit(&mask[idef.il[ftype].iatoms[i+a] >> reduction_block_bits], thread);
                     }
                 }
             }
@@ -382,18 +570,17 @@ calc_bonded_reduction_mask(int natoms,
     }
 }
 
-void setup_bonded_threading(t_forcerec *fr, t_idef *idef)
+void setup_bonded_threading(bonded_threading_t *bt,
+                            int                 numAtoms,
+                            bool                useGpuForBondeds,
+                            const t_idef       &idef)
 {
-    bonded_threading_t *bt   = fr->bonded_threading;
     int                 ctot = 0;
 
     assert(bt->nthreads >= 1);
 
     /* Divide the bonded interaction over the threads */
-    divide_bondeds_over_threads(idef,
-                                bt->nthreads,
-                                bt->bonded_max_nthread_uniform,
-                                &bt->haveBondeds);
+    divide_bondeds_over_threads(bt, useGpuForBondeds, idef);
 
     if (!bt->haveBondeds)
     {
@@ -409,8 +596,8 @@ void setup_bonded_threading(t_forcerec *fr, t_idef *idef)
     {
         try
         {
-            calc_bonded_reduction_mask(fr->natoms_force, &bt->f_t[t],
-                                       idef, t, bt->nthreads);
+            calc_bonded_reduction_mask(numAtoms, &bt->f_t[t],
+                                       idef, t, *bt);
         }
         GMX_CATCH_ALL_AND_EXIT_WITH_FATAL_ERROR;
     }
@@ -418,7 +605,7 @@ void setup_bonded_threading(t_forcerec *fr, t_idef *idef)
     /* Reduce the masks over the threads and determine which blocks
      * we need to reduce over.
      */
-    int nblock_tot = (fr->natoms_force + reduction_block_size - 1) >> reduction_block_bits;
+    int nblock_tot = (numAtoms + reduction_block_size - 1) >> reduction_block_bits;
     if (nblock_tot > bt->block_nalloc)
     {
         bt->block_nalloc = over_alloc_large(nblock_tot);
@@ -455,15 +642,8 @@ void setup_bonded_threading(t_forcerec *fr, t_idef *idef)
 
             if (gmx_debug_at)
             {
-#if BITMASK_SIZE <= 64 //move into bitmask when it is C++
-                std::string flags = gmx::formatString("%x", *mask);
-#else
-                std::string flags = gmx::formatAndJoin(*mask,
-                                                       *mask+BITMASK_ALEN,
-                                                       "", gmx::StringFormatter("%x"));
-#endif
                 fprintf(debug, "block %d flags %s count %d\n",
-                        b, flags.c_str(), c);
+                        b, to_hex_string(*mask).c_str(), c);
             }
         }
     }
@@ -472,9 +652,24 @@ void setup_bonded_threading(t_forcerec *fr, t_idef *idef)
         fprintf(debug, "Number of %d atom blocks to reduce: %d\n",
                 reduction_block_size, bt->nblock_used);
         fprintf(debug, "Reduction density %.2f for touched blocks only %.2f\n",
-                ctot*reduction_block_size/(double)fr->natoms_force,
-                ctot/(double)bt->nblock_used);
+                ctot*reduction_block_size/static_cast<double>(numAtoms),
+                ctot/static_cast<double>(bt->nblock_used));
     }
+}
+
+void tear_down_bonded_threading(bonded_threading_t *bt)
+{
+    for (int th = 0; th < bt->nthreads; th++)
+    {
+        sfree(bt->f_t[th].fshift);
+        for (int i = 0; i < egNR; i++)
+        {
+            sfree(bt->f_t[th].grpp.ener[i]);
+        }
+    }
+    sfree(bt->f_t);
+    sfree(bt->il_thread_division);
+    sfree(bt);
 }
 
 void init_bonded_threading(FILE *fplog, int nenergrp,
@@ -530,16 +725,16 @@ void init_bonded_threading(FILE *fplog, int nenergrp,
 
     if ((ptr = getenv("GMX_BONDED_NTHREAD_UNIFORM")) != nullptr)
     {
-        sscanf(ptr, "%d", &bt->bonded_max_nthread_uniform);
+        sscanf(ptr, "%d", &bt->max_nthread_uniform);
         if (fplog != nullptr)
         {
             fprintf(fplog, "\nMax threads for uniform bonded distribution set to %d by env.var.\n",
-                    bt->bonded_max_nthread_uniform);
+                    bt->max_nthread_uniform);
         }
     }
     else
     {
-        bt->bonded_max_nthread_uniform = max_nthread_uniform;
+        bt->max_nthread_uniform = max_nthread_uniform;
     }
 
     *bt_ptr = bt;

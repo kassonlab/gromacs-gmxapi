@@ -3,7 +3,7 @@
  *
  * Copyright (c) 1991-2000, University of Groningen, The Netherlands.
  * Copyright (c) 2001-2004, The GROMACS development team.
- * Copyright (c) 2013,2014,2015,2016,2017, by the GROMACS development team, led by
+ * Copyright (c) 2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -40,10 +40,12 @@
 
 #include "config.h"
 
-#include <errno.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cerrno>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+
+#include <tuple>
 
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -114,7 +116,7 @@ void setLibraryFileFinder(const DataFileFinder *finder)
 
 } // namespace gmx
 
-void gmx_disable_file_buffering(void)
+void gmx_disable_file_buffering()
 {
     bUnbuffered = true;
 }
@@ -144,7 +146,7 @@ void gmx_set_max_backup_count(int count)
     s_maxBackupCount = count;
 }
 
-void push_ps(FILE *fp)
+static void push_ps(FILE *fp)
 {
     t_pstack *ps;
 
@@ -156,7 +158,7 @@ void push_ps(FILE *fp)
     pstack   = ps;
 }
 
-#ifdef GMX_FAHCORE
+#if GMX_FAHCORE
 /* don't use pipes!*/
 #define popen fah_fopen
 #define pclose fah_fclose
@@ -286,10 +288,10 @@ gmx_off_t gmx_ftell(FILE *stream)
 #endif
 }
 
-int gmx_truncate(const char *filename, gmx_off_t length)
+int gmx_truncate(const std::string &filename, gmx_off_t length)
 {
 #if GMX_NATIVE_WINDOWS
-    FILE *fp = fopen(filename, "rb+");
+    FILE *fp = fopen(filename.c_str(), "rb+");
     if (fp == NULL)
     {
         return -1;
@@ -302,18 +304,16 @@ int gmx_truncate(const char *filename, gmx_off_t length)
     fclose(fp);
     return rc;
 #else
-    return truncate(filename, length);
+    return truncate(filename.c_str(), length);
 #endif
 }
 
-static FILE *uncompress(const char *fn, const char *mode)
+static FILE *uncompress(const std::string &fn, const char *mode)
 {
-    FILE *fp;
-    char  buf[256];
-
-    sprintf(buf, "uncompress -c < %s", fn);
-    fprintf(stderr, "Going to execute '%s'\n", buf);
-    if ((fp = popen(buf, mode)) == nullptr)
+    FILE       *fp;
+    std::string buf = "uncompress -c < " + fn;
+    fprintf(stderr, "Going to execute '%s'\n", buf.c_str());
+    if ((fp = popen(buf.c_str(), mode)) == nullptr)
     {
         gmx_open(fn);
     }
@@ -322,14 +322,13 @@ static FILE *uncompress(const char *fn, const char *mode)
     return fp;
 }
 
-static FILE *gunzip(const char *fn, const char *mode)
+static FILE *gunzip(const std::string &fn, const char *mode)
 {
-    FILE *fp;
-    char  buf[256];
-
-    sprintf(buf, "gunzip -c < %s", fn);
-    fprintf(stderr, "Going to execute '%s'\n", buf);
-    if ((fp = popen(buf, mode)) == nullptr)
+    FILE       *fp;
+    std::string buf = "gunzip -c < ";
+    buf += fn;
+    fprintf(stderr, "Going to execute '%s'\n", buf.c_str());
+    if ((fp = popen(buf.c_str(), mode)) == nullptr)
     {
         gmx_open(fn);
     }
@@ -338,20 +337,20 @@ static FILE *gunzip(const char *fn, const char *mode)
     return fp;
 }
 
-gmx_bool gmx_fexist(const char *fname)
+gmx_bool gmx_fexist(const std::string &fname)
 {
     FILE *test;
 
-    if (fname == nullptr)
+    if (fname.empty())
     {
         return FALSE;
     }
-    test = fopen(fname, "r");
+    test = fopen(fname.c_str(), "r");
     if (test == nullptr)
     {
         /*Windows doesn't allow fopen of directory - so we need to check this seperately */
         #if GMX_NATIVE_WINDOWS
-        DWORD attr = GetFileAttributes(fname);
+        DWORD attr = GetFileAttributes(fname.c_str());
         return (attr != INVALID_FILE_ATTRIBUTES) && (attr & FILE_ATTRIBUTE_DIRECTORY);
         #else
         return FALSE;
@@ -364,36 +363,19 @@ gmx_bool gmx_fexist(const char *fname)
     }
 }
 
-static char *backup_fn(const char *file)
+static std::string backup_fn(const std::string &file)
 {
-    int          i, count = 1;
-    char        *directory, *fn;
-    char        *buf;
+    int          count = 1;
 
-    smalloc(buf, GMX_PATH_MAX);
-
-    for (i = strlen(file)-1; ((i > 0) && (file[i] != DIR_SEPARATOR)); i--)
+    std::string  directory, fn, buf;
+    std::tie(directory, fn) = gmx::Path::getParentPathAndBasename(file);
+    if (directory.empty())
     {
-        ;
-    }
-    /* Must check whether i > 0, i.e. whether there is a directory
-     * in the file name. In that case we overwrite the / sign with
-     * a '\0' to end the directory string .
-     */
-    if (i > 0)
-    {
-        directory    = gmx_strdup(file);
-        directory[i] = '\0';
-        fn           = gmx_strdup(file+i+1);
-    }
-    else
-    {
-        directory    = gmx_strdup(".");
-        fn           = gmx_strdup(file);
+        directory = ".";
     }
     do
     {
-        sprintf(buf, "%s/#%s.%d#", directory, fn, count);
+        buf = gmx::formatString("%s/#%s.%d#", directory.c_str(), fn.c_str(), count);
         count++;
     }
     while ((count <= s_maxBackupCount) && gmx_fexist(buf));
@@ -405,16 +387,13 @@ static char *backup_fn(const char *file)
          * Gromacs command-line interface. */
         gmx_fatal(FARGS, "Won't make more than %d backups of %s for you.\n"
                   "The env.var. GMX_MAXBACKUP controls this maximum, -1 disables backups.",
-                  s_maxBackupCount, fn);
+                  s_maxBackupCount, fn.c_str());
     }
-
-    sfree(directory);
-    sfree(fn);
 
     return buf;
 }
 
-void make_backup(const char *name)
+void make_backup(const std::string &name)
 {
     if (s_maxBackupCount <= 0)
     {
@@ -422,31 +401,29 @@ void make_backup(const char *name)
     }
     if (gmx_fexist(name))
     {
-        char *backup = backup_fn(name);
-        if (rename(name, backup) == 0)
+        auto backup = backup_fn(name);
+        if (rename(name.c_str(), backup.c_str()) == 0)
         {
             fprintf(stderr, "\nBack Off! I just backed up %s to %s\n",
-                    name, backup);
+                    name.c_str(), backup.c_str());
         }
         else
         {
-            fprintf(stderr, "\nSorry couldn't backup %s to %s\n", name, backup);
+            fprintf(stderr, "\nSorry couldn't backup %s to %s\n", name.c_str(), backup.c_str());
         }
-        sfree(backup);
     }
 }
 
-FILE *gmx_ffopen(const char *file, const char *mode)
+FILE *gmx_ffopen(const std::string &file, const char *mode)
 {
 #ifdef SKIP_FFOPS
     return fopen(file, mode);
 #else
     FILE    *ff = nullptr;
-    char     buf[256], *bufsize = nullptr, *ptr;
     gmx_bool bRead;
     int      bs;
 
-    if (file == nullptr)
+    if (file.empty())
     {
         return nullptr;
     }
@@ -455,20 +432,18 @@ FILE *gmx_ffopen(const char *file, const char *mode)
     {
         make_backup(file);
     }
-    where();
 
     bRead = (mode[0] == 'r' && mode[1] != '+');
-    strcpy(buf, file);
-    if (!bRead || gmx_fexist(buf))
+    if (!bRead || gmx_fexist(file))
     {
-        if ((ff = fopen(buf, mode)) == nullptr)
+        if ((ff = fopen(file.c_str(), mode)) == nullptr)
         {
-            gmx_file(buf);
+            gmx_file(file);
         }
-        where();
         /* Check whether we should be using buffering (default) or not
          * (for debugging)
          */
+        const char *bufsize = nullptr;
         if (bUnbuffered || ((bufsize = getenv("GMX_LOG_BUFFER")) != nullptr))
         {
             /* Check whether to use completely unbuffered */
@@ -486,6 +461,7 @@ FILE *gmx_ffopen(const char *file, const char *mode)
             }
             else
             {
+                char *ptr;
                 snew(ptr, bs+8);
                 if (setvbuf(ff, ptr, _IOFBF, bs) != 0)
                 {
@@ -493,21 +469,22 @@ FILE *gmx_ffopen(const char *file, const char *mode)
                 }
             }
         }
-        where();
     }
     else
     {
-        sprintf(buf, "%s.Z", file);
-        if (gmx_fexist(buf))
+        std::string compressedFileName = file;
+        compressedFileName += ".Z";
+        if (gmx_fexist(compressedFileName))
         {
-            ff = uncompress(buf, mode);
+            ff = uncompress(compressedFileName, mode);
         }
         else
         {
-            sprintf(buf, "%s.gz", file);
-            if (gmx_fexist(buf))
+            compressedFileName  = file;
+            compressedFileName += ".gz";
+            if (gmx_fexist(compressedFileName))
             {
-                ff = gunzip(buf, mode);
+                ff = gunzip(compressedFileName, mode);
             }
             else
             {
@@ -519,49 +496,48 @@ FILE *gmx_ffopen(const char *file, const char *mode)
 #endif
 }
 
-
-char *low_gmxlibfn(const char *file, gmx_bool bAddCWD, gmx_bool bFatal)
+namespace gmx
 {
+
+std::string findLibraryFile(const std::string &filename, bool bAddCWD, bool bFatal)
+{
+    std::string result;
     try
     {
-        const gmx::DataFileFinder &finder = gmx::getLibraryFileFinder();
-        std::string                result =
-            finder.findFile(gmx::DataFileOptions(file)
-                                .includeCurrentDir(bAddCWD)
-                                .throwIfNotFound(bFatal));
-        if (!result.empty())
-        {
-            return gmx_strdup(result.c_str());
-        }
+        const DataFileFinder &finder = getLibraryFileFinder();
+        result = finder.findFile(DataFileOptions(filename)
+                                     .includeCurrentDir(bAddCWD)
+                                     .throwIfNotFound(bFatal));
     }
     GMX_CATCH_ALL_AND_EXIT_WITH_FATAL_ERROR;
-    return nullptr;
+    return result;
 }
 
-FILE *low_libopen(const char *file, gmx_bool bFatal)
+std::string findLibraryFile(const char *filename, bool bAddCWD, bool bFatal)
 {
+    return findLibraryFile(std::string(filename), bAddCWD, bFatal);
+}
+
+FilePtr openLibraryFile(const std::string &filename, bool bAddCWD, bool bFatal)
+{
+    FilePtr fp;
     try
     {
-        const gmx::DataFileFinder &finder = gmx::getLibraryFileFinder();
-        FILE *fp =
-            finder.openFile(gmx::DataFileOptions(file)
-                                .includeCurrentDir(true)
-                                .throwIfNotFound(bFatal));
-        return fp;
+        const DataFileFinder &finder = getLibraryFileFinder();
+        fp = finder.openFile(DataFileOptions(filename)
+                                 .includeCurrentDir(bAddCWD)
+                                 .throwIfNotFound(bFatal));
     }
     GMX_CATCH_ALL_AND_EXIT_WITH_FATAL_ERROR;
-    return nullptr;
+    return fp;
 }
 
-char *gmxlibfn(const char *file)
+FilePtr openLibraryFile(const char *filename, bool bAddCWD, bool bFatal)
 {
-    return low_gmxlibfn(file, TRUE, TRUE);
+    return openLibraryFile(std::string(filename), bAddCWD, bFatal);
 }
 
-FILE *libopen(const char *file)
-{
-    return low_libopen(file, TRUE);
-}
+} // namespace gmx
 
 void gmx_tmpnam(char *buf)
 {
@@ -595,12 +571,8 @@ void gmx_tmpnam(char *buf)
                   strerror(errno));
     }
     close(fd);
-
 #endif
-
     /* name in Buf should now be OK and file is CLOSED */
-
-    return;
 }
 
 FILE *gmx_fopen_temporary(char *buf)
@@ -668,36 +640,33 @@ int gmx_file_rename(const char *oldname, const char *newname)
 
 int gmx_file_copy(const char *oldname, const char *newname, gmx_bool copy_if_empty)
 {
-/* the full copy buffer size: */
-#define FILECOPY_BUFSIZE (1<<16)
-    FILE *in  = nullptr;
-    FILE *out = nullptr;
-    char *buf;
-
-    snew(buf, FILECOPY_BUFSIZE);
-
-    in = fopen(oldname, "rb");
+    gmx::FilePtr in(fopen(oldname, "rb"));
     if (!in)
     {
-        goto error;
+        return 1;
     }
 
     /* If we don't copy when empty, we postpone opening the file
        until we're actually ready to write. */
+    gmx::FilePtr out;
     if (copy_if_empty)
     {
-        out = fopen(newname, "wb");
+        out.reset(fopen(newname, "wb"));
         if (!out)
         {
-            goto error;
+            return 1;
         }
     }
 
-    while (!feof(in))
+    /* the full copy buffer size: */
+    constexpr int     FILECOPY_BUFSIZE = 1<<16;
+    std::vector<char> buf(FILECOPY_BUFSIZE);
+
+    while (!feof(in.get()))
     {
         size_t nread;
 
-        nread = fread(buf, sizeof(char), FILECOPY_BUFSIZE, in);
+        nread = fread(buf.data(), sizeof(char), FILECOPY_BUFSIZE, in.get());
         if (nread > 0)
         {
             size_t ret;
@@ -705,39 +674,24 @@ int gmx_file_copy(const char *oldname, const char *newname, gmx_bool copy_if_emp
             {
                 /* so this is where we open when copy_if_empty is false:
                    here we know we read something. */
-                out = fopen(newname, "wb");
+                out.reset(fopen(newname, "wb"));
                 if (!out)
                 {
-                    goto error;
+                    return 1;
                 }
             }
-            ret = fwrite(buf, sizeof(char), nread, out);
+            ret = fwrite(buf.data(), sizeof(char), nread, out.get());
             if (ret != nread)
             {
-                goto error;
+                return 1;
             }
         }
-        if (ferror(in))
+        if (ferror(in.get()))
         {
-            goto error;
+            return 1;
         }
     }
-    sfree(buf);
-    fclose(in);
-    fclose(out);
     return 0;
-error:
-    sfree(buf);
-    if (in)
-    {
-        fclose(in);
-    }
-    if (out)
-    {
-        fclose(out);
-    }
-    return 1;
-#undef FILECOPY_BUFSIZE
 }
 
 
@@ -745,7 +699,7 @@ int gmx_fsync(FILE *fp)
 {
     int rc = 0;
 
-#ifdef GMX_FAHCORE
+#if GMX_FAHCORE
     /* the fahcore defines its own os-independent fsync */
     rc = fah_fsync(fp);
 #else /* GMX_FAHCORE */

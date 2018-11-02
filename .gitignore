@@ -1,7 +1,6 @@
 /bin
 /lib
 *~
-#*
 *.a
 *.cache
 *.DS_Store
@@ -18,9 +17,10 @@
 Makefile
 lib*.pc
 .project
+.python-version
 .tox
 .cproject
-*build*
+build
 _build
 CMakeLists.txt.user
 /VersionInfo*.cmake

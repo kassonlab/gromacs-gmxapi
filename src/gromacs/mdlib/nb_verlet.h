@@ -1,7 +1,7 @@
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
- * Copyright (c) 2012,2013,2014,2015,2017, by the GROMACS development team, led by
+ * Copyright (c) 2012,2013,2014,2015,2017,2018, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -103,9 +103,14 @@
 #include "gromacs/mdlib/nbnxn_gpu_types.h"
 #include "gromacs/mdlib/nbnxn_pairlist.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+//! Help pass GPU-emulation parameters with type safety.
+enum class EmulateGpuNonbonded : bool
+{
+    //! Do not emulate GPUs.
+    No,
+    //! Do emulate GPUs.
+    Yes
+};
 
 
 /*! \brief Nonbonded NxN kernel types: plain C, CPU SIMD, GPU, GPU emulation */
@@ -173,7 +178,6 @@ enum {
  *  \brief Non-bonded interaction group data structure. */
 typedef struct nonbonded_verlet_group_t {
     nbnxn_pairlist_set_t  nbl_lists;   /**< pair list(s)                       */
-    nbnxn_atomdata_t     *nbat;        /**< atom data                          */
     int                   kernel_type; /**< non-bonded kernel - see enum above */
     int                   ewald_excl;  /**< Ewald exclusion - see enum above   */
 } nonbonded_verlet_group_t;
@@ -182,12 +186,13 @@ typedef struct nonbonded_verlet_group_t {
  *  \brief Top-level non-bonded data structure for the Verlet-type cut-off scheme. */
 typedef struct nonbonded_verlet_t {
     std::unique_ptr<NbnxnListParameters> listParams;      /**< Parameters for the search and list pruning setup */
-    nbnxn_search_t                       nbs;             /**< n vs n atom pair searching data       */
+    std::unique_ptr<nbnxn_search>        nbs;             /**< n vs n atom pair searching data       */
     int                                  ngrp;            /**< number of interaction groups          */
     nonbonded_verlet_group_t             grp[2];          /**< local and non-local interaction group */
+    nbnxn_atomdata_t                    *nbat;            /**< atom data                             */
 
     gmx_bool                             bUseGPU;         /**< TRUE when non-bonded interactions are computed on a physical GPU */
-    bool                                 emulateGpu;      /**< true when non-bonded interactions are computed on the CPU using GPU-style pair lists */
+    EmulateGpuNonbonded                  emulateGpu;      /**< true when non-bonded interactions are computed on the CPU using GPU-style pair lists */
     gmx_nbnxn_gpu_t                     *gpu_nbv;         /**< pointer to GPU nb verlet data     */
     int                                  min_ci_balanced; /**< pair list balancing parameter
                                                                used for the 8x8x8 GPU kernels    */
@@ -196,9 +201,5 @@ typedef struct nonbonded_verlet_t {
 /*! \brief Getter for bUseGPU */
 gmx_bool
 usingGpu(nonbonded_verlet_t *nbv);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif /* NB_VERLET_H */

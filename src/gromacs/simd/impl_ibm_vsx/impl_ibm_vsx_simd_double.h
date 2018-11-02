@@ -1,7 +1,7 @@
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
- * Copyright (c) 2014,2015,2016,2017, by the GROMACS development team, led by
+ * Copyright (c) 2014,2015,2016,2017,2018, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -38,6 +38,7 @@
 
 #include "config.h"
 
+#include "gromacs/math/utilities.h"
 #include "gromacs/utility/basedefinitions.h"
 
 #include "impl_ibm_vsx_definitions.h"
@@ -103,31 +104,63 @@ class SimdDIBool
 // currently version 13.1.5 is required.
 
 static inline SimdDouble gmx_simdcall
-simdLoad(const double *m)
+simdLoad(const double *m, SimdDoubleTag = {})
 {
     return {
+#if defined(__ibmxl__)
+               vec_ld(0, m)
+#else
+#  if __GNUC__ < 7
                *reinterpret_cast<const __vector double *>(m)
+#  else
+               vec_vsx_ld(0, m)
+#  endif
+#endif
     };
 }
 
 static inline void gmx_simdcall
 store(double *m, SimdDouble a)
 {
+#if defined(__ibmxl__)
+    vec_st(a.simdInternal_, 0, m);
+#else
+#  if __GNUC__ < 7
     *reinterpret_cast<__vector double *>(m) = a.simdInternal_;
+#  else
+    vec_vsx_st(a.simdInternal_, 0, m);
+#  endif
+#endif
 }
 
 static inline SimdDouble gmx_simdcall
-simdLoadU(const double *m)
+simdLoadU(const double *m, SimdDoubleTag = {})
 {
     return {
+#if defined(__ibmxl__)
+               vec_xl(0, m)
+#else
+#  if __GNUC__ < 7
                *reinterpret_cast<const __vector double *>(m)
+#  else
+               vec_vsx_ld(0, m)
+#  endif
+#endif
     };
 }
 
 static inline void gmx_simdcall
 storeU(double *m, SimdDouble a)
 {
+#if defined(__ibmxl__)
+    vec_xst(a.simdInternal_, 0, m);
+#else
+#  if __GNUC__ < 7
     *reinterpret_cast<__vector double *>(m) = a.simdInternal_;
+#  else
+    vec_vsx_st(a.simdInternal_, 0, m);
+#  endif
+#endif
 }
 
 static inline SimdDouble gmx_simdcall
@@ -139,7 +172,7 @@ setZeroD()
 }
 
 static inline SimdDInt32 gmx_simdcall
-simdLoadDI(const std::int32_t * m)
+simdLoad(const std::int32_t * m, SimdDInt32Tag)
 {
     __vector signed int          t0, t1;
     const __vector unsigned char perm = { 0, 1, 2, 3, 0, 1, 2, 3, 16, 17, 18, 19, 16, 17, 18, 19 };
@@ -159,9 +192,9 @@ store(std::int32_t * m, SimdDInt32 gmx_unused x)
 }
 
 static inline SimdDInt32 gmx_simdcall
-simdLoadUDI(const std::int32_t *m)
+simdLoadU(const std::int32_t *m, SimdDInt32Tag)
 {
-    return simdLoadDI(m);
+    return simdLoad(m, SimdDInt32Tag());
 }
 
 static inline void gmx_simdcall
@@ -422,6 +455,7 @@ frexp(SimdDouble value, SimdDInt32 * exponent)
     };
 }
 
+template <MathOptimization opt = MathOptimization::Safe>
 static inline SimdDouble
 ldexp(SimdDouble value, SimdDInt32 exponent)
 {
@@ -434,6 +468,13 @@ ldexp(SimdDouble value, SimdDInt32 exponent)
 #endif
 
     iExponent = vec_add(exponent.simdInternal_, exponentBias);
+
+    if (opt == MathOptimization::Safe)
+    {
+        // Make sure biased argument is not negative
+        iExponent = vec_max(iExponent, vec_splat_s32(0));
+    }
+
     // exponent is now present in pairs of integers; 0011.
     // Elements 0/2 already correspond to the upper half of each double,
     // so we only need to shift by another 52-32=20 bits.
@@ -561,22 +602,6 @@ blend(SimdDouble a, SimdDouble b, SimdDBool sel)
 {
     return {
                vec_sel(a.simdInternal_, b.simdInternal_, sel.simdInternal_)
-    };
-}
-
-static inline SimdDInt32 gmx_simdcall
-operator<<(SimdDInt32 a, int n)
-{
-    return {
-               vec_sl(a.simdInternal_, vec_splats(static_cast<unsigned int>(n)))
-    };
-}
-
-static inline SimdDInt32 gmx_simdcall
-operator>>(SimdDInt32 a, int n)
-{
-    return {
-               vec_sr(a.simdInternal_, vec_splats(static_cast<unsigned int>(n)))
     };
 }
 

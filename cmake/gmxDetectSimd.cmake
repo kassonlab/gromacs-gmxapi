@@ -1,7 +1,7 @@
 #
 # This file is part of the GROMACS molecular simulation package.
 #
-# Copyright (c) 2012,2013,2014,2015,2016,2017, by the GROMACS development team, led by
+# Copyright (c) 2012,2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
 # Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
 # and including many others, as listed in the AUTHORS file in the
 # top-level source directory and at http://www.gromacs.org.
@@ -34,7 +34,7 @@
 
 # - Check the username performing the build, as well as date and time
 #
-# gmx_detect_simd(_suggested_simd_)
+# gmx_detect_simd(_suggested_simd)
 #
 # Try to detect CPU features and suggest a SIMD instruction set
 # that fits the current CPU. This should work on all architectures
@@ -42,8 +42,10 @@
 # detection will either use special assembly instructions (like cpuid),
 # preprocessor defines, or probing /proc/cpuinfo on Linux.
 # 
-# Sets ${suggested_simd} in the parent scope if GMX_SIMD is not set
+# Sets ${_suggested_simd} in the parent scope if GMX_SIMD is not set
 # (e.g. by the user, or a previous run of CMake).
+# The string is converted to uppercase for compatibility with
+# gmx_option_multichoice() user input parsing.
 #
 
 # we rely on inline asm support for GNU!
@@ -53,6 +55,8 @@ include(gmxDetectTargetArchitecture)
 gmx_detect_target_architecture()
 
 include(gmxDetectCpu)
+include(gmxDetectAvx512FmaUnits)
+
 function(gmx_suggest_simd _suggested_simd)
     if (NOT SUGGEST_SIMD_QUIETLY)
         message(STATUS "Detecting best SIMD instructions for this CPU")
@@ -75,7 +79,20 @@ function(gmx_suggest_simd _suggested_simd)
             if(CPU_DETECTION_FEATURES MATCHES " avx512er ")
                 set(OUTPUT_SIMD "AVX_512_KNL")
             elseif(CPU_DETECTION_FEATURES MATCHES " avx512f ")
-                set(OUTPUT_SIMD "AVX_512")
+                gmx_detect_avx_512_fma_units(NUMBER_OF_AVX_512_FMA_UNITS)
+                if(NUMBER_OF_AVX_512_FMA_UNITS EQUAL 2)
+                    set(OUTPUT_SIMD "AVX_512")
+                elseif(NUMBER_OF_AVX_512_FMA_UNITS EQUAL 1)
+                    if (NOT SUGGEST_SIMD_QUIETLY)
+                        message(STATUS "This host supports AVX-512, but only has 1 AVX-512 FMA unit, so AVX2 will be faster.")
+                    endif()
+                    set(OUTPUT_SIMD "AVX2_256")
+                else()
+                    if (NOT SUGGEST_SIMD_QUIETLY)
+                        message(STATUS "Could not run code to detect number of AVX-512 FMA units - assuming 2.")
+                    endif()
+                    set(OUTPUT_SIMD "AVX_512")
+                endif()
             elseif(CPU_DETECTION_FEATURES MATCHES " avx2 ")
                 if(CPU_DETECTION_FEATURES MATCHES " amd ")
                     set(OUTPUT_SIMD "AVX2_128")
@@ -100,11 +117,9 @@ function(gmx_suggest_simd _suggested_simd)
                 set(OUTPUT_SIMD "IBM_VSX")
             elseif(CPU_DETECTION_FEATURES MATCHES " vmx ")
                 set(OUTPUT_SIMD "IBM_VMX")
-            elseif(CPU_DETECTION_FEATURES MATCHES " qpx ")
-                set(OUTPUT_SIMD "IBM_QPX")
             elseif(CPU_DETECTION_FEATURES MATCHES " neon_asimd ")
                 set(OUTPUT_SIMD "ARM_NEON_ASIMD")
-            elseif(CPU_DETECTION_FEATURES MATCHES " neon ")
+            elseif(CPU_DETECTION_FEATURES MATCHES " neon " AND NOT GMX_DOUBLE)
                 set(OUTPUT_SIMD "ARM_NEON")
             endif()
         endif()
@@ -123,12 +138,7 @@ endfunction()
 
 function(gmx_detect_simd _suggested_simd)
     if(GMX_SIMD STREQUAL "AUTO")
-        if(GMX_TARGET_BGQ)
-            # BG/Q requires cross-compilation, so needs this
-            # logic. While the qpx feature flag in cpuinfo works, it
-            # can't be returned by cpuinfo running on the build host.
-            set(${_suggested_simd} "IBM_QPX")
-        elseif(GMX_TARGET_FUJITSU_SPARC64)
+        if(GMX_TARGET_FUJITSU_SPARC64)
             # HPC-ACE is always present. In the future we
             # should add detection for HPC-ACE2 here.
             set(${_suggested_simd} "Sparc64_HPC_ACE")
@@ -138,6 +148,7 @@ function(gmx_detect_simd _suggested_simd)
             gmx_suggest_simd(${_suggested_simd})
         endif()
 
+        string(TOUPPER "${${_suggested_simd}}" ${_suggested_simd})
         set(${_suggested_simd} ${${_suggested_simd}} PARENT_SCOPE)
     endif()
 endfunction()

@@ -3,7 +3,7 @@
  *
  * Copyright (c) 1991-2000, University of Groningen, The Netherlands.
  * Copyright (c) 2001-2008, The GROMACS development team.
- * Copyright (c) 2013,2014,2015,2016,2017, by the GROMACS development team, led by
+ * Copyright (c) 2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -38,10 +38,10 @@
 
 #include "shellfc.h"
 
-#include <stdlib.h>
-#include <string.h>
-
+#include <cmath>
 #include <cstdint>
+#include <cstdlib>
+#include <cstring>
 
 #include <algorithm>
 #include <array>
@@ -57,17 +57,21 @@
 #include "gromacs/math/vecdump.h"
 #include "gromacs/mdlib/constr.h"
 #include "gromacs/mdlib/force.h"
+#include "gromacs/mdlib/force_flags.h"
 #include "gromacs/mdlib/mdrun.h"
 #include "gromacs/mdlib/sim_util.h"
 #include "gromacs/mdlib/vsite.h"
 #include "gromacs/mdtypes/commrec.h"
+#include "gromacs/mdtypes/forcerec.h"
 #include "gromacs/mdtypes/inputrec.h"
 #include "gromacs/mdtypes/md_enums.h"
 #include "gromacs/mdtypes/state.h"
 #include "gromacs/pbcutil/mshift.h"
 #include "gromacs/pbcutil/pbc.h"
+#include "gromacs/topology/ifunc.h"
 #include "gromacs/topology/mtop_lookup.h"
 #include "gromacs/topology/mtop_util.h"
+#include "gromacs/utility/arrayref.h"
 #include "gromacs/utility/arraysize.h"
 #include "gromacs/utility/cstringutil.h"
 #include "gromacs/utility/fatalerror.h"
@@ -99,8 +103,8 @@ struct gmx_shellfc_t {
     int          nflexcon;               /* The number of flexible constraints        */
 
     /* Temporary arrays, should be fixed size 2 when fully converted to C++ */
-    PaddedRVecVector *x;                 /* Array for iterative minimization          */
-    PaddedRVecVector *f;                 /* Array for iterative minimization          */
+    PaddedVector<gmx::RVec> *x;          /* Array for iterative minimization          */
+    PaddedVector<gmx::RVec> *f;          /* Array for iterative minimization          */
 
     /* Flexible constraint working data */
     rvec        *acc_dir;                /* Acceleration direction for flexcon        */
@@ -148,7 +152,7 @@ static void pr_shell(FILE *fplog, int ns, t_shell s[])
  * removed. */
 static void predict_shells(FILE *fplog, rvec x[], rvec v[], real dt,
                            int ns, t_shell s[],
-                           real mass[], gmx_mtop_t *mtop, gmx_bool bInit)
+                           const real mass[], gmx_mtop_t *mtop, gmx_bool bInit)
 {
     int                   i, m, s1, n1, n2, n3;
     real                  dt_1, fudge, tm, m1, m2, m3;
@@ -249,8 +253,8 @@ static void predict_shells(FILE *fplog, rvec x[], rvec v[], real dt,
  * \param[in]  mtop  Molecular topology.
  * \returns Array holding the number of particles of a type
  */
-static std::array<int, eptNR> countPtypes(FILE       *fplog,
-                                          gmx_mtop_t *mtop)
+static std::array<int, eptNR> countPtypes(FILE             *fplog,
+                                          const gmx_mtop_t *mtop)
 {
     std::array<int, eptNR> nptype = { { 0 } };
     /* Count number of shells, and find their indices */
@@ -293,7 +297,7 @@ static std::array<int, eptNR> countPtypes(FILE       *fplog,
 }
 
 gmx_shellfc_t *init_shell_flexcon(FILE *fplog,
-                                  gmx_mtop_t *mtop, int nflexcon,
+                                  const gmx_mtop_t *mtop, int nflexcon,
                                   int nstcalcenergy,
                                   bool usingDomainDecomposition)
 {
@@ -303,17 +307,13 @@ gmx_shellfc_t *init_shell_flexcon(FILE *fplog,
     const t_atom             *atom;
 
     int                       ns, nshell, nsi;
-    int                       i, j, type, mb, a_offset, cg, mol, ftype, nra;
+    int                       i, j, type, a_offset, cg, mol, ftype, nra;
     real                      qS, alpha;
     int                       aS, aN = 0; /* Shell and nucleus */
     int                       bondtypes[] = { F_BONDS, F_HARMONIC, F_CUBICBONDS, F_POLARIZATION, F_ANHARM_POL, F_WATER_POL };
 #define NBT asize(bondtypes)
-    t_iatom                  *ia;
     gmx_mtop_atomloop_all_t   aloop;
-    gmx_ffparams_t           *ffparams;
-    gmx_molblock_t           *molb;
-    gmx_moltype_t            *molt;
-    t_block                  *cgs;
+    const gmx_ffparams_t     *ffparams;
 
     std::array<int, eptNR>    n = countPtypes(fplog, mtop);
     nshell = n[eptShell];
@@ -325,8 +325,8 @@ gmx_shellfc_t *init_shell_flexcon(FILE *fplog,
     }
 
     snew(shfc, 1);
-    shfc->x        = new PaddedRVecVector[2] {};
-    shfc->f        = new PaddedRVecVector[2] {};
+    shfc->x        = new PaddedVector<gmx::RVec>[2] {};
+    shfc->f        = new PaddedVector<gmx::RVec>[2] {};
     shfc->nflexcon = nflexcon;
 
     if (nshell == 0)
@@ -385,12 +385,12 @@ gmx_shellfc_t *init_shell_flexcon(FILE *fplog,
     shfc->bInterCG = FALSE;
     ns             = 0;
     a_offset       = 0;
-    for (mb = 0; mb < mtop->nmolblock; mb++)
+    for (size_t mb = 0; mb < mtop->molblock.size(); mb++)
     {
-        molb = &mtop->molblock[mb];
-        molt = &mtop->moltype[molb->type];
+        const gmx_molblock_t *molb = &mtop->molblock[mb];
+        const gmx_moltype_t  *molt = &mtop->moltype[molb->type];
+        const t_block        *cgs  = &molt->cgs;
 
-        cgs = &molt->cgs;
         snew(at2cg, molt->atoms.nr);
         for (cg = 0; cg < cgs->nr; cg++)
         {
@@ -405,8 +405,8 @@ gmx_shellfc_t *init_shell_flexcon(FILE *fplog,
         {
             for (j = 0; (j < NBT); j++)
             {
-                ia = molt->ilist[bondtypes[j]].iatoms;
-                for (i = 0; (i < molt->ilist[bondtypes[j]].nr); )
+                const int *ia = molt->ilist[bondtypes[j]].iatoms.data();
+                for (i = 0; (i < molt->ilist[bondtypes[j]].size()); )
                 {
                     type  = ia[0];
                     ftype = ffparams->functype[type];
@@ -501,7 +501,7 @@ gmx_shellfc_t *init_shell_flexcon(FILE *fplog,
                             case F_ANHARM_POL:
                                 if (!gmx_within_tol(qS, atom[aS].qB, GMX_REAL_EPS*10))
                                 {
-                                    gmx_fatal(FARGS, "polarize can not be used with qA(%e) != qB(%e) for atom %d of molecule block %d", qS, atom[aS].qB, aS+1, mb+1);
+                                    gmx_fatal(FARGS, "polarize can not be used with qA(%e) != qB(%e) for atom %d of molecule block %zu", qS, atom[aS].qB, aS+1, mb+1);
                                 }
                                 shell[nsi].k    += gmx::square(qS)*ONE_4PI_EPS0/
                                     ffparams->iparams[type].polarize.alpha;
@@ -509,7 +509,7 @@ gmx_shellfc_t *init_shell_flexcon(FILE *fplog,
                             case F_WATER_POL:
                                 if (!gmx_within_tol(qS, atom[aS].qB, GMX_REAL_EPS*10))
                                 {
-                                    gmx_fatal(FARGS, "water_pol can not be used with qA(%e) != qB(%e) for atom %d of molecule block %d", qS, atom[aS].qB, aS+1, mb+1);
+                                    gmx_fatal(FARGS, "water_pol can not be used with qA(%e) != qB(%e) for atom %d of molecule block %zu", qS, atom[aS].qB, aS+1, mb+1);
                                 }
                                 alpha          = (ffparams->iparams[type].wpol.al_x+
                                                   ffparams->iparams[type].wpol.al_y+
@@ -591,8 +591,9 @@ gmx_shellfc_t *init_shell_flexcon(FILE *fplog,
     return shfc;
 }
 
-void make_local_shells(t_commrec *cr, t_mdatoms *md,
-                       gmx_shellfc_t *shfc)
+void make_local_shells(const t_commrec *cr,
+                       const t_mdatoms *md,
+                       gmx_shellfc_t   *shfc)
 {
     t_shell      *shell;
     int           a0, a1, *ind, nshell, i;
@@ -602,7 +603,7 @@ void make_local_shells(t_commrec *cr, t_mdatoms *md,
     {
         dd = cr->dd;
         a0 = 0;
-        a1 = dd->nat_home;
+        a1 = dd_numHomeAtoms(*dd);
     }
     else
     {
@@ -628,7 +629,7 @@ void make_local_shells(t_commrec *cr, t_mdatoms *md,
             }
             if (dd)
             {
-                shell[nshell] = shfc->shell_gl[ind[dd->gatindex[i]]];
+                shell[nshell] = shfc->shell_gl[ind[dd->globalAtomIndices[i]]];
             }
             else
             {
@@ -695,11 +696,12 @@ static void do_1pos3(rvec xnew, const rvec xold, const rvec f, const rvec step)
     xnew[ZZ] = zo+dz;
 }
 
-static void directional_sd(const PaddedRVecVector *xold, PaddedRVecVector *xnew, const rvec acc_dir[],
-                           int homenr, real step)
+static void directional_sd(gmx::ArrayRef<const gmx::RVec> xold,
+                           gmx::ArrayRef<gmx::RVec> xnew,
+                           const rvec acc_dir[], int homenr, real step)
 {
-    const rvec *xo = as_rvec_array(xold->data());
-    rvec       *xn = as_rvec_array(xnew->data());
+    const rvec *xo = as_rvec_array(xold.data());
+    rvec       *xn = as_rvec_array(xnew.data());
 
     for (int i = 0; i < homenr; i++)
     {
@@ -707,9 +709,9 @@ static void directional_sd(const PaddedRVecVector *xold, PaddedRVecVector *xnew,
     }
 }
 
-static void shell_pos_sd(const PaddedRVecVector * gmx_restrict xcur,
-                         PaddedRVecVector * gmx_restrict xnew,
-                         const PaddedRVecVector *f,
+static void shell_pos_sd(gmx::ArrayRef<const gmx::RVec> xcur,
+                         gmx::ArrayRef<gmx::RVec> xnew,
+                         gmx::ArrayRef<const gmx::RVec> f,
                          int ns, t_shell s[], int count)
 {
     const real step_scale_min       = 0.8,
@@ -743,8 +745,8 @@ static void shell_pos_sd(const PaddedRVecVector * gmx_restrict xcur,
         {
             for (d = 0; d < DIM; d++)
             {
-                dx = (*xcur)[shell][d] - s[i].xold[d];
-                df =    (*f)[shell][d] - s[i].fold[d];
+                dx = xcur[shell][d] - s[i].xold[d];
+                df =    f[shell][d] - s[i].fold[d];
                 /* -dx/df gets used to generate an interpolated value, but would
                  * cause a NaN if df were binary-equal to zero. Values close to
                  * zero won't cause problems (because of the min() and max()), so
@@ -778,18 +780,18 @@ static void shell_pos_sd(const PaddedRVecVector * gmx_restrict xcur,
 #endif
             }
         }
-        copy_rvec((*xcur)[shell], s[i].xold);
-        copy_rvec((*f)[shell],   s[i].fold);
+        copy_rvec(xcur [shell], s[i].xold);
+        copy_rvec(f[shell],   s[i].fold);
 
-        do_1pos3((*xnew)[shell], (*xcur)[shell], (*f)[shell], s[i].step);
+        do_1pos3(xnew[shell], xcur[shell], f[shell], s[i].step);
 
         if (gmx_debug_at)
         {
             fprintf(debug, "shell[%d] = %d\n", i, shell);
-            pr_rvec(debug, 0, "fshell", (*f)[shell], DIM, TRUE);
-            pr_rvec(debug, 0, "xold", (*xcur)[shell], DIM, TRUE);
+            pr_rvec(debug, 0, "fshell", f[shell], DIM, TRUE);
+            pr_rvec(debug, 0, "xold", xcur[shell], DIM, TRUE);
             pr_rvec(debug, 0, "step", s[i].step, DIM, TRUE);
-            pr_rvec(debug, 0, "xnew", (*xnew)[shell], DIM, TRUE);
+            pr_rvec(debug, 0, "xnew", xnew[shell], DIM, TRUE);
         }
     }
 #ifdef PRINT_STEP
@@ -807,7 +809,7 @@ static void decrease_step_size(int nshell, t_shell s[])
     }
 }
 
-static void print_epot(FILE *fp, gmx_int64_t mdstep, int count, real epot, real df,
+static void print_epot(FILE *fp, int64_t mdstep, int count, real epot, real df,
                        int ndir, real sf_dir)
 {
     char buf[22];
@@ -825,11 +827,11 @@ static void print_epot(FILE *fp, gmx_int64_t mdstep, int count, real epot, real 
 }
 
 
-static real rms_force(t_commrec *cr, const PaddedRVecVector *force, int ns, t_shell s[],
+static real rms_force(const t_commrec *cr, gmx::ArrayRef<const gmx::RVec> force, int ns, t_shell s[],
                       int ndir, real *sf_dir, real *Epot)
 {
     double      buf[4];
-    const rvec *f = as_rvec_array(force->data());
+    const rvec *f = as_rvec_array(force.data());
 
     buf[0] = *sf_dir;
     for (int i = 0; i < ns; i++)
@@ -845,7 +847,7 @@ static real rms_force(t_commrec *cr, const PaddedRVecVector *force, int ns, t_sh
         buf[2] = *sf_dir;
         buf[3] = *Epot;
         gmx_sumd(4, buf, cr);
-        ntot    = (int)(buf[1] + 0.5);
+        ntot    = gmx::roundToInt(buf[1]);
         *sf_dir = buf[2];
         *Epot   = buf[3];
     }
@@ -854,14 +856,14 @@ static real rms_force(t_commrec *cr, const PaddedRVecVector *force, int ns, t_sh
     return (ntot ? std::sqrt(buf[0]/ntot) : 0);
 }
 
-static void check_pbc(FILE *fp, PaddedRVecVector x, int shell)
+static void check_pbc(FILE *fp, gmx::ArrayRef<gmx::RVec> x, int shell)
 {
     int m, now;
 
     now = shell-4;
     for (m = 0; (m < DIM); m++)
     {
-        if (fabs(x[shell][m]-x[now][m]) > 0.3)
+        if (std::fabs(x[shell][m]-x[now][m]) > 0.3)
         {
             pr_rvecs(fp, 0, "SHELL-X", as_rvec_array(x.data())+now, 5);
             break;
@@ -869,7 +871,7 @@ static void check_pbc(FILE *fp, PaddedRVecVector x, int shell)
     }
 }
 
-static void dump_shells(FILE *fp, PaddedRVecVector x, PaddedRVecVector f, real ftol, int ns, t_shell s[])
+static void dump_shells(FILE *fp, gmx::ArrayRef<gmx::RVec> x, gmx::ArrayRef<gmx::RVec> f, real ftol, int ns, t_shell s[])
 {
     int  i, shell;
     real ft2, ff2;
@@ -889,15 +891,22 @@ static void dump_shells(FILE *fp, PaddedRVecVector x, PaddedRVecVector f, real f
     }
 }
 
-static void init_adir(FILE *log, gmx_shellfc_t *shfc,
-                      gmx_constr_t constr, t_idef *idef, t_inputrec *ir,
-                      t_commrec *cr, int dd_ac1,
-                      gmx_int64_t step, t_mdatoms *md, int end,
-                      rvec *x_old, rvec *x_init, rvec *x,
-                      rvec *f, rvec *acc_dir,
-                      gmx_bool bMolPBC, matrix box,
-                      gmx::ConstArrayRef<real> lambda, real *dvdlambda,
-                      t_nrnb *nrnb)
+static void init_adir(gmx_shellfc_t            *shfc,
+                      gmx::Constraints         *constr,
+                      const t_inputrec         *ir,
+                      const t_commrec          *cr,
+                      int                       dd_ac1,
+                      int64_t                   step,
+                      const t_mdatoms          *md,
+                      int                       end,
+                      rvec                     *x_old,
+                      rvec                     *x_init,
+                      rvec                     *x,
+                      rvec                     *f,
+                      rvec                     *acc_dir,
+                      matrix                    box,
+                      gmx::ArrayRef<const real> lambda,
+                      real                     *dvdlambda)
 {
     rvec           *xnold, *xnew;
     double          dt, w_dt;
@@ -944,14 +953,14 @@ static void init_adir(FILE *log, gmx_shellfc_t *shfc,
             }
         }
     }
-    constrain(log, FALSE, FALSE, constr, idef, ir, cr, step, 0, 1.0, md,
-              x, xnold, nullptr, bMolPBC, box,
-              lambda[efptBONDED], &(dvdlambda[efptBONDED]),
-              nullptr, nullptr, nrnb, econqCoord);
-    constrain(log, FALSE, FALSE, constr, idef, ir, cr, step, 0, 1.0, md,
-              x, xnew, nullptr, bMolPBC, box,
-              lambda[efptBONDED], &(dvdlambda[efptBONDED]),
-              nullptr, nullptr, nrnb, econqCoord);
+    constr->apply(FALSE, FALSE, step, 0, 1.0,
+                  x, xnold, nullptr, box,
+                  lambda[efptBONDED], &(dvdlambda[efptBONDED]),
+                  nullptr, nullptr, gmx::ConstraintVariable::Positions);
+    constr->apply(FALSE, FALSE, step, 0, 1.0,
+                  x, xnew, nullptr, box,
+                  lambda[efptBONDED], &(dvdlambda[efptBONDED]),
+                  nullptr, nullptr, gmx::ConstraintVariable::Positions);
 
     for (n = 0; n < end; n++)
     {
@@ -965,44 +974,53 @@ static void init_adir(FILE *log, gmx_shellfc_t *shfc,
     }
 
     /* Project the acceleration on the old bond directions */
-    constrain(log, FALSE, FALSE, constr, idef, ir, cr, step, 0, 1.0, md,
-              x_old, xnew, acc_dir, bMolPBC, box,
-              lambda[efptBONDED], &(dvdlambda[efptBONDED]),
-              nullptr, nullptr, nrnb, econqDeriv_FlexCon);
+    constr->apply(FALSE, FALSE, step, 0, 1.0,
+                  x_old, xnew, acc_dir, box,
+                  lambda[efptBONDED], &(dvdlambda[efptBONDED]),
+                  nullptr, nullptr, gmx::ConstraintVariable::Deriv_FlexCon);
 }
 
-void relax_shell_flexcon(FILE *fplog, t_commrec *cr, gmx_bool bVerbose,
-                         gmx_int64_t mdstep, t_inputrec *inputrec,
-                         gmx_bool bDoNS, int force_flags,
-                         gmx_localtop_t *top,
-                         gmx_constr_t constr,
-                         gmx_enerdata_t *enerd, t_fcdata *fcd,
-                         t_state *state, PaddedRVecVector *f,
-                         tensor force_vir,
-                         t_mdatoms *md,
-                         t_nrnb *nrnb, gmx_wallcycle_t wcycle,
-                         t_graph *graph,
-                         gmx_groups_t *groups,
-                         gmx_shellfc_t *shfc,
-                         t_forcerec *fr,
-                         gmx_bool bBornRadii,
-                         double t, rvec mu_tot,
-                         gmx_vsite_t *vsite,
+void relax_shell_flexcon(FILE                                     *fplog,
+                         const t_commrec                          *cr,
+                         const gmx_multisim_t                     *ms,
+                         gmx_bool                                  bVerbose,
+                         gmx_enfrot                               *enforcedRotation,
+                         int64_t                                   mdstep,
+                         const t_inputrec                         *inputrec,
+                         gmx_bool                                  bDoNS,
+                         int                                       force_flags,
+                         gmx_localtop_t                           *top,
+                         gmx::Constraints                         *constr,
+                         gmx_enerdata_t                           *enerd,
+                         t_fcdata                                 *fcd,
+                         t_state                                  *state,
+                         gmx::ArrayRefWithPadding<gmx::RVec>       f,
+                         tensor                                    force_vir,
+                         const t_mdatoms                          *md,
+                         t_nrnb                                   *nrnb,
+                         gmx_wallcycle_t                           wcycle,
+                         t_graph                                  *graph,
+                         const gmx_groups_t                       *groups,
+                         gmx_shellfc_t                            *shfc,
+                         t_forcerec                               *fr,
+                         double                                    t,
+                         rvec                                      mu_tot,
+                         const gmx_vsite_t                        *vsite,
                          DdOpenBalanceRegionBeforeForceComputation ddOpenBalanceRegion,
                          DdCloseBalanceRegionAfterForceComputation ddCloseBalanceRegion)
 {
-    int        nshell;
-    t_shell   *shell;
-    t_idef    *idef;
-    rvec      *acc_dir = nullptr, *x_old = nullptr;
-    real       Epot[2], df[2];
-    real       sf_dir, invdt;
-    real       ftol, dum = 0;
-    char       sbuf[22];
-    gmx_bool   bCont, bInit, bConverged;
-    int        nat, dd_ac0, dd_ac1 = 0, i;
-    int        homenr = md->homenr, end = homenr, cg0, cg1;
-    int        nflexcon, number_steps, d, Min = 0, count = 0;
+    int           nshell;
+    t_shell      *shell;
+    const t_idef *idef;
+    rvec         *acc_dir = nullptr, *x_old = nullptr;
+    real          Epot[2], df[2];
+    real          sf_dir, invdt;
+    real          ftol, dum = 0;
+    char          sbuf[22];
+    gmx_bool      bCont, bInit, bConverged;
+    int           nat, dd_ac0, dd_ac1 = 0, i;
+    int           homenr = md->homenr, end = homenr, cg0, cg1;
+    int           nflexcon, number_steps, d, Min = 0, count = 0;
 #define  Try (1-Min)             /* At start Try = 1 */
 
     bCont        = (mdstep == inputrec->init_step) && inputrec->bContinuation;
@@ -1031,17 +1049,21 @@ void relax_shell_flexcon(FILE *fplog, t_commrec *cr, gmx_bool bVerbose,
 
     for (i = 0; (i < 2); i++)
     {
-        shfc->x[i].resize(nat + 1);
-        shfc->f[i].resize(nat + 1);
+        shfc->x[i].resizeWithPadding(nat);
+        shfc->f[i].resizeWithPadding(nat);
     }
 
-    /* Create pointer that we can swap */
-    PaddedRVecVector *pos[2];
-    PaddedRVecVector *force[2];
+    /* Create views that we can swap */
+    gmx::ArrayRefWithPadding<gmx::RVec> posWithPadding[2];
+    gmx::ArrayRefWithPadding<gmx::RVec> forceWithPadding[2];
+    gmx::ArrayRef<gmx::RVec>            pos[2];
+    gmx::ArrayRef<gmx::RVec>            force[2];
     for (i = 0; (i < 2); i++)
     {
-        pos[i]   = &shfc->x[i];
-        force[i] = &shfc->f[i];
+        posWithPadding[i]   = shfc->x[i].arrayRefWithPadding();
+        pos[i]              = posWithPadding[i].paddedArrayRef();
+        forceWithPadding[i] = shfc->f[i].arrayRefWithPadding();
+        force[i]            = forceWithPadding[i].paddedArrayRef();
     }
 
     if (bDoNS && inputrec->ePBC != epbcNONE && !DOMAINDECOMP(cr))
@@ -1052,26 +1074,27 @@ void relax_shell_flexcon(FILE *fplog, t_commrec *cr, gmx_bool bVerbose,
          */
         if (inputrec->cutoff_scheme == ecutsVERLET)
         {
-            put_atoms_in_box_omp(fr->ePBC, state->box, md->homenr, as_rvec_array(state->x.data()));
+            auto xRef = state->x.arrayRefWithPadding().paddedArrayRef();
+            put_atoms_in_box_omp(fr->ePBC, state->box, xRef.subArray(0, md->homenr));
         }
         else
         {
             cg0 = 0;
             cg1 = top->cgs.nr;
             put_charge_groups_in_box(fplog, cg0, cg1, fr->ePBC, state->box,
-                                     &(top->cgs), as_rvec_array(state->x.data()), fr->cg_cm);
+                                     &(top->cgs), state->x.rvec_array(), fr->cg_cm);
         }
 
         if (graph)
         {
-            mk_mshift(fplog, graph, fr->ePBC, state->box, as_rvec_array(state->x.data()));
+            mk_mshift(fplog, graph, fr->ePBC, state->box, state->x.rvec_array());
         }
     }
 
     /* After this all coordinate arrays will contain whole charge groups */
     if (graph)
     {
-        shift_self(graph, state->box, as_rvec_array(state->x.data()));
+        shift_self(graph, state->box, state->x.rvec_array());
     }
 
     if (nflexcon)
@@ -1084,12 +1107,14 @@ void relax_shell_flexcon(FILE *fplog, t_commrec *cr, gmx_bool bVerbose,
         }
         acc_dir = shfc->acc_dir;
         x_old   = shfc->x_old;
+        auto x = makeArrayRef(state->x);
+        auto v = makeArrayRef(state->v);
         for (i = 0; i < homenr; i++)
         {
             for (d = 0; d < DIM; d++)
             {
                 shfc->x_old[i][d] =
-                    state->x[i][d] - state->v[i][d]*inputrec->delta_t;
+                    x[i][d] - v[i][d]*inputrec->delta_t;
             }
         }
     }
@@ -1099,37 +1124,38 @@ void relax_shell_flexcon(FILE *fplog, t_commrec *cr, gmx_bool bVerbose,
      */
     if (shfc->bPredict && !bCont && (EI_STATE_VELOCITY(inputrec->eI) || bInit))
     {
-        predict_shells(fplog, as_rvec_array(state->x.data()), as_rvec_array(state->v.data()), inputrec->delta_t, nshell, shell,
+        predict_shells(fplog, state->x.rvec_array(), state->v.rvec_array(), inputrec->delta_t, nshell, shell,
                        md->massT, nullptr, bInit);
     }
 
     /* do_force expected the charge groups to be in the box */
     if (graph)
     {
-        unshift_self(graph, state->box, as_rvec_array(state->x.data()));
+        unshift_self(graph, state->box, state->x.rvec_array());
     }
 
     /* Calculate the forces first time around */
     if (gmx_debug_at)
     {
-        pr_rvecs(debug, 0, "x b4 do_force", as_rvec_array(state->x.data()), homenr);
+        pr_rvecs(debug, 0, "x b4 do_force", state->x.rvec_array(), homenr);
     }
-    do_force(fplog, cr, inputrec, mdstep, nrnb, wcycle, top, groups,
-             state->box, &state->x, &state->hist,
-             force[Min], force_vir, md, enerd, fcd,
+    do_force(fplog, cr, ms, inputrec, nullptr, enforcedRotation,
+             mdstep, nrnb, wcycle, top, groups,
+             state->box, state->x.arrayRefWithPadding(), &state->hist,
+             forceWithPadding[Min], force_vir, md, enerd, fcd,
              state->lambda, graph,
-             fr, vsite, mu_tot, t, nullptr, bBornRadii,
+             fr, vsite, mu_tot, t, nullptr,
              (bDoNS ? GMX_FORCE_NS : 0) | force_flags,
              ddOpenBalanceRegion, ddCloseBalanceRegion);
 
     sf_dir = 0;
     if (nflexcon)
     {
-        init_adir(fplog, shfc,
-                  constr, idef, inputrec, cr, dd_ac1, mdstep, md, end,
-                  shfc->x_old, as_rvec_array(state->x.data()), as_rvec_array(state->x.data()), as_rvec_array(force[Min]->data()),
+        init_adir(shfc,
+                  constr, inputrec, cr, dd_ac1, mdstep, md, end,
+                  shfc->x_old, state->x.rvec_array(), state->x.rvec_array(), as_rvec_array(force[Min].data()),
                   shfc->acc_dir,
-                  fr->bMolPBC, state->box, state->lambda, &dum, nrnb);
+                  state->box, state->lambda, &dum);
 
         for (i = 0; i < end; i++)
         {
@@ -1139,7 +1165,7 @@ void relax_shell_flexcon(FILE *fplog, t_commrec *cr, gmx_bool bVerbose,
 
     Epot[Min] = enerd->term[F_EPOT];
 
-    df[Min] = rms_force(cr, &shfc->f[Min], nshell, shell, nflexcon, &sf_dir, &Epot[Min]);
+    df[Min] = rms_force(cr, forceWithPadding[Min].paddedArrayRef(), nshell, shell, nflexcon, &sf_dir, &Epot[Min]);
     df[Try] = 0;
     if (debug)
     {
@@ -1148,7 +1174,7 @@ void relax_shell_flexcon(FILE *fplog, t_commrec *cr, gmx_bool bVerbose,
 
     if (gmx_debug_at)
     {
-        pr_rvecs(debug, 0, "force0", as_rvec_array(force[Min]->data()), md->nr);
+        pr_rvecs(debug, 0, "force0", as_rvec_array(force[Min].data()), md->nr);
     }
 
     if (nshell+nflexcon > 0)
@@ -1157,8 +1183,12 @@ void relax_shell_flexcon(FILE *fplog, t_commrec *cr, gmx_bool bVerbose,
          * shell positions are updated, therefore the other particles must
          * be set here.
          */
-        *pos[Min] = state->x;
-        *pos[Try] = state->x;
+        std::copy(state->x.begin(),
+                  state->x.end(),
+                  posWithPadding[Min].paddedArrayRef().begin());
+        std::copy(state->x.begin(),
+                  state->x.end(),
+                  posWithPadding[Try].paddedArrayRef().begin());
     }
 
     if (bVerbose && MASTER(cr))
@@ -1186,18 +1216,20 @@ void relax_shell_flexcon(FILE *fplog, t_commrec *cr, gmx_bool bVerbose,
     {
         if (vsite)
         {
-            construct_vsites(vsite, as_rvec_array(pos[Min]->data()),
-                             inputrec->delta_t, as_rvec_array(state->v.data()),
+            construct_vsites(vsite, as_rvec_array(pos[Min].data()),
+                             inputrec->delta_t, state->v.rvec_array(),
                              idef->iparams, idef->il,
                              fr->ePBC, fr->bMolPBC, cr, state->box);
         }
 
         if (nflexcon)
         {
-            init_adir(fplog, shfc,
-                      constr, idef, inputrec, cr, dd_ac1, mdstep, md, end,
-                      x_old, as_rvec_array(state->x.data()), as_rvec_array(pos[Min]->data()), as_rvec_array(force[Min]->data()), acc_dir,
-                      fr->bMolPBC, state->box, state->lambda, &dum, nrnb);
+            init_adir(shfc,
+                      constr, inputrec, cr, dd_ac1, mdstep, md, end,
+                      x_old, state->x.rvec_array(),
+                      as_rvec_array(pos[Min].data()),
+                      as_rvec_array(force[Min].data()), acc_dir,
+                      state->box, state->lambda, &dum);
 
             directional_sd(pos[Min], pos[Try], acc_dir, end, fr->fc_stepsize);
         }
@@ -1208,35 +1240,38 @@ void relax_shell_flexcon(FILE *fplog, t_commrec *cr, gmx_bool bVerbose,
         /* do_force expected the charge groups to be in the box */
         if (graph)
         {
-            unshift_self(graph, state->box, as_rvec_array(pos[Try]->data()));
+            unshift_self(graph, state->box, as_rvec_array(pos[Try].data()));
         }
 
         if (gmx_debug_at)
         {
-            pr_rvecs(debug, 0, "RELAX: pos[Min]  ", as_rvec_array(pos[Min]->data()), homenr);
-            pr_rvecs(debug, 0, "RELAX: pos[Try]  ", as_rvec_array(pos[Try]->data()), homenr);
+            pr_rvecs(debug, 0, "RELAX: pos[Min]  ", as_rvec_array(pos[Min].data()), homenr);
+            pr_rvecs(debug, 0, "RELAX: pos[Try]  ", as_rvec_array(pos[Try].data()), homenr);
         }
         /* Try the new positions */
-        do_force(fplog, cr, inputrec, 1, nrnb, wcycle,
-                 top, groups, state->box, pos[Try], &state->hist,
-                 force[Try], force_vir,
+        do_force(fplog, cr, ms, inputrec, nullptr, enforcedRotation,
+                 1, nrnb, wcycle,
+                 top, groups, state->box, posWithPadding[Try], &state->hist,
+                 forceWithPadding[Try], force_vir,
                  md, enerd, fcd, state->lambda, graph,
-                 fr, vsite, mu_tot, t, nullptr, bBornRadii,
+                 fr, vsite, mu_tot, t, nullptr,
                  force_flags,
                  ddOpenBalanceRegion, ddCloseBalanceRegion);
 
         if (gmx_debug_at)
         {
-            pr_rvecs(debug, 0, "RELAX: force[Min]", as_rvec_array(force[Min]->data()), homenr);
-            pr_rvecs(debug, 0, "RELAX: force[Try]", as_rvec_array(force[Try]->data()), homenr);
+            pr_rvecs(debug, 0, "RELAX: force[Min]", as_rvec_array(force[Min].data()), homenr);
+            pr_rvecs(debug, 0, "RELAX: force[Try]", as_rvec_array(force[Try].data()), homenr);
         }
         sf_dir = 0;
         if (nflexcon)
         {
-            init_adir(fplog, shfc,
-                      constr, idef, inputrec, cr, dd_ac1, mdstep, md, end,
-                      x_old, as_rvec_array(state->x.data()), as_rvec_array(pos[Try]->data()), as_rvec_array(force[Try]->data()), acc_dir,
-                      fr->bMolPBC, state->box, state->lambda, &dum, nrnb);
+            init_adir(shfc,
+                      constr, inputrec, cr, dd_ac1, mdstep, md, end,
+                      x_old, state->x.rvec_array(),
+                      as_rvec_array(pos[Try].data()),
+                      as_rvec_array(force[Try].data()),
+                      acc_dir, state->box, state->lambda, &dum);
 
             for (i = 0; i < end; i++)
             {
@@ -1257,12 +1292,12 @@ void relax_shell_flexcon(FILE *fplog, t_commrec *cr, gmx_bool bVerbose,
         {
             if (gmx_debug_at)
             {
-                pr_rvecs(debug, 0, "F na do_force", as_rvec_array(force[Try]->data()), homenr);
+                pr_rvecs(debug, 0, "F na do_force", as_rvec_array(force[Try].data()), homenr);
             }
             if (gmx_debug_at)
             {
                 fprintf(debug, "SHELL ITER %d\n", count);
-                dump_shells(debug, *pos[Try], *force[Try], ftol, nshell, shell);
+                dump_shells(debug, pos[Try], force[Try], ftol, nshell, shell);
             }
         }
 
@@ -1283,11 +1318,12 @@ void relax_shell_flexcon(FILE *fplog, t_commrec *cr, gmx_bool bVerbose,
             {
                 /* Correct the velocities for the flexible constraints */
                 invdt = 1/inputrec->delta_t;
+                auto v = makeArrayRef(state->v);
                 for (i = 0; i < end; i++)
                 {
                     for (d = 0; d < DIM; d++)
                     {
-                        state->v[i][d] += (pos[Try][i][d] - pos[Min][i][d])*invdt;
+                        v[i][d] += (pos[Try][i][d] - pos[Min][i][d])*invdt;
                     }
                 }
             }
@@ -1318,11 +1354,11 @@ void relax_shell_flexcon(FILE *fplog, t_commrec *cr, gmx_bool bVerbose,
     }
 
     /* Copy back the coordinates and the forces */
-    state->x = *pos[Min];
-    *f       = *force[Min];
+    std::copy(pos[Min].begin(), pos[Min].end(), makeArrayRef(state->x).data());
+    std::copy(force[Min].begin(), force[Min].end(), f.unpaddedArrayRef().begin());
 }
 
-void done_shellfc(FILE *fplog, gmx_shellfc_t *shfc, gmx_int64_t numSteps)
+void done_shellfc(FILE *fplog, gmx_shellfc_t *shfc, int64_t numSteps)
 {
     if (shfc && fplog && numSteps > 0)
     {

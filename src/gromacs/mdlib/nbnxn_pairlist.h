@@ -1,7 +1,7 @@
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
- * Copyright (c) 2012,2013,2014,2015,2016,2017, by the GROMACS development team, led by
+ * Copyright (c) 2012,2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -36,9 +36,12 @@
 #ifndef _nbnxn_pairlist_h
 #define _nbnxn_pairlist_h
 
+#include "config.h"
+
 #include <cstddef>
 
 #include "gromacs/math/vectypes.h"
+#include "gromacs/mdlib/nbnxn_consts.h"
 #include "gromacs/mdtypes/nblist.h"
 #include "gromacs/utility/basedefinitions.h"
 #include "gromacs/utility/bitmask.h"
@@ -74,24 +77,21 @@ struct NbnxnListParameters
 
 /*! \endcond */
 
-/* With GPU kernels the i and j cluster size is 8 atoms */
-static const int c_nbnxnGpuClusterSize = 8;
+/* With GPU kernels the i and j cluster size is 8 atoms for CUDA and can be set at compile time for OpenCL */
+#if GMX_GPU == GMX_GPU_OPENCL
+static constexpr int c_nbnxnGpuClusterSize = GMX_OPENCL_NB_CLUSTER_SIZE;
+#else
+static constexpr int c_nbnxnGpuClusterSize = 8;
+#endif
 
-/* The number of clusters in a super-cluster, used for GPU */
-static const int c_nbnxnGpuNumClusterPerSupercluster = 8;
-
-/* With GPU kernels we group cluster pairs in 4 to optimize memory usage
- * of integers containing 32 bits.
- */
-static const int c_nbnxnGpuJgroupSize = 32/c_nbnxnGpuNumClusterPerSupercluster;
 
 /* In CUDA the number of threads in a warp is 32 and we have cluster pairs
  * of 8*8=64 atoms, so it's convenient to store data for cluster pair halves.
  */
-static const int c_nbnxnGpuClusterpairSplit = 2;
+static constexpr int c_nbnxnGpuClusterpairSplit = 2;
 
 /* The fixed size of the exclusion mask array for a half cluster pair */
-static const int c_nbnxnGpuExclSize = c_nbnxnGpuClusterSize*c_nbnxnGpuClusterSize/c_nbnxnGpuClusterpairSplit;
+static constexpr int c_nbnxnGpuExclSize = c_nbnxnGpuClusterSize*c_nbnxnGpuClusterSize/c_nbnxnGpuClusterpairSplit;
 
 /* A buffer data structure of 64 bytes
  * to be placed at the beginning and end of structs
@@ -225,7 +225,7 @@ typedef struct {
     int                natpair_lj;            /* Total number of atom pairs for LJ kernel   */
     int                natpair_q;             /* Total number of atom pairs for Q kernel    */
     t_nblist         **nbl_fep;               /* List of free-energy atom pair interactions */
-    gmx_int64_t        outerListCreationStep; /* Step at which the outer list was created */
+    int64_t            outerListCreationStep; /* Step at which the outer list was created */
 } nbnxn_pairlist_set_t;
 
 enum {
@@ -272,7 +272,7 @@ enum {
     ljcrGEOM, ljcrLB, ljcrNONE, ljcrNR
 };
 
-typedef struct nbnxn_atomdata_t {
+typedef struct nbnxn_atomdata_t { //NOLINT(clang-analyzer-optin.performance.Padding)
     nbnxn_alloc_t           *alloc;
     nbnxn_free_t            *free;
     int                      ntype;           /* The number of different atom types                 */
@@ -305,8 +305,8 @@ typedef struct nbnxn_atomdata_t {
     real                    *simd_4xn_diagonal_j_minus_i;
     real                    *simd_2xnn_diagonal_j_minus_i;
     /* Filters for topology exclusion masks for the SIMD kernels. */
-    gmx_uint32_t            *simd_exclusion_filter;
-    gmx_uint64_t            *simd_exclusion_filter64; //!< Used for double w/o SIMD int32 logical support
+    uint32_t                *simd_exclusion_filter;
+    uint64_t                *simd_exclusion_filter64; //!< Used for double w/o SIMD int32 logical support
     real                    *simd_interaction_array;  /* Array of masks needed for exclusions */
     int                      nout;                    /* The number of force arrays                         */
     nbnxn_atomdata_output_t *out;                     /* Output data structures               */

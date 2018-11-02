@@ -3,7 +3,7 @@
  *
  * Copyright (c) 1991-2000, University of Groningen, The Netherlands.
  * Copyright (c) 2001-2004, The GROMACS development team.
- * Copyright (c) 2012,2014,2015,2016,2017, by the GROMACS development team, led by
+ * Copyright (c) 2012,2014,2015,2016,2017,2018, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -40,14 +40,11 @@
 #include <stdio.h>
 
 #include "gromacs/math/vectypes.h"
+#include "gromacs/utility/arrayref.h"
 #include "gromacs/utility/basedefinitions.h"
 #include "gromacs/utility/real.h"
 
 struct gmx_domdec_t;
-
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 enum {
     epbcXYZ, epbcNONE, epbcXY, epbcSCREW, epbcNR
@@ -108,7 +105,7 @@ typedef struct t_pbc {
     rvec       tric_vec[MAX_NTRICVEC];
 } t_pbc;
 
-#define TRICLINIC(box) (box[YY][XX] != 0 || box[ZZ][XX] != 0 || box[ZZ][YY] != 0)
+#define TRICLINIC(box) ((box)[YY][XX] != 0 || (box)[ZZ][XX] != 0 || (box)[ZZ][YY] != 0)
 
 #define NTRICIMG 14
 #define NCUCVERT 24
@@ -147,7 +144,12 @@ void dump_pbc(FILE *fp, t_pbc *pbc);
  */
 const char *check_box(int ePBC, const matrix box);
 
-/*! \brief Creates box matrix from edge lengths and angles. */
+/*! \brief Creates box matrix from edge lengths and angles.
+ *
+ * \param[in,out] box         The box matrix
+ * \param[in] vec            The edge lengths
+ * \param[in] angleInDegrees The angles
+ */
 void matrix_convert(matrix box, const rvec vec, const rvec angleInDegrees);
 
 /*! \brief Compute the maximum cutoff for the box
@@ -186,7 +188,7 @@ gmx_bool correct_box(FILE *fplog, int step, tensor box, struct t_graph *graph);
  * pbc_dx will not use pbc and return the normal difference vector
  * when one or more of the diagonal elements of box are zero.
  * When ePBC=-1, the type of pbc is guessed from the box matrix.
- * \param[inout] pbc The pbc information structure
+ * \param[in,out] pbc The pbc information structure
  * \param[in] ePBC The PBC identifier
  * \param[in] box  The box tensor
  */
@@ -202,7 +204,7 @@ void set_pbc(t_pbc *pbc, int ePBC, const matrix box);
  * with dd->nc[i]<=2 with bSingleDir==FALSE.
  * Note that when no PBC is required only pbc->ePBC is set,
  * the rest of the struct will be invalid.
- * \param[inout] pbc The pbc information structure
+ * \param[in,out] pbc The pbc information structure
  * \param[in] ePBC        The PBC identifier
  * \param[in] domdecCells 3D integer vector describing the number of DD cells
  *                        or nullptr if not using DD.
@@ -221,7 +223,7 @@ t_pbc *set_pbc_dd(t_pbc *pbc, int ePBC,
  *
  * Note that for triclinic boxes that do not obey the GROMACS unit-cell
  * restrictions, pbc_dx and pbc_dx_aiuc will not correct for PBC.
- * \param[inout] pbc The pbc information structure
+ * \param[in,out] pbc The pbc information structure
  * \param[in]    x1  Coordinates for particle 1
  * \param[in]    x2  Coordinates for particle 2
  * \param[out]   dx  Distance vector
@@ -234,7 +236,7 @@ void pbc_dx(const t_pbc *pbc, const rvec x1, const rvec x2, rvec dx);
  * This function can only be used when all atoms are in the rectangular
  * or triclinic unit-cell.
  * set_pbc_dd or set_pbc must be called before ever calling this routine.
- * \param[inout] pbc The pbc information structure
+ * \param[in,out] pbc The pbc information structure
  * \param[in]    x1  Coordinates for particle 1
  * \param[in]    x2  Coordinates for particle 2
  * \param[out]   dx  Distance vector
@@ -244,11 +246,11 @@ void pbc_dx(const t_pbc *pbc, const rvec x1, const rvec x2, rvec dx);
  */
 int pbc_dx_aiuc(const t_pbc *pbc, const rvec x1, const rvec x2, rvec dx);
 
-/*\brief Compute distance with PBC
+/*! \brief Compute distance with PBC
  *
  * As pbc_dx, but for double precision vectors.
  * set_pbc must be called before ever calling this routine.
- * \param[inout] pbc The pbc information structure
+ * \param[in,out] pbc The pbc information structure
  * \param[in]    x1  Coordinates for particle 1
  * \param[in]    x2  Coordinates for particle 2
  * \param[out]   dx  Distance vector
@@ -296,7 +298,7 @@ void calc_compact_unitcell_vertices(int ecenter, const matrix box,
  * The index consists of NCUCEDGE pairs of vertex indices.
  * The index does not change, so it needs to be retrieved only once.
  */
-int *compact_unitcell_edges(void);
+int *compact_unitcell_edges();
 
 /*! \brief Put atoms inside the simulations box
  *
@@ -305,10 +307,9 @@ int *compact_unitcell_edges(void);
  * Also works for triclinic cells.
  * \param[in]    ePBC   The pbc type
  * \param[in]    box    The simulation box
- * \param[in]    natoms The number of atoms
- * \param[inout] x      The coordinates of the atoms
+ * \param[in,out] x      The coordinates of the atoms
  */
-void put_atoms_in_box(int ePBC, const matrix box, int natoms, rvec x[]);
+void put_atoms_in_box(int ePBC, const matrix box, gmx::ArrayRef<gmx::RVec> x);
 
 /*! \brief Put atoms inside triclinic box
  *
@@ -316,11 +317,10 @@ void put_atoms_in_box(int ePBC, const matrix box, int natoms, rvec x[]);
  * box center as calculated by calc_box_center.
  * \param[in]    ecenter The pbc center type
  * \param[in]    box     The simulation box
- * \param[in]    natoms  The number of atoms
- * \param[inout] x       The coordinates of the atoms
+ * \param[in,out] x       The coordinates of the atoms
  */
 void put_atoms_in_triclinic_unitcell(int ecenter, const matrix box,
-                                     int natoms, rvec x[]);
+                                     gmx::ArrayRef<gmx::RVec> x);
 
 /*! \brief Put atoms inside the unitcell
  *
@@ -330,15 +330,10 @@ void put_atoms_in_triclinic_unitcell(int ecenter, const matrix box,
  * \param[in]    ePBC    The pbc type
  * \param[in]    ecenter The pbc center type
  * \param[in]    box     The simulation box
- * \param[in]    natoms  The number of atoms
- * \param[inout] x       The coordinates of the atoms
+ * \param[in,out] x       The coordinates of the atoms
  */
 void put_atoms_in_compact_unitcell(int ePBC, int ecenter,
                                    const matrix box,
-                                   int natoms, rvec x[]);
-
-#ifdef __cplusplus
-}
-#endif
+                                   gmx::ArrayRef<gmx::RVec> x);
 
 #endif

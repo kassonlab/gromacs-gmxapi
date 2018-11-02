@@ -1,7 +1,7 @@
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
- * Copyright (c) 2014,2015,2016,2017, by the GROMACS development team, led by
+ * Copyright (c) 2014,2015,2016,2017,2018, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -38,6 +38,7 @@
 
 #include "config.h"
 
+#include "gromacs/math/utilities.h"
 #include "gromacs/utility/basedefinitions.h"
 
 #include "impl_ibm_vsx_definitions.h"
@@ -103,7 +104,7 @@ class SimdFIBool
 // currently version 13.1.5 is required.
 
 static inline SimdFloat gmx_simdcall
-simdLoad(const float *m)
+simdLoad(const float *m, SimdFloatTag = {})
 {
     return {
                *reinterpret_cast<const __vector float *>(m)
@@ -117,17 +118,25 @@ store(float *m, SimdFloat a)
 }
 
 static inline SimdFloat gmx_simdcall
-simdLoadU(const float *m)
+simdLoadU(const float *m, SimdFloatTag = {})
 {
     return {
+#if __GNUC__ < 7
                *reinterpret_cast<const __vector float *>(m)
+#else
+               vec_xl(0, m)
+#endif
     };
 }
 
 static inline void gmx_simdcall
 storeU(float *m, SimdFloat a)
 {
+#if __GNUC__ < 7
     *reinterpret_cast<__vector float *>(m) = a.simdInternal_;
+#else
+    vec_xst(a.simdInternal_, 0, m);
+#endif
 }
 
 static inline SimdFloat gmx_simdcall
@@ -139,7 +148,7 @@ setZeroF()
 }
 
 static inline SimdFInt32 gmx_simdcall
-simdLoadFI(const std::int32_t * m)
+simdLoad(const std::int32_t * m, SimdFInt32Tag)
 {
     return {
                *reinterpret_cast<const __vector int *>(m)
@@ -153,17 +162,25 @@ store(std::int32_t * m, SimdFInt32 a)
 }
 
 static inline SimdFInt32 gmx_simdcall
-simdLoadUFI(const std::int32_t *m)
+simdLoadU(const std::int32_t *m, SimdFInt32Tag)
 {
     return {
+#if __GNUC__ < 7
                *reinterpret_cast<const __vector int *>(m)
+#else
+               vec_xl(0, m)
+#endif
     };
 }
 
 static inline void gmx_simdcall
 storeU(std::int32_t * m, SimdFInt32 a)
 {
+#if __GNUC__ < 7
     *reinterpret_cast<__vector int *>(m) = a.simdInternal_;
+#else
+    vec_xst(a.simdInternal_, 0, m);
+#endif
 }
 
 static inline SimdFInt32 gmx_simdcall
@@ -401,13 +418,22 @@ frexp(SimdFloat value, SimdFInt32 * exponent)
     };
 }
 
+template <MathOptimization opt = MathOptimization::Safe>
 static inline SimdFloat gmx_simdcall
 ldexp(SimdFloat value, SimdFInt32 exponent)
 {
     const __vector signed int exponentBias   = vec_splats(127);
     __vector signed int       iExponent;
 
-    iExponent = vec_sl( vec_add(exponent.simdInternal_, exponentBias), vec_splats(23U));
+    iExponent  = vec_add(exponent.simdInternal_, exponentBias);
+
+    if (opt == MathOptimization::Safe)
+    {
+        // Make sure biased argument is not negative
+        iExponent = vec_max(iExponent, vec_splat_s32(0));
+    }
+
+    iExponent = vec_sl( iExponent, vec_splats(23U));
 
     return {
                vec_mul(value.simdInternal_, reinterpret_cast<__vector float>(iExponent))
@@ -509,22 +535,6 @@ blend(SimdFloat a, SimdFloat b, SimdFBool sel)
 {
     return {
                vec_sel(a.simdInternal_, b.simdInternal_, sel.simdInternal_)
-    };
-}
-
-static inline SimdFInt32 gmx_simdcall
-operator<<(SimdFInt32 a, int n)
-{
-    return {
-               vec_sl(a.simdInternal_, vec_splats(static_cast<unsigned int>(n)))
-    };
-}
-
-static inline SimdFInt32 gmx_simdcall
-operator>>(SimdFInt32 a, int n)
-{
-    return {
-               vec_sr(a.simdInternal_, vec_splats(static_cast<unsigned int>(n)))
     };
 }
 

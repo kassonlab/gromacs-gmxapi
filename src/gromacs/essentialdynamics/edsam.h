@@ -3,7 +3,7 @@
  *
  * Copyright (c) 1991-2000, University of Groningen, The Netherlands.
  * Copyright (c) 2001-2004, The GROMACS development team.
- * Copyright (c) 2013,2014,2015,2016,2017, by the GROMACS development team, led by
+ * Copyright (c) 2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -48,16 +48,17 @@
 #ifndef GMX_ESSENTIALDYNAMICS_EDSAM_H
 #define GMX_ESSENTIALDYNAMICS_EDSAM_H
 
+#include <memory>
+
 #include "gromacs/math/vectypes.h"
 #include "gromacs/utility/basedefinitions.h"
-
+#include "gromacs/utility/classhelpers.h"
 
 /*! \brief Abstract type for essential dynamics
  *
  * The main type is defined only in edsam.cpp
  */
-typedef struct gmx_edsam *gmx_edsam_t;
-
+struct gmx_edsam;
 struct gmx_domdec_t;
 struct gmx_mtop_t;
 struct gmx_output_env_t;
@@ -65,6 +66,29 @@ struct ObservablesHistory;
 struct t_commrec;
 struct t_filenm;
 struct t_inputrec;
+class t_state;
+
+namespace gmx
+{
+class Constraints;
+class EssentialDynamics
+{
+    public:
+        EssentialDynamics();
+        ~EssentialDynamics();
+
+        /*! \brief Getter for working data
+         *
+         * This is needed while the module is still under
+         * construction. */
+        gmx_edsam *getLegacyED();
+    private:
+        class Impl;
+
+        PrivateImplPointer<Impl> impl_;
+};
+class MDLogger;
+} // namespace gmx
 
 /*! \brief Applies essential dynamics constrains as defined in the .edi input file.
  *
@@ -76,35 +100,35 @@ struct t_inputrec;
  * \param box               The simulation box.
  * \param ed                The essential dynamics data.
  */
-void do_edsam(const t_inputrec *ir, gmx_int64_t step,
-              t_commrec *cr, rvec xs[], rvec v[], matrix box, gmx_edsam_t ed);
+void do_edsam(const t_inputrec *ir, int64_t step,
+              const t_commrec *cr, rvec xs[], rvec v[], matrix box, gmx_edsam *ed);
 
 
 /*! \brief Initializes the essential dynamics and flooding module.
  *
+ * \param mdlog             Logger.
  * \param ediFileName       Essential dynamics input file.
  * \param edoFileName       Output file for essential dynamics data.
  * \param mtop              Molecular topology.
  * \param ir                MD input parameter record.
  * \param cr                Data needed for MPI communication.
  * \param constr            Data structure keeping the constraint information.
- * \param x                 Positions of the whole MD system.
- * \param box               The simulation box.
+ * \param globalState       The global state, only used on the master rank.
  * \param oh                The observables history container.
  * \param oenv              The output environment information.
  * \param bAppend           Append to existing output files?
  *
  * \returns                 A pointer to the ED data structure.
  */
-gmx_edsam_t init_edsam(
+std::unique_ptr<gmx::EssentialDynamics> init_edsam(
+        const gmx::MDLogger    &mdlog,
         const char             *ediFileName,
         const char             *edoFileName,
         const gmx_mtop_t       *mtop,
         const t_inputrec       *ir,
-        t_commrec              *cr,
-        struct gmx_constr      *constr,
-        rvec                    x[],
-        matrix                  box,
+        const t_commrec        *cr,
+        gmx::Constraints       *constr,
+        const t_state          *globalState,
         ObservablesHistory     *oh,
         const gmx_output_env_t *oenv,
         gmx_bool                bAppend);
@@ -116,7 +140,7 @@ gmx_edsam_t init_edsam(
  * \param dd                Domain decomposition data.
  * \param ed                Essential dynamics and flooding data.
  */
-void dd_make_local_ed_indices(gmx_domdec_t *dd, gmx_edsam_t ed);
+void dd_make_local_ed_indices(gmx_domdec_t *dd, gmx_edsam * ed);
 
 
 /*! \brief Evaluate the flooding potential(s) and forces as requested in the .edi input file.
@@ -130,13 +154,13 @@ void dd_make_local_ed_indices(gmx_domdec_t *dd, gmx_edsam_t ed);
  * \param step              Number of the time step.
  * \param bNS               Are we in a neighbor searching step?
  */
-void do_flood(t_commrec *cr, const t_inputrec *ir, rvec x[], rvec force[], gmx_edsam_t ed,
-              matrix box, gmx_int64_t step, gmx_bool bNS);
-
-/*! \brief Clean up
- *
- * \param ed                The essential dynamics data
- */
-void done_ed(gmx_edsam_t *ed);
+void do_flood(const t_commrec  *cr,
+              const t_inputrec *ir,
+              const rvec        x[],
+              rvec              force[],
+              gmx_edsam        *ed,
+              matrix            box,
+              int64_t           step,
+              gmx_bool          bNS);
 
 #endif

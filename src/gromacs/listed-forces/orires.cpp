@@ -3,7 +3,7 @@
  *
  * Copyright (c) 1991-2000, University of Groningen, The Netherlands.
  * Copyright (c) 2001-2004, The GROMACS development team.
- * Copyright (c) 2013,2014,2015,2016,2017, by the GROMACS development team, led by
+ * Copyright (c) 2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -46,7 +46,6 @@
 #include "gromacs/math/do_fit.h"
 #include "gromacs/math/functions.h"
 #include "gromacs/math/vec.h"
-#include "gromacs/mdlib/main.h"
 #include "gromacs/mdtypes/commrec.h"
 #include "gromacs/mdtypes/fcdata.h"
 #include "gromacs/mdtypes/inputrec.h"
@@ -65,11 +64,13 @@
 // TODO This implementation of ensemble orientation restraints is nasty because
 // a user can't just do multi-sim with single-sim orientation restraints.
 
-void init_orires(FILE *fplog, const gmx_mtop_t *mtop,
-                 rvec xref[],
-                 const t_inputrec *ir,
-                 const t_commrec *cr, t_oriresdata *od,
-                 t_state *state)
+void init_orires(FILE                 *fplog,
+                 const gmx_mtop_t     *mtop,
+                 const t_inputrec     *ir,
+                 const t_commrec      *cr,
+                 const gmx_multisim_t *ms,
+                 t_state              *globalState,
+                 t_oriresdata         *od)
 {
     od->nr = gmx_mtop_ftype_count(mtop, F_ORIRES);
     if (0 == od->nr)
@@ -97,12 +98,8 @@ void init_orires(FILE *fplog, const gmx_mtop_t *mtop,
     {
         gmx_fatal(FARGS, "Orientation restraints do not work with MPI parallelization. Choose 1 MPI rank, if possible.");
     }
-    /* Orientation restraints */
-    if (!MASTER(cr))
-    {
-        /* Nothing to do */
-        return;
-    }
+
+    GMX_RELEASE_ASSERT(globalState != nullptr, "We need a valid global state in init_orires");
 
     od->fc  = ir->orires_fc;
     od->nex = 0;
@@ -111,22 +108,21 @@ void init_orires(FILE *fplog, const gmx_mtop_t *mtop,
     od->eig = nullptr;
     od->v   = nullptr;
 
-    int                  *nr_ex   = nullptr;
-    int                   typeMin = INT_MAX;
-    int                   typeMax = 0;
-    gmx_mtop_ilistloop_t  iloop   = gmx_mtop_ilistloop_init(mtop);
-    t_ilist              *il;
-    int                   nmol;
-    while (gmx_mtop_ilistloop_next(iloop, &il, &nmol))
+    int                   *nr_ex   = nullptr;
+    int                    typeMin = INT_MAX;
+    int                    typeMax = 0;
+    gmx_mtop_ilistloop_t   iloop   = gmx_mtop_ilistloop_init(mtop);
+    int                    nmol;
+    while (const InteractionLists *il = gmx_mtop_ilistloop_next(iloop, &nmol))
     {
         if (nmol > 1)
         {
             gmx_fatal(FARGS, "Found %d copies of a molecule with orientation restrains while the current code only supports a single copy. If you want to ensemble average, run multiple copies of the system using the multi-sim feature of mdrun.", nmol);
         }
 
-        for (int i = 0; i < il[F_ORIRES].nr; i += 3)
+        for (int i = 0; i < (*il)[F_ORIRES].size(); i += 3)
         {
-            int type = il[F_ORIRES].iatoms[i];
+            int type = (*il)[F_ORIRES].iatoms[i];
             int ex   = mtop->ffparams.iparams[type].orires.ex;
             if (ex >= od->nex)
             {
@@ -155,7 +151,6 @@ void init_orires(FILE *fplog, const gmx_mtop_t *mtop,
      */
     snew(od->Dinsl, od->nr);
 
-    const gmx_multisim_t *ms = cr->ms;
     if (ms)
     {
         snew(od->Dins, od->nr);
@@ -178,11 +173,11 @@ void init_orires(FILE *fplog, const gmx_mtop_t *mtop,
         od->edt_1 = 1.0 - od->edt;
 
         /* Extend the state with the orires history */
-        state->flags           |= (1<<estORIRE_INITF);
-        state->hist.orire_initf = 1;
-        state->flags           |= (1<<estORIRE_DTAV);
-        state->hist.norire_Dtav = od->nr*5;
-        snew(state->hist.orire_Dtav, state->hist.norire_Dtav);
+        globalState->flags           |= (1<<estORIRE_INITF);
+        globalState->hist.orire_initf = 1;
+        globalState->flags           |= (1<<estORIRE_DTAV);
+        globalState->hist.norire_Dtav = od->nr*5;
+        snew(globalState->hist.orire_Dtav, globalState->hist.norire_Dtav);
     }
 
     snew(od->oinsl, od->nr);
@@ -207,7 +202,7 @@ void init_orires(FILE *fplog, const gmx_mtop_t *mtop,
     od->nref = 0;
     for (int i = 0; i < mtop->natoms; i++)
     {
-        if (ggrpnr(&mtop->groups, egcORFIT, i) == 0)
+        if (getGroupType(&mtop->groups, egcORFIT, i) == 0)
         {
             od->nref++;
         }
@@ -222,6 +217,7 @@ void init_orires(FILE *fplog, const gmx_mtop_t *mtop,
      * Copy it to the other nodes after checking multi compatibility,
      * so we are sure the subsystems match before copying.
      */
+    auto                     x     = makeArrayRef(globalState->x);
     rvec                     com   = { 0, 0, 0 };
     double                   mtot  = 0.0;
     int                      j     = 0;
@@ -235,12 +231,13 @@ void init_orires(FILE *fplog, const gmx_mtop_t *mtop,
         {
             /* Not correct for free-energy with changing masses */
             od->mref[j] = atom->m;
-            if (ms == nullptr || MASTERSIM(ms))
+            // Note that only one rank per sim is supported.
+            if (isMasterSim(ms))
             {
-                copy_rvec(xref[i], od->xref[j]);
+                copy_rvec(x[i], od->xref[j]);
                 for (int d = 0; d < DIM; d++)
                 {
-                    com[d] += od->mref[j]*xref[i][d];
+                    com[d] += od->mref[j]*x[i][d];
                 }
             }
             mtot += od->mref[j];
@@ -248,7 +245,7 @@ void init_orires(FILE *fplog, const gmx_mtop_t *mtop,
         }
     }
     svmul(1.0/mtot, com, com);
-    if (ms == nullptr || MASTERSIM(ms))
+    if (isMasterSim(ms))
     {
         for (int j = 0; j < od->nref; j++)
         {
@@ -740,9 +737,9 @@ real orires(int nfa, const t_iatom forceatoms[], const t_iparams ip[],
     /* Approx. 80*nfa/3 flops */
 }
 
-void update_orires_history(t_fcdata *fcd, history_t *hist)
+void update_orires_history(const t_fcdata *fcd, history_t *hist)
 {
-    t_oriresdata *od = &(fcd->orires);
+    const t_oriresdata *od = &(fcd->orires);
 
     if (od->edt != 0)
     {

@@ -117,31 +117,7 @@ ewald-rtol-lj            = 0.001
 lj-pme-comb-rule         = Geometric
 ewald-geometry           = 3d
 epsilon-surface          = 0
-
-; IMPLICIT SOLVENT ALGORITHM
-implicit-solvent         = No
-
-; GENERALIZED BORN ELECTROSTATICS
-; Algorithm for calculating Born radii
-gb-algorithm             = Still
-; Frequency of calculating the Born radii inside rlist
-nstgbradii               = 1
-; Cutoff for Born radii calculation; the contribution from atoms
-; between rlist and rgbradii is updated every nstlist steps
-rgbradii                 = 1
-; Dielectric coefficient of the implicit solvent
-gb-epsilon-solvent       = 80
-; Salt concentration in M for Generalized Born models
-gb-saltconc              = 0
-; Scaling factors used in the OBC GB model. Default values are OBC(II)
-gb-obc-alpha             = 1
-gb-obc-beta              = 0.8
-gb-obc-gamma             = 4.85
-gb-dielectric-offset     = 0.009
-sa-algorithm             = Ace-approximation
-; Surface tension (kJ/mol/nm^2) for the SA (nonpolar surface) part of GBSA
-; The value -1 will set default value for Still/HCT/OBC GB-models.
-sa-surface-tension       = -1
+implicit-solvent         = no
 
 ; OPTIONS FOR WEAK COUPLING ALGORITHMS
 ; Temperature coupling  
@@ -189,9 +165,6 @@ SAoff                    =
 SAsteps                  = 
 ; Scale factor for MM charges
 MMChargeScaleFactor      = 1
-; Optimization of QM subsystem
-bOPT                     = 
-bTS                      = 
 
 ; SIMULATED ANNEALING  
 ; Type of annealing for each temperature group (no/single/periodic)
@@ -245,6 +218,9 @@ wall-ewald-zfac          = 3
 
 ; COM PULLING          
 pull                     = no
+
+; AWH biasing          
+awh                      = no
 
 ; ENFORCED ROTATION    
 ; Enforced rotation: No or Yes
@@ -334,17 +310,12 @@ userreal2                = 0
 userreal3                = 0
 userreal4                = 0
 ; Electric fields
-; Format for E-x, etc. is: number of cosines (int; only 1 is supported),
-; amplitude (real; V/nm), and phase (real; value is meaningless
-; for a cosine of frequency 0.
-; Format for E-xt, etc. is: omega (1/ps), time for the pulse peak (ps),
-; and sigma (ps) width of the pulse. Sigma = 0 removes the pulse,
-; leaving the field to be a cosine function.
-E-x                      = 1 1.2 -1
-E-xt                     = 0 0 0
-E-y                      = 1 0 -1
-E-yt                     = 0 0 0
-E-z                      = 1 0 -1
-E-zt                     = 0 0 0
+; Format for electric-field-x, etc. is: four real variables:
+; amplitude (V/nm), frequency omega (1/ps), time for the pulse peak (ps),
+; and sigma (ps) width of the pulse. Omega = 0 means static field,
+; sigma = 0 means no pulse, leaving the field to be a cosine function.
+electric-field-x         = 1.2 0 0 0
+electric-field-y         = 0 0 0 0
+electric-field-z         = 0 0 0 0
 </String>
 </ReferenceData>

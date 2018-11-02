@@ -1,7 +1,7 @@
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
- * Copyright (c) 2013,2014,2015,2016,2017, by the GROMACS development team, led by
+ * Copyright (c) 2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -99,7 +99,7 @@ class SimulationRunner
         //! Use a string as -n input to grompp
         void useStringAsNdxFile(const char *ndxString);
         //! Use a standard .top and .gro file as input to grompp
-        void useTopGroAndNdxFromDatabase(const char *name);
+        void useTopGroAndNdxFromDatabase(const std::string &name);
         //! Use a standard .gro file as input to grompp
         void useGroFromDatabase(const char *name);
         //! Calls grompp (on rank 0, with a customized command line) to prepare for the mdrun test
@@ -133,7 +133,6 @@ class SimulationRunner
         std::string reducedPrecisionTrajectoryFileName_;
         std::string groOutputFileName_;
         std::string ndxFileName_;
-        std::string mdpInputFileName_;
         std::string mdpOutputFileName_;
         std::string tprFileName_;
         std::string logFileName_;
@@ -142,6 +141,8 @@ class SimulationRunner
         std::string swapFileName_;
         int         nsteps_;
         //@}
+        //! What will be written into a temporary mdp file before the grompp call
+        std::string mdpInputContents_;
 
     private:
         TestFileManager &fileManager_;
@@ -177,7 +178,7 @@ class MdrunTestFixtureBase : public ::testing::Test
 {
     public:
         MdrunTestFixtureBase();
-        virtual ~MdrunTestFixtureBase();
+        ~MdrunTestFixtureBase() override;
 };
 
 /*! \internal
@@ -192,7 +193,7 @@ class MdrunTestFixture : public ::testing::Test
 {
     public:
         MdrunTestFixture();
-        virtual ~MdrunTestFixture();
+        ~MdrunTestFixture() override;
 
         //! Manages temporary files during the test.
         TestFileManager  fileManager_;

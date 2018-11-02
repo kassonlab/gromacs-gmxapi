@@ -3,7 +3,7 @@
  *
  * Copyright (c) 1991-2000, University of Groningen, The Netherlands.
  * Copyright (c) 2001-2004, The GROMACS development team.
- * Copyright (c) 2013,2014,2015,2016,2017, by the GROMACS development team, led by
+ * Copyright (c) 2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -43,6 +43,8 @@
 #include <cerrno>
 #include <cstdio>
 #include <cstring>
+
+#include <vector>
 
 #if HAVE_IO_H
 #include <io.h>
@@ -115,11 +117,11 @@ void gmx_fio_unlock(t_fileio *fio)
 }
 
 /* make a dummy head element, assuming we locked everything. */
-static void gmx_fio_make_dummy(void)
+static void gmx_fio_make_dummy()
 {
     if (!open_files)
     {
-        snew(open_files, 1);
+        open_files = new t_fileio {};
         open_files->fp   = nullptr;
         open_files->fn   = nullptr;
         open_files->next = open_files;
@@ -197,7 +199,7 @@ static void gmx_fio_remove(t_fileio *fio)
 
 /* get the first open file, or NULL if there is none.
    Returns a locked fio. Assumes open_files_mutex is locked. */
-static t_fileio *gmx_fio_get_first(void)
+static t_fileio *gmx_fio_get_first()
 {
     t_fileio *ret;
 
@@ -301,7 +303,7 @@ t_fileio *gmx_fio_open(const char *fn, const char *mode)
         strcat(newmode, "b");
     }
 
-    snew(fio, 1);
+    fio = new t_fileio {};
     tMPI_Lock_init(&(fio->mtx));
     bRead      = (newmode[0] == 'r' && newmode[1] != '+');
     bReadWrite = (newmode[1] == '+');
@@ -386,7 +388,7 @@ int gmx_fio_close(t_fileio *fio)
     gmx_fio_unlock(fio);
 
     sfree(fio->fn);
-    sfree(fio);
+    delete fio;
 
     return rc;
 }
@@ -434,7 +436,7 @@ int gmx_fio_fclose(FILE *fp)
             gmx_fio_remove(cur);
             gmx_fio_stop_getting_next(cur);
             sfree(cur->fn);
-            sfree(cur);
+            delete cur;
             break;
         }
         cur = gmx_fio_get_next(cur);
@@ -443,64 +445,77 @@ int gmx_fio_fclose(FILE *fp)
     return rc;
 }
 
-/* internal variant of get_file_md5 that operates on a locked file */
+//! Helper struct for returning the MD5 checksum and the amount of the file that contributed to it.
+struct MD5Checksum
+{
+    //! Checksum md5 digest.
+    std::array<unsigned char, 16> checksum;
+    //! The length of the file that contributed to the digest.
+    gmx_off_t                     readLength;
+};
+
+/*! \brief Internal variant of get_file_md5 that operates on a locked
+ * file.
+ *
+ * \return -1 any time a checksum cannot be computed, otherwise the
+ *            length of the data from which the checksum was computed. */
 static int gmx_fio_int_get_file_md5(t_fileio *fio, gmx_off_t offset,
-                                    unsigned char digest[])
+                                    std::array<unsigned char, 16> *checksum)
 {
     /*1MB: large size important to catch almost identical files */
-#define CPT_CHK_LEN  1048576
-    md5_state_t    state;
-    unsigned char *buf;
-    gmx_off_t      read_len;
-    gmx_off_t      seek_offset;
-    int            ret = -1;
+    constexpr size_t maximumChecksumInputSize = 1048576;
+    md5_state_t      state;
+    gmx_off_t        readLength;
+    gmx_off_t        seekOffset;
 
-    seek_offset = offset - CPT_CHK_LEN;
-    if (seek_offset < 0)
+    seekOffset = offset - maximumChecksumInputSize;
+    if (seekOffset < 0)
     {
-        seek_offset = 0;
+        seekOffset = 0;
     }
-    read_len = offset - seek_offset;
+    readLength = offset - seekOffset;
 
-
-    if (fio->fp && fio->bReadWrite)
+    if (!fio->fp)
     {
-        ret = gmx_fseek(fio->fp, seek_offset, SEEK_SET);
-        if (ret)
-        {
-            gmx_fseek(fio->fp, 0, SEEK_END);
-        }
+        // It's not an error if the file isn't open.
+        return -1;
     }
-    if (ret) /*either no fp, not readwrite, or fseek not successful */
+    if (!fio->bReadWrite)
     {
+        // It's not an error if the file is open in the wrong mode.
+        //
+        // TODO It is unclear why this check exists. The bReadWrite
+        // flag is true when the file-opening mode included "+" but we
+        // only need read and seek to be able to compute the
+        // md5sum. Other requirements (e.g. that we can truncate when
+        // doing an appending restart) should be expressed in a
+        // different way, but it is unclear whether that is part of
+        // the logic here.
         return -1;
     }
 
-    snew(buf, CPT_CHK_LEN);
-    /* the read puts the file position back to offset */
-    if ((gmx_off_t)fread(buf, 1, read_len, fio->fp) != read_len)
+    if (gmx_fseek(fio->fp, seekOffset, SEEK_SET))
     {
-        /* not fatal: md5sum check to prevent overwriting files
-         * works (less safe) without
-         * */
+        // It's not an error if file seeking fails. (But it could be
+        // an issue when moving a checkpoint from one platform to
+        // another, when they differ in their support for seeking, and
+        // so can't agree on a checksum for appending).
+        gmx_fseek(fio->fp, 0, SEEK_END);
+        return -1;
+    }
+
+    std::vector<unsigned char> buf(maximumChecksumInputSize);
+    // The fread puts the file position back to offset.
+    if (static_cast<gmx_off_t>(fread(buf.data(), 1, readLength, fio->fp)) != readLength)
+    {
+        // Read an unexpected length. This is not a fatal error; the
+        // md5sum check to prevent overwriting files is not vital.
         if (ferror(fio->fp))
         {
             fprintf(stderr, "\nTrying to get md5sum: %s: %s\n", fio->fn,
                     strerror(errno));
         }
-        else if (feof(fio->fp))
-        {
-            /*
-             * For long runs that checkpoint frequently but write e.g. logs
-             * infrequently we don't want to issue lots of warnings before we
-             * have written anything to the log.
-             */
-            if (0)
-            {
-                fprintf(stderr, "\nTrying to get md5sum: EOF: %s\n", fio->fn);
-            }
-        }
-        else
+        else if (!feof(fio->fp))
         {
             fprintf(
                     stderr,
@@ -509,26 +524,20 @@ static int gmx_fio_int_get_file_md5(t_fileio *fio, gmx_off_t offset,
         }
 
         gmx_fseek(fio->fp, 0, SEEK_END);
-
-        ret = -1;
+        return -1;
     }
-    gmx_fseek(fio->fp, 0, SEEK_END); /*is already at end, but under windows
-                                        it gives problems otherwise*/
+    // Return the file position to the end of the file.
+    gmx_fseek(fio->fp, 0, SEEK_END);
 
     if (debug)
     {
-        fprintf(debug, "chksum %s readlen %ld\n", fio->fn, (long int)read_len);
+        fprintf(debug, "chksum %s readlen %ld\n", fio->fn, static_cast<long int>(readLength));
     }
 
-    if (!ret)
-    {
-        gmx_md5_init(&state);
-        gmx_md5_append(&state, buf, read_len);
-        gmx_md5_finish(&state, digest);
-        ret = read_len;
-    }
-    sfree(buf);
-    return ret;
+    gmx_md5_init(&state);
+    gmx_md5_append(&state, buf.data(), readLength);
+    *checksum = gmx_md5_finish(&state);
+    return readLength;
 }
 
 
@@ -538,12 +547,12 @@ static int gmx_fio_int_get_file_md5(t_fileio *fio, gmx_off_t offset,
  * digest: return array of md5 sum
  */
 int gmx_fio_get_file_md5(t_fileio *fio, gmx_off_t offset,
-                         unsigned char digest[])
+                         std::array<unsigned char, 16> *checksum)
 {
     int ret;
 
     gmx_fio_lock(fio);
-    ret = gmx_fio_int_get_file_md5(fio, offset, digest);
+    ret = gmx_fio_int_get_file_md5(fio, offset, checksum);
     gmx_fio_unlock(fio);
 
     return ret;
@@ -574,18 +583,10 @@ static int gmx_fio_int_get_file_position(t_fileio *fio, gmx_off_t *offset)
     return 0;
 }
 
-int gmx_fio_get_output_file_positions(gmx_file_position_t **p_outputfiles,
-                                      int                  *p_nfiles)
+std::vector<gmx_file_position_t> gmx_fio_get_output_file_positions()
 {
-    int                   nfiles, nalloc;
-    gmx_file_position_t * outputfiles;
-    t_fileio             *cur;
-
-    nfiles = 0;
-
-    /* pre-allocate 100 files */
-    nalloc = 100;
-    snew(outputfiles, nalloc);
+    std::vector<gmx_file_position_t> outputfiles;
+    t_fileio                        *cur;
 
     Lock openFilesLock(open_file_mutex);
     cur = gmx_fio_get_first();
@@ -595,32 +596,25 @@ int gmx_fio_get_output_file_positions(gmx_file_position_t **p_outputfiles,
            we call this routine... */
         if (!cur->bRead && cur->iFTP != efCPT)
         {
-            /* This is an output file currently open for writing, add it */
-            if (nfiles == nalloc)
-            {
-                nalloc += 100;
-                srenew(outputfiles, nalloc);
-            }
+            outputfiles.emplace_back();
 
-            std::strncpy(outputfiles[nfiles].filename, cur->fn, STRLEN - 1);
+            std::strncpy(outputfiles.back().filename, cur->fn, STRLEN - 1);
 
             /* Get the file position */
-            gmx_fio_int_get_file_position(cur, &outputfiles[nfiles].offset);
-#ifndef GMX_FAHCORE
-            outputfiles[nfiles].chksum_size
-                = gmx_fio_int_get_file_md5(cur,
-                                           outputfiles[nfiles].offset,
-                                           outputfiles[nfiles].chksum);
-#endif
-            nfiles++;
+            gmx_fio_int_get_file_position(cur, &outputfiles.back().offset);
+            if (!GMX_FAHCORE)
+            {
+                outputfiles.back().checksumSize
+                    = gmx_fio_int_get_file_md5(cur,
+                                               outputfiles.back().offset,
+                                               &outputfiles.back().checksum);
+            }
         }
 
         cur = gmx_fio_get_next(cur);
     }
-    *p_nfiles      = nfiles;
-    *p_outputfiles = outputfiles;
 
-    return 0;
+    return outputfiles;
 }
 
 
@@ -701,7 +695,7 @@ int gmx_fio_fsync(t_fileio *fio)
 
 
 
-t_fileio *gmx_fio_all_output_fsync(void)
+t_fileio *gmx_fio_all_output_fsync()
 {
     t_fileio *ret = nullptr;
     t_fileio *cur;
@@ -762,7 +756,6 @@ int gmx_fio_seek(t_fileio* fio, gmx_off_t fpos)
     else
     {
         gmx_file(fio->fn);
-        rc = -1;
     }
     gmx_fio_unlock(fio);
     return rc;

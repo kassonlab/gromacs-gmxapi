@@ -1,7 +1,7 @@
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
- * Copyright (c) 2017, by the GROMACS development team, led by
+ * Copyright (c) 2017,2018, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -71,15 +71,14 @@ namespace test
 class GetIrTest : public ::testing::Test
 {
     public:
-        GetIrTest() : fileManager_(), data_(), checker_(data_.rootChecker()),
-                      ir_(), mdModules_(), opts_(),
-                      wi_(init_warning(FALSE, 0)), wiGuard_(wi_)
+        GetIrTest() :  opts_(),
+                       wi_(init_warning(FALSE, 0)), wiGuard_(wi_)
 
         {
             snew(opts_.include, STRLEN);
             snew(opts_.define, STRLEN);
         }
-        ~GetIrTest()
+        ~GetIrTest() override
         {
             done_inputrec_strings();
             sfree(opts_.include);
@@ -99,17 +98,19 @@ class GetIrTest : public ::testing::Test
 
             get_ir(inputMdpFilename.c_str(), outputMdpFilename.c_str(),
                    &mdModules_, &ir_, &opts_, WriteMdpHeader::no, wi_);
-            bool failure = warning_errors_exist(wi_);
-            checker_.checkBoolean(failure, "Error parsing mdp file");
+
+            // Now check
+            bool                 failure = warning_errors_exist(wi_);
+            TestReferenceData    data;
+            TestReferenceChecker checker(data.rootChecker());
+            checker.checkBoolean(failure, "Error parsing mdp file");
             warning_reset(wi_);
 
             auto outputMdpContents = TextReader::readFileToString(outputMdpFilename);
-            checker_.checkString(outputMdpContents, "OutputMdpFile");
+            checker.checkString(outputMdpContents, "OutputMdpFile");
         }
 
         TestFileManager                    fileManager_;
-        TestReferenceData                  data_;
-        TestReferenceChecker               checker_;
         t_inputrec                         ir_;
         MDModules                          mdModules_;
         t_gromppopts                       opts_;
@@ -156,19 +157,63 @@ TEST_F(GetIrTest, UserErrorsSilentlyTolerated)
     runTest(joinStrings(inputMdpFile, "\n"));
 }
 
+TEST_F(GetIrTest, DefineHandlesAssignmentOnRhs)
+{
+    const char *inputMdpFile[] = {
+        "define = -DBOOL -DVAR=VALUE",
+    };
+    runTest(joinStrings(inputMdpFile, "\n"));
+}
+
 TEST_F(GetIrTest, EmptyInputWorks)
 {
     const char *inputMdpFile = "";
     runTest(inputMdpFile);
 }
 
-// This test observes how the electric-field keys behave, since they
+// These tests observe how the electric-field keys behave, since they
 // are currently the only ones using the new Options-style handling.
 TEST_F(GetIrTest, ProducesOutputFromElectricField)
 {
-    const char *inputMdpFile = "E-x = 1 1.2 -1";
+    const char *inputMdpFile = "electric-field-x = 1.2 0 0 0";
     runTest(inputMdpFile);
 }
 
-} // namespace
-} // namespace
+TEST_F(GetIrTest, ProducesOutputFromElectricFieldPulsed)
+{
+    const char *inputMdpFile = "electric-field-y = 3.7 2.0 6.5 1.0";
+    runTest(inputMdpFile);
+}
+
+TEST_F(GetIrTest, ProducesOutputFromElectricFieldOscillating)
+{
+    const char *inputMdpFile = "electric-field-z = 3.7 7.5 0 0";
+    runTest(inputMdpFile);
+}
+
+TEST_F(GetIrTest, TerminatesOnDuplicateOldAndNewKeys)
+{
+    const char *inputMdpFile[] = {"verlet-buffer-drift = 1.3", "verlet-buffer-tolerance = 2.7"};
+    EXPECT_DEATH_IF_SUPPORTED(runTest(joinStrings(inputMdpFile, "\n")), "A parameter is present with both");
+}
+
+TEST_F(GetIrTest, ImplicitSolventNoWorks)
+{
+    const char *inputMdpFile = "implicit-solvent = no";
+    runTest(inputMdpFile);
+}
+
+TEST_F(GetIrTest, ImplicitSolventYesWorks)
+{
+    const char *inputMdpFile = "implicit-solvent = yes";
+    EXPECT_DEATH_IF_SUPPORTED(runTest(inputMdpFile), "Invalid enum");
+}
+
+TEST_F(GetIrTest, HandlesMimic)
+{
+    const char *inputMdpFile[] = {"integrator = mimic", "QMMM-grps = QMatoms"};
+    runTest(joinStrings(inputMdpFile, "\n"));
+}
+
+}  // namespace test
+}  // namespace gmx

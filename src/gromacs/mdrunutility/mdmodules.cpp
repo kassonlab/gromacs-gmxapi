@@ -1,7 +1,7 @@
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
- * Copyright (c) 2016,2017, by the GROMACS development team, led by
+ * Copyright (c) 2016,2017,2018, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -39,6 +39,7 @@
 #include <memory>
 
 #include "gromacs/applied-forces/electricfield.h"
+#include "gromacs/compat/make_unique.h"
 #include "gromacs/mdtypes/iforceprovider.h"
 #include "gromacs/mdtypes/imdmodule.h"
 #include "gromacs/mdtypes/imdoutputprovider.h"
@@ -60,8 +61,7 @@ class MDModules::Impl : public IMDOutputProvider
     public:
 
         Impl()
-            : field_(createElectricFieldModule()),
-              modules_{}
+            : field_(createElectricFieldModule())
         {
         }
 
@@ -74,12 +74,12 @@ class MDModules::Impl : public IMDOutputProvider
         }
 
         // From IMDOutputProvider
-        virtual void initOutput(FILE *fplog, int nfile, const t_filenm fnm[],
-                                bool bAppendFiles, const gmx_output_env_t *oenv)
+        void initOutput(FILE *fplog, int nfile, const t_filenm fnm[],
+                        bool bAppendFiles, const gmx_output_env_t *oenv) override
         {
             field_->outputProvider()->initOutput(fplog, nfile, fnm, bAppendFiles, oenv);
         }
-        virtual void finishOutput()
+        void finishOutput() override
         {
             field_->outputProvider()->finishOutput();
         }
@@ -87,8 +87,16 @@ class MDModules::Impl : public IMDOutputProvider
         std::unique_ptr<IMDModule>      field_;
         std::unique_ptr<ForceProviders> forceProviders_;
 
-        /// \brief List of registered MDModules
-        std::vector<std::shared_ptr<IMDModule>> modules_;
+        /*! \brief List of registered MDModules
+         *
+         * Note that MDModules::Impl owns this container, but it is only used by
+         * the MDModules::initForceProviders() function. To be consistent with
+         * IMDModule's vision, as indicated by its docs, we should
+         * \todo update IMDModule docs to allow nullptr return values
+         * \todo check for nullptr returned by IMDModule methods.
+         * \todo include field_ in modules_
+         */
+        std::vector< std::shared_ptr<IMDModule> > modules_;
 };
 
 MDModules::MDModules() : impl_(new Impl)
@@ -143,9 +151,9 @@ ForceProviders *MDModules::initForceProviders()
 {
     GMX_RELEASE_ASSERT(impl_->forceProviders_ == nullptr,
                        "Force providers initialized multiple times");
-    impl_->forceProviders_.reset(new ForceProviders);
+    impl_->forceProviders_ = compat::make_unique<ForceProviders>();
     impl_->field_->initForceProviders(impl_->forceProviders_.get());
-    for(auto&& module : impl_->modules_)
+    for (auto && module : impl_->modules_)
     {
         module->initForceProviders(impl_->forceProviders_.get());
     }
