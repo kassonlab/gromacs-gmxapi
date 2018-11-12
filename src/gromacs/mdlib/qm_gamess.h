@@ -32,12 +32,30 @@
  * To help us fund GROMACS development, we humbly ask that you cite
  * the research papers on the package. Check out http://www.gromacs.org.
  */
+#ifndef GMX_MDLIB_QMGAMESS_H
+#define GMX_MDLIB_QMGAMESS_H
 
-#include "gmxpre.h"
+#include "gromacs/mdlib/qmmm.h"
 
-#include "restraintpotential.h"
+/*! \brief
+ * Initialize gamess datastructures.
+ *
+ * \param[in] cr Commrec datastructure.
+ * \param[in] qm QM forcerec.
+ * \param[in] mm MM part of forcerec.
+ */
+void init_gamess(const t_commrec *cr, t_QMrec *qm, t_MMrec *mm);
 
-namespace gmx
-{
+/*! \brief
+ * Run calculation with Gamess.
+ *
+ * \param[in] qm QM part of forcerec.
+ * \param[in] mm MM part of forcerec.
+ * \param[in] f  Force vector.
+ * \param[in] fshift Force shift vector.
+ */
+real call_gamess(const t_QMrec *qm, const t_MMrec *mm,
+                 rvec f[], rvec fshift[]);
 
-} // end namespace gmx
+
+#endif
