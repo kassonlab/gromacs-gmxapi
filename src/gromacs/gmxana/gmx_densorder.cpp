@@ -1,7 +1,7 @@
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
- * Copyright (c) 2010,2011,2012,2013,2014,2015,2016,2017, by the GROMACS development team, led by
+ * Copyright (c) 2010,2011,2012,2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -101,7 +101,7 @@ static void center_coords(const t_atoms *atoms, matrix box, rvec x0[], int axis)
 }
 
 
-static void density_in_time (const char *fn, int **index, int gnx[], real bw, real bwz, int nsttblock, real *****Densdevel, int *xslices, int *yslices, int *zslices, int *tblock, const t_topology *top, int ePBC, int axis, gmx_bool bCenter, gmx_bool bps1d, const gmx_output_env_t *oenv)
+static void density_in_time (const char *fn, int **index, const int gnx[], real bw, real bwz, int nsttblock, real *****Densdevel, int *xslices, int *yslices, int *zslices, int *tblock, const t_topology *top, int ePBC, int axis, gmx_bool bCenter, gmx_bool bps1d, const gmx_output_env_t *oenv)
 
 {
 /*
@@ -266,7 +266,7 @@ static void density_in_time (const char *fn, int **index, int gnx[], real bw, re
     gmx_rmpbc_done(gpbc);
     close_trx(status);
 
-    if (0)
+    if (/* DISABLES CODE */ (false))
     {
         FILE *fp;
         fp = fopen("koko.xvg", "w");
@@ -530,7 +530,7 @@ static void interfaces_txy (real ****Densmap, int xslices, int yslices, int zsli
 
 }
 
-static void writesurftoxpms(t_interf ***surf1, t_interf ***surf2, int tblocks, int xbins, int ybins, int zbins, real bw, real bwz, char **outfiles, int maplevels )
+static void writesurftoxpms(t_interf ***surf1, t_interf ***surf2, int tblocks, int xbins, int ybins, int zbins, real bw, real bwz, gmx::ArrayRef<const std::string> outfiles, int maplevels )
 {
     char   numbuf[STRLEN];
     int    n, i, j;
@@ -609,7 +609,7 @@ static void writesurftoxpms(t_interf ***surf1, t_interf ***surf2, int tblocks, i
 }
 
 static void writeraw(t_interf ***int1, t_interf ***int2, int tblocks,
-                     int xbins, int ybins, char **fnms,
+                     int xbins, int ybins, gmx::ArrayRef<const std::string> fnms,
                      const gmx_output_env_t *oenv)
 {
     FILE *raw1, *raw2;
@@ -694,9 +694,6 @@ int gmx_densorder(int argc, char *argv[])
     static const char *meth[] = {nullptr, "bisect", "functional", nullptr};
     int                eMeth;
 
-    char             **graphfiles, **rawfiles, **spectra; /* Filenames for xpm-surface maps, rawdata and powerspectra */
-    int                nfxpm = -1, nfraw, nfspect;        /* # files for interface maps and spectra = # interfaces */
-
     t_pargs            pa[] = {
         { "-1d", FALSE, etBOOL, {&b1d},
           "Pseudo-1d interface geometry"},
@@ -775,12 +772,12 @@ int gmx_densorder(int argc, char *argv[])
     {
 
         /*Output surface-xpms*/
-        nfxpm = opt2fns(&graphfiles, "-og", NFILE, fnm);
-        if (nfxpm != 2)
+        gmx::ArrayRef<const std::string> graphFiles = opt2fns("-og", NFILE, fnm);
+        if (graphFiles.size() != 2)
         {
-            gmx_fatal(FARGS, "No or not correct number (2) of output-files: %d", nfxpm);
+            gmx_fatal(FARGS, "No or not correct number (2) of output-files: %td", graphFiles.size());
         }
-        writesurftoxpms(surf1, surf2, tblock, xslices, yslices, zslices, binw, binwz, graphfiles, zslices);
+        writesurftoxpms(surf1, surf2, tblock, xslices, yslices, zslices, binw, binwz, graphFiles, zslices);
     }
 
 
@@ -790,23 +787,23 @@ int gmx_densorder(int argc, char *argv[])
 /*Output raw-data*/
     if (bRawOut)
     {
-        nfraw = opt2fns(&rawfiles, "-or", NFILE, fnm);
-        if (nfraw != 2)
+        gmx::ArrayRef<const std::string> rawFiles = opt2fns("-or", NFILE, fnm);
+        if (rawFiles.size() != 2)
         {
-            gmx_fatal(FARGS, "No or not correct number (2) of output-files: %d", nfxpm);
+            gmx_fatal(FARGS, "No or not correct number (2) of output-files: %td", rawFiles.size());
         }
-        writeraw(surf1, surf2, tblock, xslices, yslices, rawfiles, oenv);
+        writeraw(surf1, surf2, tblock, xslices, yslices, rawFiles, oenv);
     }
 
 
 
     if (bFourier)
     {
-        nfspect = opt2fns(&spectra, "-Spect", NFILE, fnm);
-        if (nfspect != 2)
+        gmx::ArrayRef<const std::string> spectra = opt2fns("-Spect", NFILE, fnm);
+        if (spectra.size() != 2)
         {
-            gmx_fatal(FARGS, "No or not correct number (2) of output-file-series: %d",
-                      nfspect);
+            gmx_fatal(FARGS, "No or not correct number (2) of output-file-series: %td",
+                      spectra.size());
         }
         powerspectavg_intf(surf1, surf2, tblock, xslices, yslices, spectra);
     }

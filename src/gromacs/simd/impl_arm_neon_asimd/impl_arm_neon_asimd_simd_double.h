@@ -42,6 +42,8 @@
 
 #include <arm_neon.h>
 
+#include "gromacs/math/utilities.h"
+
 #include "impl_arm_neon_asimd_simd_float.h"
 
 namespace gmx
@@ -100,7 +102,7 @@ class SimdDIBool
 };
 
 static inline SimdDouble gmx_simdcall
-simdLoad(const double *m)
+simdLoad(const double *m, SimdDoubleTag = {})
 {
     assert(std::size_t(m) % 16 == 0);
     return {
@@ -116,7 +118,7 @@ store(double *m, SimdDouble a)
 }
 
 static inline SimdDouble gmx_simdcall
-simdLoadU(const double *m)
+simdLoadU(const double *m, SimdDoubleTag = {})
 {
     return {
                vld1q_f64(m)
@@ -138,7 +140,7 @@ setZeroD()
 }
 
 static inline SimdDInt32 gmx_simdcall
-simdLoadDI(const std::int32_t * m)
+simdLoad(const std::int32_t * m, SimdDInt32Tag)
 {
     assert(std::size_t(m) % 8 == 0);
     return {
@@ -154,7 +156,7 @@ store(std::int32_t * m, SimdDInt32 a)
 }
 
 static inline SimdDInt32 gmx_simdcall
-simdLoadUDI(const std::int32_t *m)
+simdLoadU(const std::int32_t *m, SimdDInt32Tag)
 {
     return {
                vld1_s32(m)
@@ -424,17 +426,25 @@ frexp(SimdDouble value, SimdDInt32 * exponent)
     };
 }
 
+template <MathOptimization opt = MathOptimization::Safe>
 static inline SimdDouble
 ldexp(SimdDouble value, SimdDInt32 exponent)
 {
-    const int64x2_t  exponentBias = vdupq_n_s64(1023);
-    int64x2_t        iExponent;
+    const int32x2_t exponentBias = vdup_n_s32(1023);
+    int32x2_t       iExponent    = vadd_s32(exponent.simdInternal_, exponentBias);
+    int64x2_t       iExponent64;
 
-    iExponent = vmovl_s32(exponent.simdInternal_);
-    iExponent = vshlq_n_s64(vaddq_s64(iExponent, exponentBias), 52);
+    if (opt == MathOptimization::Safe)
+    {
+        // Make sure biased argument is not negative
+        iExponent = vmax_s32(iExponent, vdup_n_s32(0));
+    }
+
+    iExponent64 = vmovl_s32(iExponent);
+    iExponent64 = vshlq_n_s64(iExponent64, 52);
 
     return {
-               vmulq_f64(value.simdInternal_, float64x2_t(iExponent))
+               vmulq_f64(value.simdInternal_, float64x2_t(iExponent64))
     };
 }
 
@@ -528,22 +538,6 @@ blend(SimdDouble a, SimdDouble b, SimdDBool sel)
 {
     return {
                vbslq_f64(sel.simdInternal_, b.simdInternal_, a.simdInternal_)
-    };
-}
-
-static inline SimdDInt32 gmx_simdcall
-operator<<(SimdDInt32 a, int n)
-{
-    return {
-               vshl_n_s32(a.simdInternal_, n)
-    };
-}
-
-static inline SimdDInt32 gmx_simdcall
-operator>>(SimdDInt32 a, int n)
-{
-    return {
-               vshr_n_s32(a.simdInternal_, n)
     };
 }
 

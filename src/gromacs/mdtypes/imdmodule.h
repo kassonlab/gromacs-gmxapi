@@ -59,16 +59,6 @@ class IMdpOptionProvider;
  * those interfaces that the module does not need to implement, but currently
  * the callers are not prepared to generically handle various cases.
  *
- * Example:
- *
- *       void Derived::initForceProviders(ForceProviders *forceProviders) override
- *       {
- *           if (isActive())
- *           {
- *               forceProviders->addForceProviderWithoutVirialContribution(this);
- *           }
- *       };
- *
  * \inlibraryapi
  * \ingroup module_mdtypes
  */

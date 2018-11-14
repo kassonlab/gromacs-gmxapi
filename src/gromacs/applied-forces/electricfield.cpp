@@ -1,7 +1,7 @@
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
- * Copyright (c) 2015,2016,2017, by the GROMACS development team, led by
+ * Copyright (c) 2015,2016,2017,2018, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -53,7 +53,7 @@
 #include "gromacs/math/units.h"
 #include "gromacs/math/vec.h"
 #include "gromacs/mdtypes/commrec.h"
-#include "gromacs/mdtypes/forcerec.h"
+#include "gromacs/mdtypes/forceoutput.h"
 #include "gromacs/mdtypes/iforceprovider.h"
 #include "gromacs/mdtypes/imdmodule.h"
 #include "gromacs/mdtypes/imdoutputprovider.h"
@@ -101,8 +101,7 @@ class ElectricFieldData
          */
         void buildMdpOutput(KeyValueTreeObjectBuilder *builder, const std::string &name) const
         {
-            builder->addUniformArray<real>("E-" + name, {1, a_, -1});
-            builder->addUniformArray<real>("E-" + name + "t", {omega_, t0_, sigma_});
+            builder->addUniformArray<real>("electric-field-" + name, {a_, omega_, t0_, sigma_});
         }
 
         /*! \brief Evaluates this field component at given time.
@@ -123,29 +122,8 @@ class ElectricFieldData
             }
         }
 
-        /*! \brief Initiate the field values
-         *
-         * \param[in] a     Amplitude
-         * \param[in] omega Frequency
-         * \param[in] t0    Peak of the pulse
-         * \param[in] sigma Width of the pulse
-         */
-        void setField(real a, real omega, real t0, real sigma)
-        {
-            a_     = a;
-            omega_ = omega;
-            t0_    = t0;
-            sigma_ = sigma;
-        }
-
         //! Return the amplitude
         real a()     const { return a_; }
-        //! Return the frequency
-        real omega() const { return omega_; }
-        //! Return the time for the peak of the pulse
-        real t0()    const { return t0_; }
-        //! Return the width of the pulse (0 means inifinite)
-        real sigma() const { return sigma_; }
 
     private:
         //! Coeffient (V / nm)
@@ -179,7 +157,7 @@ class ElectricField final : public IMDModule,
         {
             if (isActive())
             {
-                forceProviders->addForceProviderWithoutVirialContribution(this);
+                forceProviders->addForceProvider(this);
             }
         }
 
@@ -195,12 +173,8 @@ class ElectricField final : public IMDModule,
 
         // From IForceProvider
         //! \copydoc IForceProvider::calculateForces()
-        void calculateForces(const t_commrec  *cr,
-                             const t_mdatoms  *mdatoms,
-                             const matrix      box,
-                             double            t,
-                             const rvec       *x,
-                             ArrayRef<RVec>    force) override;
+        void calculateForces(const ForceProviderInput &forceProviderInput,
+                             ForceProviderOutput      *forceProviderOutput) override;
 
     private:
         //! Return whether or not to apply a field
@@ -213,31 +187,6 @@ class ElectricField final : public IMDModule,
          * \return The field strength in V/nm units
          */
         real field(int dim, real t) const;
-
-        /*! \brief Return amplitude of field
-         *
-         * \param[in] dim Direction of the field (XX, YY, ZZ)
-         * \return Amplitude of the field
-         */
-        real a(int dim)     const { return efield_[dim].a(); }
-        /*! \brief Return frequency of field (1/ps)
-         *
-         * \param[in] dim Direction of the field (XX, YY, ZZ)
-         * \return Frequency of the field
-         */
-        real omega(int dim) const { return efield_[dim].omega(); }
-        /*! \brief Return time of pulse peak
-         *
-         * \param[in] dim Direction of the field (XX, YY, ZZ)
-         * \return Time of pulse peak
-         */
-        real t0(int dim) const { return efield_[dim].t0(); }
-        /*! \brief Return width of the pulse
-         *
-         * \param[in] dim Direction of the field (XX, YY, ZZ)
-         * \return Width of the pulse
-         */
-        real sigma(int dim) const { return efield_[dim].sigma(); }
 
         /*! \brief Print the field components to a file
          *
@@ -252,79 +201,33 @@ class ElectricField final : public IMDModule,
         FILE             *fpField_;
 };
 
-//! Converts static parameters from mdp format to E0.
-real convertStaticParameters(const std::string &value)
-{
-    // TODO: Better context for the exceptions here (possibly
-    // also convert them to warning_errors or such).
-    const std::vector<std::string> sx = splitString(value);
-    if (sx.empty())
-    {
-        return 0.0;
-    }
-    const int n = fromString<int>(sx[0]);
-    if (n <= 0)
-    {
-        return 0.0;
-    }
-    if (n != 1)
-    {
-        GMX_THROW(InvalidInputError("Only one electric field term supported for each dimension"));
-    }
-    if (sx.size() != 3)
-    {
-        GMX_THROW(InvalidInputError("Expected exactly one electric field amplitude value"));
-    }
-    return fromString<real>(sx[1]);
-}
-
-//! Converts dynamic parameters from mdp format to (omega, t0, sigma).
-void convertDynamicParameters(gmx::KeyValueTreeObjectBuilder *builder,
-                              const std::string              &value)
+//! Converts dynamic parameters from new mdp format to (E0, omega, t0, sigma).
+void convertParameters(gmx::KeyValueTreeObjectBuilder *builder,
+                       const std::string              &value)
 {
     const std::vector<std::string> sxt = splitString(value);
     if (sxt.empty())
     {
         return;
     }
-    const int n = fromString<int>(sxt[0]);
-    switch (n)
+    if (sxt.size() != 4)
     {
-        case 1:
-            if (sxt.size() != 3)
-            {
-                GMX_THROW(InvalidInputError("Please specify 1 omega 0 for non-pulsed fields"));
-            }
-            builder->addValue<real>("omega", fromString<real>(sxt[1]));
-            break;
-        case 3:
-            if (sxt.size() != 7)
-            {
-                GMX_THROW(InvalidInputError("Please specify 1 omega 0 t0 0 sigma 0 for pulsed fields"));
-            }
-            builder->addValue<real>("omega", fromString<real>(sxt[1]));
-            builder->addValue<real>("t0", fromString<real>(sxt[3]));
-            builder->addValue<real>("sigma", fromString<real>(sxt[5]));
-            break;
-        default:
-            GMX_THROW(InvalidInputError("Incomprehensible input for electric field"));
+        GMX_THROW(InvalidInputError("Please specify E0 omega t0 sigma for electric fields"));
     }
+    builder->addValue<real>("E0", fromString<real>(sxt[0]));
+    builder->addValue<real>("omega", fromString<real>(sxt[1]));
+    builder->addValue<real>("t0", fromString<real>(sxt[2]));
+    builder->addValue<real>("sigma", fromString<real>(sxt[3]));
 }
 
 void ElectricField::initMdpTransform(IKeyValueTreeTransformRules *rules)
 {
-    rules->addRule().from<std::string>("/E-x").to<real>("/electric-field/x/E0")
-        .transformWith(&convertStaticParameters);
-    rules->addRule().from<std::string>("/E-xt").toObject("/electric-field/x")
-        .transformWith(&convertDynamicParameters);
-    rules->addRule().from<std::string>("/E-y").to<real>("/electric-field/y/E0")
-        .transformWith(&convertStaticParameters);
-    rules->addRule().from<std::string>("/E-yt").toObject("/electric-field/y")
-        .transformWith(&convertDynamicParameters);
-    rules->addRule().from<std::string>("/E-z").to<real>("/electric-field/z/E0")
-        .transformWith(&convertStaticParameters);
-    rules->addRule().from<std::string>("/E-zt").toObject("/electric-field/z")
-        .transformWith(&convertDynamicParameters);
+    rules->addRule().from<std::string>("/electric-field-x").toObject("/electric-field/x")
+        .transformWith(&convertParameters);
+    rules->addRule().from<std::string>("/electric-field-y").toObject("/electric-field/y")
+        .transformWith(&convertParameters);
+    rules->addRule().from<std::string>("/electric-field-z").toObject("/electric-field/z")
+        .transformWith(&convertParameters);
 }
 
 void ElectricField::initMdpOptions(IOptionsContainerWithSections *options)
@@ -339,12 +242,10 @@ void ElectricField::buildMdpOutput(KeyValueTreeObjectBuilder *builder) const
 {
     const char *const comment[] = {
         "; Electric fields",
-        "; Format for E-x, etc. is: number of cosines (int; only 1 is supported),",
-        "; amplitude (real; V/nm), and phase (real; value is meaningless",
-        "; for a cosine of frequency 0.",
-        "; Format for E-xt, etc. is: omega (1/ps), time for the pulse peak (ps),",
-        "; and sigma (ps) width of the pulse. Sigma = 0 removes the pulse,",
-        "; leaving the field to be a cosine function."
+        "; Format for electric-field-x, etc. is: four real variables:",
+        "; amplitude (V/nm), frequency omega (1/ps), time for the pulse peak (ps),",
+        "; and sigma (ps) width of the pulse. Omega = 0 means static field,",
+        "; sigma = 0 means no pulse, leaving the field to be a cosine function."
     };
     builder->addValue<std::string>("comment-electric-field", joinStrings(comment, "\n"));
     efield_[XX].buildMdpOutput(builder, "x");
@@ -405,16 +306,17 @@ void ElectricField::printComponents(double t) const
             field(XX, t), field(YY, t), field(ZZ, t));
 }
 
-void ElectricField::calculateForces(const t_commrec  *cr,
-                                    const t_mdatoms  *mdatoms,
-                                    const matrix      /* box */,
-                                    double            t,
-                                    const rvec        * /* x */,
-                                    ArrayRef<RVec>    force)
+void ElectricField::calculateForces(const ForceProviderInput &forceProviderInput,
+                                    ForceProviderOutput      *forceProviderOutput)
 {
     if (isActive())
     {
-        rvec *f = as_rvec_array(force.data());
+        const t_mdatoms &mdatoms = forceProviderInput.mdatoms_;
+        const double     t       = forceProviderInput.t_;
+        const t_commrec &cr      = forceProviderInput.cr_;
+
+        // NOTE: The non-conservative electric field does not have a virial
+        rvec *f = as_rvec_array(forceProviderOutput->forceWithVirial_.force_.data());
 
         for (int m = 0; (m < DIM); m++)
         {
@@ -423,14 +325,14 @@ void ElectricField::calculateForces(const t_commrec  *cr,
             if (Ext != 0)
             {
                 // TODO: Check parallellism
-                for (int i = 0; i < mdatoms->homenr; ++i)
+                for (int i = 0; i < mdatoms.homenr; ++i)
                 {
                     // NOTE: Not correct with perturbed charges
-                    f[i][m] += mdatoms->chargeA[i]*Ext;
+                    f[i][m] += mdatoms.chargeA[i]*Ext;
                 }
             }
         }
-        if (MASTER(cr) && fpField_ != nullptr)
+        if (MASTER(&cr) && fpField_ != nullptr)
         {
             printComponents(t);
         }

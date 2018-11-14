@@ -1,7 +1,7 @@
 #
 # This file is part of the GROMACS molecular simulation package.
 #
-# Copyright (c) 2017, by the GROMACS development team, led by
+# Copyright (c) 2018, by the GROMACS development team, led by
 # Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
 # and including many others, as listed in the AUTHORS file in the
 # top-level source directory and at http://www.gromacs.org.
@@ -32,36 +32,41 @@
 # To help us fund GROMACS development, we humbly ask that you cite
 # the research papers on the package. Check out http://www.gromacs.org.
 
-# TODO: At some point, we need to clarify the relationship between this versioning
-# and the single-integer monotonic versioning in GMX_API_VERSION that currently
-# tracks the Gromacs release, or the LIBRARY_VERSION that annotates the shared object.
+# Note: GROMACS releases have a single-integer monotonic version in GMX_API_VERSION
+# and LIBRARY_VERSION annotates the shared object for libgromacs. GMXAPI versioning
+# is not synchronized to releases and may increment faster or slower.
+#
+# Prior to 0.1, GMXAPI patch levels are used to mark short term development cycles
+# and allow compatibility checks for client software of the early releases.
+#
+# gmxapi 0.1 will be the first release candidate for gmxapi 1.0 and will attempt
+# to establish compatibility guarantees consistent with semantic versioning.
+# (https://semver.org). When the API is deemed suitably stable, gmxapi 1.0 should
+# be tagged. Official GROMACS releases should be mappable to a distinct gmxapi
+# release string. For roadmap details, see https://redmine.gromacs.org/issues/2585
 set(GMXAPI_MAJOR 0)
 set(GMXAPI_MINOR 0)
-set(GMXAPI_PATCH 6)
+set(GMXAPI_PATCH 7)
 set(GMXAPI_RELEASE ${GMXAPI_MAJOR}.${GMXAPI_MINOR}.${GMXAPI_PATCH})
-
-#if(GMX_LIB_MPI)
-#	message(FATAL_ERROR "GMXAPI currently does not support MPI builds. Set -DGMX_MPI=OFF or -DGMXAPI=OFF")
-#endif()
-
-
-# Supposedly, cmake should be able to resolve these dependencies, but we need
-# to know what to install and which headers to document publicly.
-set(GMXAPI_PUBLIC_HEADERS
-    ${CMAKE_CURRENT_SOURCE_DIR}/cpp/gmxapi/context.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/cpp/gmxapi/exceptions.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/cpp/gmxapi/gmxapi.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/cpp/gmxapi/md.h
-	${CMAKE_CURRENT_SOURCE_DIR}/cpp/gmxapi/session.h
-	${CMAKE_CURRENT_SOURCE_DIR}/cpp/gmxapi/status.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/cpp/gmxapi/system.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/cpp/gmxapi/version.h
-	${CMAKE_CURRENT_SOURCE_DIR}/cpp/gmxapi/md/mdmodule.h
-	)
 
 ###############################
 # New public C++ API components
 ###############################
+
+# Define a list of the public headers to be installed and documented. Use
+# absolute paths in the build tree. Path component before `gmxapi` can be
+# stripped as appropriate by consumers of this list.
+set(GMXAPI_PUBLIC_HEADERS
+    ${CMAKE_CURRENT_SOURCE_DIR}/cpp/include/gmxapi/context.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/cpp/include/gmxapi/exceptions.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/cpp/include/gmxapi/gmxapi.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/cpp/include/gmxapi/md.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/cpp/include/gmxapi/md/mdmodule.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/cpp/include/gmxapi/session.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/cpp/include/gmxapi/status.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/cpp/include/gmxapi/system.h
+    ${CMAKE_CURRENT_BINARY_DIR}/cpp/include/gmxapi/version.h)
+
 add_subdirectory(cpp)
 
 add_subdirectory(docs)

@@ -1,7 +1,7 @@
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
- * Copyright (c) 2012,2013,2014,2015,2016,2017, by the GROMACS development team, led by
+ * Copyright (c) 2012,2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -43,16 +43,18 @@
 #include <cstring>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
+#include <memory>
 #include <string>
 #include <thread>
 #include <vector>
 
 #include "thread_mpi/threads.h"
 
+#include "gromacs/compat/make_unique.h"
 #include "gromacs/gpu_utils/gpu_utils.h"
 #include "gromacs/hardware/cpuinfo.h"
-#include "gromacs/hardware/gpu_hw_info.h"
 #include "gromacs/hardware/hardwaretopology.h"
 #include "gromacs/hardware/hw_info.h"
 #include "gromacs/mdtypes/commrec.h"
@@ -65,14 +67,20 @@
 #include "gromacs/utility/fatalerror.h"
 #include "gromacs/utility/gmxassert.h"
 #include "gromacs/utility/logger.h"
+#include "gromacs/utility/physicalnodecommunicator.h"
 #include "gromacs/utility/programcontext.h"
 #include "gromacs/utility/smalloc.h"
 #include "gromacs/utility/stringutil.h"
 #include "gromacs/utility/sysinfo.h"
 
+#include "architecture.h"
+
 #ifdef HAVE_UNISTD_H
 #    include <unistd.h>       // sysconf()
 #endif
+
+namespace gmx
+{
 
 //! Convenience macro to help us avoid ifdefs each time we use sysconf
 #if !defined(_SC_NPROCESSORS_ONLN) && defined(_SC_NPROC_ONLN)
@@ -84,108 +92,76 @@
 #    define _SC_NPROCESSORS_CONF _SC_NPROC_CONF
 #endif
 
-#if defined (__i386__) || defined (__x86_64__) || defined (_M_IX86) || defined (_M_X64)
-//! Constant used to help minimize preprocessed code
-static const bool isX86 = true;
-#else
-//! Constant used to help minimize preprocessed code
-static const bool isX86 = false;
-#endif
-
-#if defined __powerpc__ || defined __ppc__ || defined __PPC__
-static const bool isPowerPC = true;
-#else
-static const bool isPowerPC = false;
-#endif
-
 //! Constant used to help minimize preprocessed code
 static const bool bGPUBinary     = GMX_GPU != GMX_GPU_NONE;
 
-/* Note that some of the following arrays must match the "GPU support
- * enumeration" in src/config.h.cmakein, so that GMX_GPU looks up an
- * array entry. */
+/*! \brief The hwinfo structure (common to all threads in this process).
+ *
+ * \todo This should become a shared_ptr owned by e.g. Mdrunner::runner()
+ * that is shared across any threads as needed (e.g. for thread-MPI). That
+ * offers about the same run time performance as we get here, and avoids a
+ * lot of custom code.
+ */
+static std::unique_ptr<gmx_hw_info_t> hwinfo_g;
+//! A reference counter for the hwinfo structure
+static int                            n_hwinfo = 0;
+//! A lock to protect the hwinfo structure
+static tMPI_Thread_mutex_t            hw_info_lock = TMPI_THREAD_MUTEX_INITIALIZER;
 
-// TODO If/when we unify CUDA and OpenCL support code, this should
-// move to a single place in gpu_utils.
-/* Names of the GPU detection/check results (see e_gpu_detect_res_t in hw_info.h). */
-const char * const gpu_detect_res_str[egpuNR] =
+//! Detect GPUs, if that makes sense to attempt.
+static void gmx_detect_gpus(const gmx::MDLogger            &mdlog,
+                            const PhysicalNodeCommunicator &physicalNodeComm)
 {
-    "compatible", "inexistent", "incompatible", "insane"
-};
-
-/* The globally shared hwinfo structure. */
-static gmx_hw_info_t      *hwinfo_g;
-/* A reference counter for the hwinfo structure */
-static int                 n_hwinfo = 0;
-/* A lock to protect the hwinfo structure */
-static tMPI_Thread_mutex_t hw_info_lock = TMPI_THREAD_MUTEX_INITIALIZER;
-
-static void gmx_detect_gpus(const gmx::MDLogger &mdlog, const t_commrec *cr)
-{
-#if GMX_LIB_MPI
-    int              rank_world;
-    MPI_Comm         physicalnode_comm;
-#endif
-    int              rank_local;
-
-    /* Under certain circumstances MPI ranks on the same physical node
-     * can not simultaneously access the same GPU(s). Therefore we run
-     * the detection only on one MPI rank per node and broadcast the info.
-     * Note that with thread-MPI only a single thread runs this code.
-     *
-     * NOTE: We can't broadcast gpu_info with OpenCL as the device and platform
-     * ID stored in the structure are unique for each rank (even if a device
-     * is shared by multiple ranks).
-     *
-     * TODO: We should also do CPU hardware detection only once on each
-     * physical node and broadcast it, instead of do it on every MPI rank.
-     */
-#if GMX_LIB_MPI
-    /* A split of MPI_COMM_WORLD over physical nodes is only required here,
-     * so we create and destroy it locally.
-     */
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank_world);
-    MPI_Comm_split(MPI_COMM_WORLD, gmx_physicalnode_id_hash(),
-                   rank_world, &physicalnode_comm);
-    MPI_Comm_rank(physicalnode_comm, &rank_local);
-    GMX_UNUSED_VALUE(cr);
-#else
-    /* Here there should be only one process, check this */
-    GMX_RELEASE_ASSERT(cr->nnodes == 1 && cr->sim_nodeid == 0, "Only a single (master) process should execute here");
-
-    rank_local = 0;
-#endif
-
-    /*  With CUDA detect only on one rank per host, with OpenCL need do
-     *  the detection on all PP ranks */
-    bool isOpenclPpRank = ((GMX_GPU == GMX_GPU_OPENCL) && (cr->duty & DUTY_PP));
-
-    if (rank_local == 0 || isOpenclPpRank)
+    hwinfo_g->gpu_info.bDetectGPUs =
+        (bGPUBinary && getenv("GMX_DISABLE_GPU_DETECTION") == nullptr);
+    if (!hwinfo_g->gpu_info.bDetectGPUs)
     {
-        char detection_error[STRLEN] = "", sbuf[STRLEN];
+        return;
+    }
 
-        if (detect_gpus(&hwinfo_g->gpu_info, detection_error) != 0)
+    bool isMasterRankOfPhysicalNode = true;
+#if GMX_LIB_MPI
+    isMasterRankOfPhysicalNode = (physicalNodeComm.rank_ == 0);
+#else
+    // We choose to run the detection only once with thread-MPI and
+    // use reference counting on the results of the detection to
+    // enforce it. But we can assert that this is true.
+    GMX_RELEASE_ASSERT(n_hwinfo == 0, "Cannot run GPU detection on non-master thread-MPI ranks");
+    GMX_UNUSED_VALUE(physicalNodeComm);
+    isMasterRankOfPhysicalNode = true;
+#endif
+
+    /* The OpenCL support requires us to run detection on all ranks.
+     * With CUDA we don't need to, and prefer to detect on one rank
+     * and send the information to the other ranks over MPI. */
+    bool allRanksMustDetectGpus = (GMX_GPU == GMX_GPU_OPENCL);
+    bool gpusCanBeDetected      = false;
+    if (isMasterRankOfPhysicalNode || allRanksMustDetectGpus)
+    {
+        std::string errorMessage;
+        gpusCanBeDetected = canDetectGpus(&errorMessage);
+        if (!gpusCanBeDetected)
         {
-            if (detection_error[0] != '\0')
-            {
-                sprintf(sbuf, ":\n      %s\n", detection_error);
-            }
-            else
-            {
-                sprintf(sbuf, ".");
-            }
-            GMX_LOG(mdlog.warning).asParagraph().appendTextFormatted(
-                    "NOTE: Error occurred during GPU detection%s"
-                    "      Can not use GPU acceleration, will fall back to CPU kernels.",
-                    sbuf);
+            GMX_LOG(mdlog.info).asParagraph().appendTextFormatted(
+                    "NOTE: Detection of GPUs failed. The API reported:\n"
+                    "      %s\n"
+                    "      GROMACS cannot run tasks on a GPU.",
+                    errorMessage.c_str());
         }
     }
 
+    if (gpusCanBeDetected)
+    {
+        findGpus(&hwinfo_g->gpu_info);
+        // No need to tell the user anything at this point, they get a
+        // hardware report later.
+    }
+
 #if GMX_LIB_MPI
-    if (!isOpenclPpRank)
+    if (!allRanksMustDetectGpus)
     {
         /* Broadcast the GPU info to the other ranks within this node */
-        MPI_Bcast(&hwinfo_g->gpu_info.n_dev, 1, MPI_INT, 0, physicalnode_comm);
+        MPI_Bcast(&hwinfo_g->gpu_info.n_dev, 1, MPI_INT, 0, physicalNodeComm.comm_);
 
         if (hwinfo_g->gpu_info.n_dev > 0)
         {
@@ -193,34 +169,33 @@ static void gmx_detect_gpus(const gmx::MDLogger &mdlog, const t_commrec *cr)
 
             dev_size = hwinfo_g->gpu_info.n_dev*sizeof_gpu_dev_info();
 
-            if (rank_local > 0)
+            if (!isMasterRankOfPhysicalNode)
             {
                 hwinfo_g->gpu_info.gpu_dev =
                     (struct gmx_device_info_t *)malloc(dev_size);
             }
             MPI_Bcast(hwinfo_g->gpu_info.gpu_dev, dev_size, MPI_BYTE,
-                      0, physicalnode_comm);
+                      0, physicalNodeComm.comm_);
             MPI_Bcast(&hwinfo_g->gpu_info.n_dev_compatible, 1, MPI_INT,
-                      0, physicalnode_comm);
+                      0, physicalNodeComm.comm_);
         }
     }
-
-    MPI_Comm_free(&physicalnode_comm);
 #endif
 }
 
-static void gmx_collect_hardware_mpi(const gmx::CpuInfo &cpuInfo)
+//! Reduce the locally collected \p hwinfo_g over MPI ranks
+static void gmx_collect_hardware_mpi(const gmx::CpuInfo             &cpuInfo,
+                                     const PhysicalNodeCommunicator &physicalNodeComm)
 {
-    const int ncore = hwinfo_g->hardwareTopology->numberOfCores();
-#if GMX_LIB_MPI
-    int       rank_id;
-    int       nrank, rank, nhwthread, ngpu, i;
-    int       gpu_hash;
-    int      *buf, *all;
+    const int  ncore        = hwinfo_g->hardwareTopology->numberOfCores();
+    /* Zen has family=23, for now we treat future AMD CPUs like Zen */
+    const bool cpuIsAmdZen  = (cpuInfo.vendor() == CpuInfo::Vendor::Amd &&
+                               cpuInfo.family() >= 23);
 
-    rank_id   = gmx_physicalnode_id_hash();
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &nrank);
+#if GMX_LIB_MPI
+    int       nhwthread, ngpu, i;
+    int       gpu_hash;
+
     nhwthread = hwinfo_g->nthreads_hw_avail;
     ngpu      = hwinfo_g->gpu_info.n_dev_compatible;
     /* Create a unique hash of the GPU type(s) in this node */
@@ -241,86 +216,62 @@ static void gmx_collect_hardware_mpi(const gmx::CpuInfo &cpuInfo)
         gpu_hash ^= gmx_string_fullhash_func(stmp, gmx_string_hash_init);
     }
 
-    snew(buf, nrank);
-    snew(all, nrank);
-    buf[rank] = rank_id;
-
-    MPI_Allreduce(buf, all, nrank, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
-
-    gmx_bool bFound;
-    int      nnode0, ncore0, nhwthread0, ngpu0, r;
-
-    bFound     = FALSE;
-    ncore0     = 0;
-    nnode0     = 0;
-    nhwthread0 = 0;
-    ngpu0      = 0;
-    for (r = 0; r < nrank; r++)
+    constexpr int                          numElementsCounts =  4;
+    std::array<int, numElementsCounts>     countsReduced;
     {
-        if (all[r] == rank_id)
+        std::array<int, numElementsCounts> countsLocal = {{0}};
+        // Organize to sum values from only one rank within each node,
+        // so we get the sum over all nodes.
+        bool isMasterRankOfPhysicalNode = (physicalNodeComm.rank_ == 0);
+        if (isMasterRankOfPhysicalNode)
         {
-            if (!bFound && r == rank)
-            {
-                /* We are the first rank in this physical node */
-                nnode0     = 1;
-                ncore0     = ncore;
-                nhwthread0 = nhwthread;
-                ngpu0      = ngpu;
-            }
-            bFound = TRUE;
+            countsLocal[0] = 1;
+            countsLocal[1] = ncore;
+            countsLocal[2] = nhwthread;
+            countsLocal[3] = ngpu;
         }
+
+        MPI_Allreduce(countsLocal.data(), countsReduced.data(), countsLocal.size(),
+                      MPI_INT, MPI_SUM, MPI_COMM_WORLD);
     }
 
-    sfree(buf);
-    sfree(all);
-
-    int sum[4], maxmin[10];
-
+    constexpr int                       numElementsMax = 11;
+    std::array<int, numElementsMax>     maxMinReduced;
     {
-        int buf[4];
-
-        /* Sum values from only intra-rank 0 so we get the sum over all nodes */
-        buf[0] = nnode0;
-        buf[1] = ncore0;
-        buf[2] = nhwthread0;
-        buf[3] = ngpu0;
-
-        MPI_Allreduce(buf, sum, 4, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
-    }
-
-    {
-        int buf[10];
-
+        std::array<int, numElementsMax> maxMinLocal;
         /* Store + and - values for all ranks,
          * so we can get max+min with one MPI call.
          */
-        buf[0] = ncore;
-        buf[1] = nhwthread;
-        buf[2] = ngpu;
-        buf[3] = static_cast<int>(gmx::simdSuggested(cpuInfo));
-        buf[4] = gpu_hash;
-        buf[5] = -buf[0];
-        buf[6] = -buf[1];
-        buf[7] = -buf[2];
-        buf[8] = -buf[3];
-        buf[9] = -buf[4];
+        maxMinLocal[0]  = ncore;
+        maxMinLocal[1]  = nhwthread;
+        maxMinLocal[2]  = ngpu;
+        maxMinLocal[3]  = static_cast<int>(gmx::simdSuggested(cpuInfo));
+        maxMinLocal[4]  = gpu_hash;
+        maxMinLocal[5]  = -maxMinLocal[0];
+        maxMinLocal[6]  = -maxMinLocal[1];
+        maxMinLocal[7]  = -maxMinLocal[2];
+        maxMinLocal[8]  = -maxMinLocal[3];
+        maxMinLocal[9]  = -maxMinLocal[4];
+        maxMinLocal[10] = (cpuIsAmdZen ? 1 : 0);
 
-        MPI_Allreduce(buf, maxmin, 10, MPI_INT, MPI_MAX, MPI_COMM_WORLD);
+        MPI_Allreduce(maxMinLocal.data(), maxMinReduced.data(), maxMinLocal.size(),
+                      MPI_INT, MPI_MAX, MPI_COMM_WORLD);
     }
 
-    hwinfo_g->nphysicalnode       = sum[0];
-    hwinfo_g->ncore_tot           = sum[1];
-    hwinfo_g->ncore_min           = -maxmin[5];
-    hwinfo_g->ncore_max           = maxmin[0];
-    hwinfo_g->nhwthread_tot       = sum[2];
-    hwinfo_g->nhwthread_min       = -maxmin[6];
-    hwinfo_g->nhwthread_max       = maxmin[1];
-    hwinfo_g->ngpu_compatible_tot = sum[3];
-    hwinfo_g->ngpu_compatible_min = -maxmin[7];
-    hwinfo_g->ngpu_compatible_max = maxmin[2];
-    hwinfo_g->simd_suggest_min    = -maxmin[8];
-    hwinfo_g->simd_suggest_max    = maxmin[3];
-    hwinfo_g->bIdenticalGPUs      = (maxmin[4] == -maxmin[9]);
+    hwinfo_g->nphysicalnode       = countsReduced[0];
+    hwinfo_g->ncore_tot           = countsReduced[1];
+    hwinfo_g->ncore_min           = -maxMinReduced[5];
+    hwinfo_g->ncore_max           = maxMinReduced[0];
+    hwinfo_g->nhwthread_tot       = countsReduced[2];
+    hwinfo_g->nhwthread_min       = -maxMinReduced[6];
+    hwinfo_g->nhwthread_max       = maxMinReduced[1];
+    hwinfo_g->ngpu_compatible_tot = countsReduced[3];
+    hwinfo_g->ngpu_compatible_min = -maxMinReduced[7];
+    hwinfo_g->ngpu_compatible_max = maxMinReduced[2];
+    hwinfo_g->simd_suggest_min    = -maxMinReduced[8];
+    hwinfo_g->simd_suggest_max    = maxMinReduced[3];
+    hwinfo_g->bIdenticalGPUs      = (maxMinReduced[4] == -maxMinReduced[9]);
+    hwinfo_g->haveAmdZenCpu       = (maxMinReduced[10] > 0);
 #else
     /* All ranks use the same pointer, protected by a mutex in the caller */
     hwinfo_g->nphysicalnode       = 1;
@@ -336,6 +287,8 @@ static void gmx_collect_hardware_mpi(const gmx::CpuInfo &cpuInfo)
     hwinfo_g->simd_suggest_min    = static_cast<int>(simdSuggested(cpuInfo));
     hwinfo_g->simd_suggest_max    = static_cast<int>(simdSuggested(cpuInfo));
     hwinfo_g->bIdenticalGPUs      = TRUE;
+    hwinfo_g->haveAmdZenCpu       = cpuIsAmdZen;
+    GMX_UNUSED_VALUE(physicalNodeComm);
 #endif
 }
 
@@ -399,7 +352,8 @@ hardwareTopologyPrepareDetection()
     (defined(THREAD_PTHREADS) || defined(THREAD_WINDOWS))
 
     // Modify this conditional when/if x86 or PowerPC starts to sleep some cores
-    if (!isX86 && !isPowerPC)
+    if (c_architecture != Architecture::X86 &&
+        c_architecture != Architecture::PowerPC)
     {
         int                      countConfigured  = sysconf(_SC_NPROCESSORS_CONF);
         std::vector<std::thread> workThreads(countConfigured);
@@ -445,14 +399,16 @@ hardwareTopologyDoubleCheckDetection(const gmx::MDLogger gmx_unused         &mdl
         GMX_LOG(mdlog.info).
             appendTextFormatted("Note: %d CPUs configured, but only %d were detected to be online.\n", countConfigured, countFromDetection);
 
-        if (isX86 && countConfigured == 2*countFromDetection)
+        if (c_architecture == Architecture::X86 &&
+            countConfigured == 2*countFromDetection)
         {
             GMX_LOG(mdlog.info).
                 appendText("      X86 Hyperthreading is likely disabled; enable it for better performance.");
         }
         // For PowerPC (likely Power8) it is possible to set SMT to either 2,4, or 8-way hardware threads.
         // We only warn if it is completely disabled since default performance drops with SMT8.
-        if (isPowerPC && countConfigured == 8*countFromDetection)
+        if (c_architecture == Architecture::PowerPC &&
+            countConfigured == 8*countFromDetection)
         {
             GMX_LOG(mdlog.info).
                 appendText("      PowerPC SMT is likely disabled; enable SMT2/SMT4 for better performance.");
@@ -461,9 +417,8 @@ hardwareTopologyDoubleCheckDetection(const gmx::MDLogger gmx_unused         &mdl
 #endif
 }
 
-
-gmx_hw_info_t *gmx_detect_hardware(const gmx::MDLogger &mdlog, const t_commrec *cr,
-                                   gmx_bool bDetectGPUs)
+gmx_hw_info_t *gmx_detect_hardware(const gmx::MDLogger            &mdlog,
+                                   const PhysicalNodeCommunicator &physicalNodeComm)
 {
     int ret;
 
@@ -477,8 +432,10 @@ gmx_hw_info_t *gmx_detect_hardware(const gmx::MDLogger &mdlog, const t_commrec *
     /* only initialize the hwinfo structure if it is not already initalized */
     if (n_hwinfo == 0)
     {
-        snew(hwinfo_g, 1);
+        hwinfo_g = compat::make_unique<gmx_hw_info_t>();
 
+        /* TODO: We should also do CPU hardware detection only once on each
+         * physical node and broadcast it, instead of do it on every MPI rank. */
         hwinfo_g->cpuInfo             = new gmx::CpuInfo(gmx::CpuInfo::detect());
 
         hardwareTopologyPrepareDetection();
@@ -498,18 +455,8 @@ gmx_hw_info_t *gmx_detect_hardware(const gmx::MDLogger &mdlog, const t_commrec *
         hwinfo_g->gpu_info.n_dev_compatible = 0;
         hwinfo_g->gpu_info.gpu_dev          = nullptr;
 
-        /* Run the detection if the binary was compiled with GPU support
-         * and we requested detection.
-         */
-        hwinfo_g->gpu_info.bDetectGPUs =
-            (bGPUBinary && bDetectGPUs &&
-             getenv("GMX_DISABLE_GPU_DETECTION") == nullptr);
-        if (hwinfo_g->gpu_info.bDetectGPUs)
-        {
-            gmx_detect_gpus(mdlog, cr);
-        }
-
-        gmx_collect_hardware_mpi(*hwinfo_g->cpuInfo);
+        gmx_detect_gpus(mdlog, physicalNodeComm);
+        gmx_collect_hardware_mpi(*hwinfo_g->cpuInfo, physicalNodeComm);
     }
     /* increase the reference counter */
     n_hwinfo++;
@@ -520,7 +467,7 @@ gmx_hw_info_t *gmx_detect_hardware(const gmx::MDLogger &mdlog, const t_commrec *
         gmx_fatal(FARGS, "Error unlocking hwinfo mutex: %s", strerror(errno));
     }
 
-    return hwinfo_g;
+    return hwinfo_g.get();
 }
 
 bool compatibleGpusFound(const gmx_gpu_info_t &gpu_info)
@@ -528,7 +475,7 @@ bool compatibleGpusFound(const gmx_gpu_info_t &gpu_info)
     return gpu_info.n_dev_compatible > 0;
 }
 
-void gmx_hardware_info_free(gmx_hw_info_t *hwinfo)
+void gmx_hardware_info_free()
 {
     int ret;
 
@@ -542,11 +489,6 @@ void gmx_hardware_info_free(gmx_hw_info_t *hwinfo)
     n_hwinfo--;
 
 
-    if (hwinfo != hwinfo_g)
-    {
-        gmx_incons("hwinfo < hwinfo_g");
-    }
-
     if (n_hwinfo < 0)
     {
         gmx_incons("n_hwinfo < 0");
@@ -557,7 +499,7 @@ void gmx_hardware_info_free(gmx_hw_info_t *hwinfo)
         delete hwinfo_g->cpuInfo;
         delete hwinfo_g->hardwareTopology;
         free_gpu_info(&hwinfo_g->gpu_info);
-        sfree(hwinfo_g);
+        hwinfo_g.reset();
     }
 
     ret = tMPI_Thread_mutex_unlock(&hw_info_lock);
@@ -566,3 +508,5 @@ void gmx_hardware_info_free(gmx_hw_info_t *hwinfo)
         gmx_fatal(FARGS, "Error unlocking hwinfo mutex: %s", strerror(errno));
     }
 }
+
+}  // namespace gmx

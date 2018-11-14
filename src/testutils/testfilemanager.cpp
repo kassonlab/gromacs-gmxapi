@@ -1,7 +1,7 @@
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
- * Copyright (c) 2012,2013,2014,2015,2017, by the GROMACS development team, led by
+ * Copyright (c) 2012,2013,2014,2015,2017,2018, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -78,6 +78,9 @@ class TestFileManager::Impl
         //! Global test input data path set with setDataInputDirectory().
         static std::string s_inputDirectory;
 
+        //! Global path to simulation input database set with setTestSimulationDataBaseDirectory().
+        static std::string s_simulationDatabaseDirectory;
+
         //! Global temporary output directory for tests, set with setGlobalOutputTempDirectory().
         static const char *s_globalOutputTempDirectory;
 
@@ -112,6 +115,7 @@ class TestFileManager::Impl
 };
 
 std::string TestFileManager::Impl::s_inputDirectory;
+std::string TestFileManager::Impl::s_simulationDatabaseDirectory;
 const char *TestFileManager::Impl::s_globalOutputTempDirectory = nullptr;
 /** Controls whether TestFileManager should delete temporary files
     after the test finishes. */
@@ -195,7 +199,26 @@ std::string TestFileManager::getTestSpecificFileName(const char *suffix)
 
 std::string TestFileManager::getInputFilePath(const char *filename)
 {
-    return Path::join(getInputDataDirectory(), filename);
+    // Check if file is present in local directory.
+    if (File::exists(Path::join(getInputDataDirectory(), filename), File::returnFalseOnError))
+    {
+        return Path::join(getInputDataDirectory(), filename);
+    }
+    else if (File::exists(Path::join(getTestSimulationDatabaseDirectory(), filename), File::returnFalseOnError))
+    {
+        // Assume file is in global directory for simulation input files.
+        return Path::join(getTestSimulationDatabaseDirectory(), filename);
+    }
+    else
+    {
+        // Assume file is present locally without full name (e.g. extension).
+        return Path::join(getInputDataDirectory(), filename);
+    }
+}
+
+std::string TestFileManager::getInputFilePath(const std::string &filename)
+{
+    return getInputFilePath(filename.c_str());
 }
 
 const char *TestFileManager::getInputDataDirectory()
@@ -215,6 +238,12 @@ const char *TestFileManager::getOutputTempDirectory() const
     return impl_->outputTempDirectory_.c_str();
 }
 
+const char *TestFileManager::getTestSimulationDatabaseDirectory()
+{
+    GMX_RELEASE_ASSERT(!Impl::s_simulationDatabaseDirectory.empty(), "Path for simulation input database directory is not set");
+    return Impl::s_simulationDatabaseDirectory.c_str();
+}
+
 void TestFileManager::setInputDataDirectory(const std::string &path)
 {
     // There is no need to protect this by a mutex, as this is called in early
@@ -222,6 +251,15 @@ void TestFileManager::setInputDataDirectory(const std::string &path)
     GMX_RELEASE_ASSERT(Directory::exists(path),
                        "Test data directory does not exist");
     Impl::s_inputDirectory = path;
+}
+
+void TestFileManager::setTestSimulationDatabaseDirectory(const std::string &path)
+{
+    // There is no need to protect this by a mutex, as this is called in early
+    // initialization of the tests.
+    GMX_RELEASE_ASSERT(Directory::exists(path),
+                       "Simulation database directory does not exist");
+    Impl::s_simulationDatabaseDirectory = path;
 }
 
 void TestFileManager::setGlobalOutputTempDirectory(const char *path)

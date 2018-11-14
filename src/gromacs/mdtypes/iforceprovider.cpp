@@ -1,7 +1,7 @@
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
- * Copyright (c) 2017, by the GROMACS development team, led by
+ * Copyright (c) 2017,2018, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -44,7 +44,6 @@
 #include "iforceprovider.h"
 
 #include <vector>
-#include <cassert>
 
 #include "gromacs/utility/arrayref.h"
 
@@ -53,8 +52,7 @@ using namespace gmx;
 class ForceProviders::Impl
 {
     public:
-        std::vector<IForceProvider *> withVirialContribution_;
-        std::vector<IForceProvider *> withoutVirialContribution_;
+        std::vector<IForceProvider *> providers_;
 };
 
 ForceProviders::ForceProviders()
@@ -68,34 +66,19 @@ ForceProviders::~ForceProviders()
 
 void ForceProviders::addForceProvider(gmx::IForceProvider *provider)
 {
-    impl_->withVirialContribution_.push_back(provider);
+    impl_->providers_.push_back(provider);
 }
 
-void ForceProviders::addForceProviderWithoutVirialContribution(gmx::IForceProvider *provider)
+bool ForceProviders::hasForceProvider() const
 {
-    impl_->withoutVirialContribution_.push_back(provider);
+    return !impl_->providers_.empty();
 }
 
-bool ForceProviders::hasForcesWithoutVirialContribution() const
+void ForceProviders::calculateForces(const ForceProviderInput &forceProviderInput,
+                                     ForceProviderOutput      *forceProviderOutput) const
 {
-    return !impl_->withoutVirialContribution_.empty();
-}
-
-void ForceProviders::calculateForces(const t_commrec          *cr,
-                                     const t_mdatoms          *mdatoms,
-                                     const matrix              box,
-                                     double                    t,
-                                     const rvec               *x,
-                                     gmx::ArrayRef<gmx::RVec>  force,
-                                     gmx::ArrayRef<gmx::RVec>  f_novirsum) const
-{
-    for (auto provider : impl_->withVirialContribution_)
+    for (auto provider : impl_->providers_)
     {
-        assert(provider != nullptr);
-        provider->calculateForces(cr, mdatoms, box, t, x, force);
-    }
-    for (auto provider : impl_->withoutVirialContribution_)
-    {
-        provider->calculateForces(cr, mdatoms, box, t, x, f_novirsum);
+        provider->calculateForces(forceProviderInput, forceProviderOutput);
     }
 }

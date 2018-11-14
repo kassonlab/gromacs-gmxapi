@@ -1,7 +1,7 @@
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
- * Copyright (c) 2012,2014,2015,2016, by the GROMACS development team, led by
+ * Copyright (c) 2012,2014,2015,2016,2017,2018, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -37,212 +37,169 @@
 
 #include "cudautils.cuh"
 
-#include <stdlib.h>
+#include <cassert>
+#include <cstdlib>
 
-#include "gromacs/utility/smalloc.h"
+#include "gromacs/gpu_utils/cuda_arch_utils.cuh"
+#include "gromacs/gpu_utils/gpu_utils.h"
+#include "gromacs/utility/gmxassert.h"
 
 /*** Generic CUDA data operation wrappers ***/
 
-/*! Launches synchronous or asynchronous host to device memory copy.
- *
- *  The copy is launched in stream s or if not specified, in stream 0.
- */
-static int cu_copy_D2H_generic(void * h_dest, void * d_src, size_t bytes,
-                               bool bAsync = false, cudaStream_t s = 0)
+// TODO: template on transferKind to avoid runtime conditionals
+int cu_copy_D2H(void *h_dest, void *d_src, size_t bytes,
+                GpuApiCallBehavior transferKind, cudaStream_t s = nullptr)
 {
     cudaError_t stat;
 
-    if (h_dest == NULL || d_src == NULL || bytes == 0)
+    if (h_dest == nullptr || d_src == nullptr || bytes == 0)
     {
         return -1;
     }
 
-    if (bAsync)
+    switch (transferKind)
     {
-        stat = cudaMemcpyAsync(h_dest, d_src, bytes, cudaMemcpyDeviceToHost, s);
-        CU_RET_ERR(stat, "DtoH cudaMemcpyAsync failed");
+        case GpuApiCallBehavior::Async:
+            GMX_ASSERT(isHostMemoryPinned(h_dest), "Destination buffer was not pinned for CUDA");
+            stat = cudaMemcpyAsync(h_dest, d_src, bytes, cudaMemcpyDeviceToHost, s);
+            CU_RET_ERR(stat, "DtoH cudaMemcpyAsync failed");
+            break;
 
-    }
-    else
-    {
-        stat = cudaMemcpy(h_dest, d_src, bytes, cudaMemcpyDeviceToHost);
-        CU_RET_ERR(stat, "DtoH cudaMemcpy failed");
+        case GpuApiCallBehavior::Sync:
+            stat = cudaMemcpy(h_dest, d_src, bytes, cudaMemcpyDeviceToHost);
+            CU_RET_ERR(stat, "DtoH cudaMemcpy failed");
+            break;
+
+        default:
+            throw;
     }
 
     return 0;
 }
 
-int cu_copy_D2H(void * h_dest, void * d_src, size_t bytes)
+int cu_copy_D2H_sync(void * h_dest, void * d_src, size_t bytes)
 {
-    return cu_copy_D2H_generic(h_dest, d_src, bytes, false);
+    return cu_copy_D2H(h_dest, d_src, bytes, GpuApiCallBehavior::Sync);
 }
 
 /*!
  *  The copy is launched in stream s or if not specified, in stream 0.
  */
-int cu_copy_D2H_async(void * h_dest, void * d_src, size_t bytes, cudaStream_t s = 0)
+int cu_copy_D2H_async(void * h_dest, void * d_src, size_t bytes, cudaStream_t s = nullptr)
 {
-    return cu_copy_D2H_generic(h_dest, d_src, bytes, true, s);
+    return cu_copy_D2H(h_dest, d_src, bytes, GpuApiCallBehavior::Async, s);
 }
 
-/*! Launches synchronous or asynchronous device to host memory copy.
- *
- *  The copy is launched in stream s or if not specified, in stream 0.
- */
-static int cu_copy_H2D_generic(void * d_dest, void * h_src, size_t bytes,
-                               bool bAsync = false, cudaStream_t s = 0)
+// TODO: template on transferKind to avoid runtime conditionals
+int cu_copy_H2D(void *d_dest, void *h_src, size_t bytes,
+                GpuApiCallBehavior transferKind, cudaStream_t s = nullptr)
 {
     cudaError_t stat;
 
-    if (d_dest == NULL || h_src == NULL || bytes == 0)
+    if (d_dest == nullptr || h_src == nullptr || bytes == 0)
     {
         return -1;
     }
 
-    if (bAsync)
+    switch (transferKind)
     {
-        stat = cudaMemcpyAsync(d_dest, h_src, bytes, cudaMemcpyHostToDevice, s);
-        CU_RET_ERR(stat, "HtoD cudaMemcpyAsync failed");
-    }
-    else
-    {
-        stat = cudaMemcpy(d_dest, h_src, bytes, cudaMemcpyHostToDevice);
-        CU_RET_ERR(stat, "HtoD cudaMemcpy failed");
+        case GpuApiCallBehavior::Async:
+            GMX_ASSERT(isHostMemoryPinned(h_src), "Source buffer was not pinned for CUDA");
+            stat = cudaMemcpyAsync(d_dest, h_src, bytes, cudaMemcpyHostToDevice, s);
+            CU_RET_ERR(stat, "HtoD cudaMemcpyAsync failed");
+            break;
+
+        case GpuApiCallBehavior::Sync:
+            stat = cudaMemcpy(d_dest, h_src, bytes, cudaMemcpyHostToDevice);
+            CU_RET_ERR(stat, "HtoD cudaMemcpy failed");
+            break;
+
+        default:
+            throw;
     }
 
     return 0;
 }
 
-int cu_copy_H2D(void * d_dest, void * h_src, size_t bytes)
+int cu_copy_H2D_sync(void * d_dest, void * h_src, size_t bytes)
 {
-    return cu_copy_H2D_generic(d_dest, h_src, bytes, false);
+    return cu_copy_H2D(d_dest, h_src, bytes, GpuApiCallBehavior::Sync);
 }
 
 /*!
  *  The copy is launched in stream s or if not specified, in stream 0.
  */
-int cu_copy_H2D_async(void * d_dest, void * h_src, size_t bytes, cudaStream_t s = 0)
+int cu_copy_H2D_async(void * d_dest, void * h_src, size_t bytes, cudaStream_t s = nullptr)
 {
-    return cu_copy_H2D_generic(d_dest, h_src, bytes, true, s);
+    return cu_copy_H2D(d_dest, h_src, bytes, GpuApiCallBehavior::Async, s);
 }
 
-float cu_event_elapsed(cudaEvent_t start, cudaEvent_t end)
-{
-    float       t = 0.0;
-    cudaError_t stat;
-
-    stat = cudaEventElapsedTime(&t, start, end);
-    CU_RET_ERR(stat, "cudaEventElapsedTime failed in cu_event_elapsed");
-
-    return t;
-}
-
-int cu_wait_event(cudaEvent_t e)
-{
-    cudaError_t s;
-
-    s = cudaEventSynchronize(e);
-    CU_RET_ERR(s, "cudaEventSynchronize failed in cu_wait_event");
-
-    return 0;
-}
-
-/*!
- *  If time != NULL it also calculates the time elapsed between start and end and
- *  return this is milliseconds.
+/*! \brief Set up texture object for an array of type T.
+ *
+ * Set up texture object for an array of type T and bind it to the device memory
+ * \p d_ptr points to.
+ *
+ * \tparam[in] T        Raw data type
+ * \param[out] texObj   texture object to initialize
+ * \param[in]  d_ptr    pointer to device global memory to bind \p texObj to
+ * \param[in]  sizeInBytes  size of memory area to bind \p texObj to
  */
-int cu_wait_event_time(cudaEvent_t end, cudaEvent_t start, float *time)
+template <typename T>
+static void setup1DTexture(cudaTextureObject_t &texObj,
+                           void                *d_ptr,
+                           size_t               sizeInBytes)
 {
-    cudaError_t s;
+    assert(!c_disableCudaTextures);
 
-    s = cudaEventSynchronize(end);
-    CU_RET_ERR(s, "cudaEventSynchronize failed in cu_wait_event");
+    cudaError_t      stat;
+    cudaResourceDesc rd;
+    cudaTextureDesc  td;
 
-    if (time)
-    {
-        *time = cu_event_elapsed(start, end);
-    }
+    memset(&rd, 0, sizeof(rd));
+    rd.resType                = cudaResourceTypeLinear;
+    rd.res.linear.devPtr      = d_ptr;
+    rd.res.linear.desc        = cudaCreateChannelDesc<T>();
+    rd.res.linear.sizeInBytes = sizeInBytes;
 
-    return 0;
+    memset(&td, 0, sizeof(td));
+    td.readMode                 = cudaReadModeElementType;
+    stat = cudaCreateTextureObject(&texObj, &rd, &td, nullptr);
+    CU_RET_ERR(stat, "cudaCreateTextureObject failed");
 }
 
-/**** Operation on buffered arrays (arrays with "over-allocation" in gmx wording) *****/
+template <typename T>
+void initParamLookupTable(T                        * &d_ptr,
+                          cudaTextureObject_t        &texObj,
+                          const T                    *h_ptr,
+                          int                         numElem)
+{
+    const size_t sizeInBytes = numElem * sizeof(*d_ptr);
+    cudaError_t  stat        = cudaMalloc((void **)&d_ptr, sizeInBytes);
+    CU_RET_ERR(stat, "cudaMalloc failed in initParamLookupTable");
+    cu_copy_H2D_sync(d_ptr, (void *)h_ptr, sizeInBytes);
 
-/*!
- * If the pointers to the size variables are NULL no resetting happens.
+    if (!c_disableCudaTextures)
+    {
+        setup1DTexture<T>(texObj, d_ptr, sizeInBytes);
+    }
+}
+
+template <typename T>
+void destroyParamLookupTable(T                       *d_ptr,
+                             cudaTextureObject_t      texObj)
+{
+    if (!c_disableCudaTextures)
+    {
+        CU_RET_ERR(cudaDestroyTextureObject(texObj), "cudaDestroyTextureObject on texObj failed");
+    }
+    CU_RET_ERR(cudaFree(d_ptr), "cudaFree failed");
+}
+
+/*! \brief Add explicit instantiations of init/destroyParamLookupTable() here as needed.
+ * One should also verify that the result of cudaCreateChannelDesc<T>() during texture setup
+ * looks reasonable, when instantiating the templates for new types - just in case.
  */
-void cu_free_buffered(void *d_ptr, int *n, int *nalloc)
-{
-    cudaError_t stat;
-
-    if (d_ptr)
-    {
-        stat = cudaFree(d_ptr);
-        CU_RET_ERR(stat, "cudaFree failed");
-    }
-
-    if (n)
-    {
-        *n = -1;
-    }
-
-    if (nalloc)
-    {
-        *nalloc = -1;
-    }
-}
-
-/*!
- *  Reallocation of the memory pointed by d_ptr and copying of the data from
- *  the location pointed by h_src host-side pointer is done. Allocation is
- *  buffered and therefore freeing is only needed if the previously allocated
- *  space is not enough.
- *  The H2D copy is launched in stream s and can be done synchronously or
- *  asynchronously (the default is the latter).
- */
-void cu_realloc_buffered(void **d_dest, void *h_src,
-                         size_t type_size,
-                         int *curr_size, int *curr_alloc_size,
-                         int req_size,
-                         cudaStream_t s,
-                         bool bAsync = true)
-{
-    cudaError_t stat;
-
-    if (d_dest == NULL || req_size < 0)
-    {
-        return;
-    }
-
-    /* reallocate only if the data does not fit = allocation size is smaller
-       than the current requested size */
-    if (req_size > *curr_alloc_size)
-    {
-        /* only free if the array has already been initialized */
-        if (*curr_alloc_size >= 0)
-        {
-            cu_free_buffered(*d_dest, curr_size, curr_alloc_size);
-        }
-
-        *curr_alloc_size = over_alloc_large(req_size);
-
-        stat = cudaMalloc(d_dest, *curr_alloc_size * type_size);
-        CU_RET_ERR(stat, "cudaMalloc failed in cu_free_buffered");
-    }
-
-    /* size could have changed without actual reallocation */
-    *curr_size = req_size;
-
-    /* upload to device */
-    if (h_src)
-    {
-        if (bAsync)
-        {
-            cu_copy_H2D_async(*d_dest, h_src, *curr_size * type_size, s);
-        }
-        else
-        {
-            cu_copy_H2D(*d_dest, h_src,  *curr_size * type_size);
-        }
-    }
-}
+template void initParamLookupTable<float>(float * &, cudaTextureObject_t &, const float *, int);
+template void destroyParamLookupTable<float>(float *, cudaTextureObject_t);
+template void initParamLookupTable<int>(int * &, cudaTextureObject_t &, const int *, int);
+template void destroyParamLookupTable<int>(int *, cudaTextureObject_t);

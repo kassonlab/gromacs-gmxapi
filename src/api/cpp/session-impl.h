@@ -1,6 +1,37 @@
-//
-// Created by Eric Irrgang on 12/1/17.
-//
+/*
+ * This file is part of the GROMACS molecular simulation package.
+ *
+ * Copyright (c) 2018, by the GROMACS development team, led by
+ * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
+ * and including many others, as listed in the AUTHORS file in the
+ * top-level source directory and at http://www.gromacs.org.
+ *
+ * GROMACS is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public License
+ * as published by the Free Software Foundation; either version 2.1
+ * of the License, or (at your option) any later version.
+ *
+ * GROMACS is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with GROMACS; if not, see
+ * http://www.gnu.org/licenses, or write to the Free Software Foundation,
+ * Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA.
+ *
+ * If you want to redistribute modifications to GROMACS, please
+ * consider that scientific software is very special. Version
+ * control is crucial - bugs must be traceable. We will be happy to
+ * consider code for inclusion in the official distribution, but
+ * derived work must not be called official GROMACS. Details are found
+ * in the README & COPYING files - if they are missing, get the
+ * official version at http://www.gromacs.org.
+ *
+ * To help us fund GROMACS development, we humbly ask that you cite
+ * the research papers on the package. Check out http://www.gromacs.org.
+ */
 
 #ifndef GMXAPI_SESSION_IMPL_H
 #define GMXAPI_SESSION_IMPL_H
@@ -11,28 +42,37 @@
  */
 
 #include <map>
-#include "programs/mdrun/runner.h"
 
+#include "gromacs/mdrun/logging.h"
+#include "gromacs/mdrun/runner.h"
+#include "gromacs/mdrun/simulationcontext.h"
+
+#include "gmxapi/context.h"
+#include "gmxapi/md.h"
+#include "gmxapi/md/mdmodule.h"
 #include "gmxapi/session/resources.h"
+#include "gmxapi/status.h"
 
 namespace gmxapi
 {
 
 // Forward declaration
 class MpiContextManager; // Locally defined in session.cpp
-class ContextImpl; // locally defined in context.cpp
-class SignalManager; // defined in mdsignals-impl.h
+class ContextImpl;       // locally defined in context.cpp
+class SignalManager;     // defined in mdsignals-impl.h
 
 /*!
  * \brief Implementation class for executing sessions.
  *
- * In 0.0.3, there is only one context and only one session type, but this will likely change soon.
+ * Since 0.0.3, there is only one context and only one session type. This may
+ * change at some point to allow templating on different resource types or
+ * implementations provided by different libraries.
  * \ingroup gmxapi
  */
 class SessionImpl
 {
     public:
-        /// Use create() factory to get an object.
+        //! Use create() factory to get an object.
         SessionImpl() = delete;
         ~SessionImpl();
 
@@ -45,23 +85,15 @@ class SessionImpl
         bool isOpen() const noexcept;
 
         /*!
-         * \brief Get the current / most recent status.
-         *
-         * \return Copy of current status object reflecting most recent operation.
-         */
-        Status status() const noexcept;
-
-        /*!
          * \brief Explicitly close the session.
          *
          * Sessions should be explicitly `close()`ed to allow for exceptions to be caught by the client
          * and because closing a session involves a more significant state change in the program than
          * implied by a typical destructor. If close() can be shown to be exception safe, this protocol may be removed.
          *
-         * On closing a session, the status object is transfered to the caller.
-         * \return
+         * \return On closing a session, a status object is transferred to the caller.
          */
-        std::unique_ptr<Status> close();
+        Status close();
 
         /*!
          * \brief Run the configured workflow to completion or error.
@@ -70,6 +102,8 @@ class SessionImpl
          *
          * \internal
          * By the time we get to the run() we shouldn't have any unanticipated exceptions.
+         * If there are, they can be incorporated into richer future Status implementations
+         * or some other more appropriate output type.
          */
         Status run() noexcept;
 
@@ -77,24 +111,28 @@ class SessionImpl
          * \brief Create a new implementation object and transfer ownership.
          *
          * \param context Shared ownership of a Context implementation instance.
-         * \param runner MD simulation operation to take ownership of.
-         * \return Ownership of new instance.
+         * \param runnerBuilder MD simulation builder to take ownership of.
+         * \param simulationContext Take ownership of the simulation resources.
+         * \param logFilehandle Take ownership of filehandle for MD logging
+         * \param multiSim Take ownership of resources for Mdrunner multi-sim.
          *
-         * A gmxapi::SignalManager is created with lifetime tied to the SessionImpl. The SignalManager
-         * is created with a non-owning pointer to runner. Signal issuers are registered with the
-         * manager when createResources() is called.
-         */
-        static std::unique_ptr<SessionImpl> create(std::shared_ptr<ContextImpl> context,
-                                                   std::unique_ptr<gmx::Mdrunner> runner);
-
-        Status setRestraint(std::shared_ptr<gmxapi::MDModule> module);
-
-        /*! \internal
-         * \brief API implementation function to retrieve the current runner.
+         * \todo Log file management will be updated soon.
          *
-         * \return non-owning pointer to the current runner or nullptr if none.
+         * \return Ownership of new Session implementation instance.
          */
-        gmx::Mdrunner* getRunner();
+        static std::unique_ptr<SessionImpl> create(std::shared_ptr<ContextImpl>  context,
+                                                   gmx::MdrunnerBuilder        &&runnerBuilder,
+                                                   const gmx::SimulationContext &simulationContext,
+                                                   gmx::LogFilePtr               logFilehandle,
+                                                   gmx_multisim_t              * multiSim);
+
+        /*!
+         * \brief Add a restraint to the simulation.
+         *
+         * \param module
+         * \return
+         */
+        Status addRestraint(std::shared_ptr<gmxapi::MDModule> module);
 
         /*!
          * \brief Get a handle to the resources for the named session operation.
@@ -102,10 +140,11 @@ class SessionImpl
          * \param name unique name of element in workflow
          * \return temporary access to the resources.
          *
-         * If called on a non-const Session, creates the resource if it does not yet exist. If called on a const Session,
+         * If called on a non-const Session, creates the resource if it does not yet exist.
+         * If called on a const Session,
          * returns nullptr if the resource does not exist.
          */
-        gmxapi::SessionResources* getResources(const std::string& name) const noexcept;
+        gmxapi::SessionResources* getResources(const std::string &name) const noexcept;
 
         /*!
          * \brief Create SessionResources for a module and bind the module.
@@ -121,6 +160,13 @@ class SessionImpl
          */
         gmxapi::SessionResources* createResources(std::shared_ptr<gmxapi::MDModule> module) noexcept;
 
+        /*! \internal
+         * \brief API implementation function to retrieve the current runner.
+         *
+         * \return non-owning pointer to the current runner or nullptr if none.
+         */
+        gmx::Mdrunner* getRunner();
+
         /*!
          * \brief Get a non-owning handle to the SignalManager for the active MD runner.
          *
@@ -131,46 +177,96 @@ class SessionImpl
          */
         SignalManager* getSignalManager();
 
-    private:
         /*!
-         * \brief Private constructor for use by create()
+         * \brief Constructor for use by create()
          *
          * \param context specific context to keep alive during session.
-         * \param runner ownership of live Mdrunner object.
+         * \param runnerBuilder ownership of the MdrunnerBuilder object.
+         * \param simulationContext take ownership of a SimulationContext
+         * \param logFilehandle Take ownership of filehandle for MD logging
+         * \param multiSim Take ownership of resources for Mdrunner multi-sim.
+         *
          */
-        SessionImpl(std::shared_ptr<ContextImpl> context,
-                    std::unique_ptr<gmx::Mdrunner> runner);
+        SessionImpl(std::shared_ptr<ContextImpl>  context,
+                    gmx::MdrunnerBuilder        &&runnerBuilder,
+                    const gmx::SimulationContext &simulationContext,
+                    gmx::LogFilePtr               logFilehandle,
+                    gmx_multisim_t              * multiSim);
 
+    private:
         /*!
          * \brief Manage session resources for named workflow elements.
          */
-        std::map<std::string, std::unique_ptr<SessionResources>> resources_;
+        std::map< std::string, std::unique_ptr<SessionResources> > resources_;
 
         /*!
-         * \brief Current / most recent Status for the session.
+         * \brief Extend the life of the owning context.
          *
-         * \internal
-         * An open session has a valid status object. A closed session has status_ == nullptr.
+         * The session will get handles for logging, UI status messages,
+         * and other facilities through this interface.
          */
-        std::unique_ptr<Status> status_;
-
-        /*!
-         * \brief Extend the life of the owning context. The session will get handles for logging, UI status messages, and other facilities through this interface.
-         */
-        std::shared_ptr<Context> context_;
+        std::shared_ptr<ContextImpl> context_;
 
         /*!
          * \brief RAII management of gmx::init() and gmx::finalize()
+         *
+         * Uses smart pointer to avoid exposing type definition.
+         * \todo Not fully implemented.
          */
         std::unique_ptr<MpiContextManager> mpiContextManager_;
 
-        std::unique_ptr<gmx::Mdrunner> runner_;
+        /*!
+         * \brief Simulation runner object.
+         *
+         * If a simulation Session is active, points to a valid Mdrunner object.
+         * Null if simulation is inactive.
+         */
+        std::unique_ptr<gmx::Mdrunner>     runner_;
 
-        std::unique_ptr<SignalManager> signal_;
+        /*!
+         * \brief An active session owns the resources it is using.
+         */
+        gmx::SimulationContext simulationContext_;
 
-        std::map<std::string, std::weak_ptr<gmx::IRestraintPotential>> restraints_;
+        /*! \brief Handle to file used for logging.
+         *
+         * \todo Move to RAII filehandle management; open and close in one place.
+         */
+        gmx::LogFilePtr logFilePtr_;
+
+        /*!
+         * \brief MultiSim resources for Mdrunner instance.
+         *
+         * May be null for no multi-simulation management at the Mdrunner level.
+         *
+         * \todo Lifetime of the multi-simulation handle is currently
+         * managed by LegacyMdrunOptions, but in the long term,
+         * session needs to manage it.
+         */
+        gmx_multisim_t* multiSim_;
+
+        /*!
+         * \brief Own and manager the signalling pathways for the current session.
+         *
+         * Registers a stop signal issuer with the stopConditionBuilder that is
+         * passed to the Mdrunner at launch. Session members issuing stop signals
+         * are proxied through this resource.
+         */
+        std::unique_ptr<SignalManager>     signalManager_;
+
+        /*!
+         * \brief Restraints active in this session.
+         *
+         * Client owns these restraint objects, but session has the ability to
+         * lock the resource to take temporary ownership in case the client
+         * releases its handle.
+         * \todo clarify and update object lifetime management
+         * A restraint module manager and / or a mapping of factory functions with
+         * which the runner can get objects at run time can encapsulate object management.
+         */
+        std::map<std::string, std::weak_ptr<gmx::IRestraintPotential> > restraints_;
 };
 
-} //end namespace gmxapi
+}      //end namespace gmxapi
 
 #endif //GMXAPI_SESSION_IMPL_H

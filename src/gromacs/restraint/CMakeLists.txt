@@ -1,7 +1,7 @@
 #
 # This file is part of the GROMACS molecular simulation package.
 #
-# Copyright (c) 2017, by the GROMACS development team, led by
+# Copyright (c) 2017,2018, by the GROMACS development team, led by
 # Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
 # and including many others, as listed in the AUTHORS file in the
 # top-level source directory and at http://www.gromacs.org.
@@ -32,26 +32,13 @@
 # To help us fund GROMACS development, we humbly ask that you cite
 # the research papers on the package. Check out http://www.gromacs.org.
 
-add_library(restraint OBJECT
-            restraintpotential.h
-            restraintpotential.cpp
-            vectortype.h
-            manager.cpp
-            manager.h
-            restraintfunctor-impl.cpp
-            restraintfunctor-impl.h
-            restraintcalculation.h
-            restraintcalculation.cpp
-            restraintcalculation-impl.h
-            restraintmdmodule.h
-            restraintmdmodule.cpp
-            restraintmdmodule-impl.h)
-set_target_properties(restraint PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
-set(LIBGROMACS_SOURCES ${LIBGROMACS_SOURCES} $<TARGET_OBJECTS:restraint> PARENT_SCOPE)
+gmx_add_libgromacs_sources(
+    manager.cpp
+    restraintmdmodule.cpp
+    )
 
-gmx_install_headers(restraintpotential.h
-                    vectortype.h)
+gmx_install_headers(restraintpotential.h)
 
 if (BUILD_TESTING)
     add_subdirectory(tests)

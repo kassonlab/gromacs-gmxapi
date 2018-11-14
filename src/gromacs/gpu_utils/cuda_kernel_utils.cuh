@@ -1,7 +1,7 @@
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
- * Copyright (c) 2017, by the GROMACS development team, led by
+ * Copyright (c) 2017,2018, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -54,6 +54,52 @@ __device__ __forceinline__ T LDG(const T* ptr)
     /* Device does not have LDG support, fall back to direct load. */
     return *ptr;
 #endif
+}
+
+/*! \brief Fetch the value by \p index from the texture object.
+ *
+ * \tparam[in] T        Raw data type
+ * \param[in] texObj    Table texture object
+ * \param[in] index     Non-negative element index
+ * \returns             The value from the table at \p index
+ */
+template <typename T>
+static __forceinline__ __device__
+T fetchFromTexture(const cudaTextureObject_t texObj,
+                   int                       index)
+{
+    assert(index >= 0);
+    assert(!c_disableCudaTextures);
+    return tex1Dfetch<T>(texObj, index);
+}
+
+/*! \brief Fetch the value by \p index from the parameter lookup table.
+ *
+ *  Depending on what is supported, it fetches parameters either
+ *  using direct load or texture objects.
+ *
+ * \tparam[in] T        Raw data type
+ * \param[in] d_ptr     Device pointer to the raw table memory
+ * \param[in] texObj    Table texture object
+ * \param[in] index     Non-negative element index
+ * \returns             The value from the table at \p index
+ */
+template <typename T>
+static __forceinline__ __device__
+T fetchFromParamLookupTable(const T                  *d_ptr,
+                            const cudaTextureObject_t texObj,
+                            int                       index)
+{
+    assert(index >= 0);
+    T result;
+#if DISABLE_CUDA_TEXTURES
+    GMX_UNUSED_VALUE(texObj);
+    result = LDG(d_ptr + index);
+#else
+    GMX_UNUSED_VALUE(d_ptr);
+    result = fetchFromTexture<T>(texObj, index);
+#endif
+    return result;
 }
 
 

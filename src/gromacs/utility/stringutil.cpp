@@ -1,7 +1,7 @@
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
- * Copyright (c) 2011,2012,2013,2014,2015,2016,2017, by the GROMACS development team, led by
+ * Copyright (c) 2011,2012,2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -126,14 +126,14 @@ std::string stripString(const std::string &str)
     {
         ++start;
     }
-    while (start != end && std::isspace(*(end - 1)))
+    while (start != end && (std::isspace(*(end - 1)) != 0))
     {
         --end;
     }
     return std::string(start, end);
 }
 
-std::string formatString(const char *fmt, ...)
+std::string formatString(gmx_fmtstr const char *fmt, ...)
 {
     va_list     ap;
     va_start(ap, fmt);
@@ -152,7 +152,7 @@ std::string formatStringV(const char *fmt, va_list ap)
 
     // TODO: There may be a better way of doing this on Windows, Microsoft
     // provides their own way of doing things...
-    while (1)
+    while (true)
     {
         va_copy(ap_copy, ap);
         int n = vsnprintf(buf, length, fmt, ap_copy);
@@ -239,7 +239,7 @@ namespace
  */
 bool isWordChar(char c)
 {
-    return std::isalnum(c) || c == '-' || c == '_';
+    return (std::isalnum(c) != 0) || c == '-' || c == '_';
 }
 
 /*! \brief
@@ -461,27 +461,6 @@ TextLineWrapper::wrapToVector(const std::string &input) const
         lineStart = nextLineStart;
     }
     return result;
-}
-
-std::vector<int> parseDigitsFromString(const std::string &input)
-{
-    std::vector<int>   digits;
-    std::istringstream ss(input);
-    std::string        token;
-    digits.reserve(input.length());
-    token.reserve(input.length());
-    while (std::getline(ss, token, ','))
-    {
-        for (const auto &c : token)
-        {
-            if (std::isdigit(c) == 0)
-            {
-                GMX_THROW(InvalidInputError(formatString("Invalid character in digit-only string: \"%c\"\n", c)));
-            }
-            digits.push_back(c - '0');
-        }
-    }
-    return digits;
 }
 
 } // namespace gmx

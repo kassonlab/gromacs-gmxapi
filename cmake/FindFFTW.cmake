@@ -1,7 +1,7 @@
 #
 # This file is part of the GROMACS molecular simulation package.
 #
-# Copyright (c) 2012,2013,2014,2015,2016,2017, by the GROMACS development team, led by
+# Copyright (c) 2012,2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
 # Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
 # and including many others, as listed in the AUTHORS file in the
 # top-level source directory and at http://www.gromacs.org.
@@ -96,9 +96,13 @@ if (${FFTW}_FOUND)
   if (FFTW_LIBRARY_CHANGED)
     unset(FOUND_${FFTW}_PLAN CACHE)
   endif()
-  check_library_exists("${${FFTW}_LIBRARIES}" "${${FFTW}_FUNCTION_PREFIX}_plan_r2r_1d" "" FOUND_${FFTW}_PLAN)
-  if(NOT FOUND_${FFTW}_PLAN)
-    message(FATAL_ERROR "Could not find ${${FFTW}_FUNCTION_PREFIX}_plan_r2r_1d in ${${FFTW}_LIBRARY}, take a look at the error message in ${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/CMakeError.log to find out what went wrong. If you are using a static lib (.a) make sure you have specified all dependencies of ${${FFTW}_PKG} in ${FFTW}_LIBRARY by hand (e.g. -D${FFTW}_LIBRARY='/path/to/lib${${FFTW}_PKG}.so;/path/to/libm.so') !")
+  check_library_exists("${${FFTW}_LIBRARIES}" "${${FFTW}_FUNCTION_PREFIX}_plan_many_dft"     "" FOUND_${FFTW}_PLAN_MANY)
+  check_library_exists("${${FFTW}_LIBRARIES}" "${${FFTW}_FUNCTION_PREFIX}_plan_many_dft_r2c" "" FOUND_${FFTW}_PLAN_MANY_R2C)
+  check_library_exists("${${FFTW}_LIBRARIES}" "${${FFTW}_FUNCTION_PREFIX}_plan_many_dft_c2r" "" FOUND_${FFTW}_PLAN_MANY_C2R)
+  if(NOT (FOUND_${FFTW}_PLAN_MANY AND
+      FOUND_${FFTW}_PLAN_MANY_R2C AND
+      FOUND_${FFTW}_PLAN_MANY_C2R))
+      message(FATAL_ERROR "Could not find ${${FFTW}_FUNCTION_PREFIX}_plan_many_[r2c|c2r] in ${${FFTW}_LIBRARY}, take a look at the error message in ${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/CMakeError.log to find out what went wrong. If you are using a static lib (.a) make sure you have specified all dependencies of ${${FFTW}_PKG} in ${FFTW}_LIBRARY by hand (e.g. -D${FFTW}_LIBRARY='/path/to/lib${${FFTW}_PKG}.so;/path/to/libm.so') !")
   endif()
 
   # Check for FFTW3 compiled with --enable-sse
@@ -135,6 +139,8 @@ if (${FFTW}_FOUND)
               ${${FFTW}_FUNCTION_PREFIX}_have_simd_avx2_128
               ${${FFTW}_FUNCTION_PREFIX}_have_simd_avx512
               ${${FFTW}_FUNCTION_PREFIX}_have_simd_avx_128_fma
+              ${${FFTW}_FUNCTION_PREFIX}_have_simd_avx_512
+              ${${FFTW}_FUNCTION_PREFIX}_have_simd_kcvi
               ${${FFTW}_FUNCTION_PREFIX}_have_simd_altivec
               ${${FFTW}_FUNCTION_PREFIX}_have_simd_neon
               ${${FFTW}_FUNCTION_PREFIX}_have_simd_vsx

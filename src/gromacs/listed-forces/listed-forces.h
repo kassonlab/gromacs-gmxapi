@@ -1,7 +1,7 @@
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
- * Copyright (c) 2014,2015,2016,2017, by the GROMACS development team, led by
+ * Copyright (c) 2014,2015,2016,2017,2018, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -50,7 +50,7 @@
  * \author Mark Abraham <mark.j.abraham@gmail.com>
  *
  */
-/*! \file
+/*! \libinternal \file
  *
  * \brief This file contains declarations of high-level functions used
  * by mdrun to compute energies and forces for listed interactions.
@@ -60,53 +60,65 @@
  *
  * \author Mark Abraham <mark.j.abraham@gmail.com>
  *
- * \inpublicapi
+ * \inlibraryapi
  * \ingroup module_listed-forces
  */
 #ifndef GMX_LISTED_FORCES_LISTED_FORCES_H
 #define GMX_LISTED_FORCES_LISTED_FORCES_H
 
+#include "gromacs/gpu_utils/gpu_macros.h"
 #include "gromacs/math/vectypes.h"
+#include "gromacs/topology/ifunc.h"
 #include "gromacs/utility/basedefinitions.h"
 
 struct gmx_enerdata_t;
 struct gmx_grppairener_t;
+struct gmx_multisim_t;
+struct gmx_ffparams_t;
+struct GpuBondedLists;
 class history_t;
 struct t_commrec;
 struct t_fcdata;
 struct t_forcerec;
 struct t_idef;
-struct t_inputrec;
+struct t_graph;
 struct t_lambda;
 struct t_mdatoms;
 struct t_nrnb;
 class t_state;
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+namespace gmx
+{
+class ForceWithVirial;
+}
 
-/*! \brief Return whether this is an interaction that actually
- * calculates a potential and works on multiple atoms (not e.g. a
- * connection or a position restraint).
- *
- * \todo This function could go away when idef is not a big bucket of
- * everything. */
-gmx_bool
-ftype_is_bonded_potential(int ftype);
+//! Type of CPU function to compute a bonded interaction.
+using BondedFunction = real(*)(int nbonds, const t_iatom iatoms[],
+                               const t_iparams iparams[],
+                               const rvec x[], rvec4 f[], rvec fshift[],
+                               const t_pbc *pbc, const t_graph *g,
+                               real lambda, real *dvdlambda,
+                               const t_mdatoms *md, t_fcdata *fcd,
+                               int *ddgatindex);
+
+//! Getter for finding a callable CPU function to compute an \c ftype interaction.
+BondedFunction bondedFunction(int ftype);
 
 /*! \brief Calculates all listed force interactions.
  *
  * Note that pbc_full is used only for position restraints, and is
  * not initialized if there are none. */
 void calc_listed(const t_commrec *cr,
+                 const gmx_multisim_t *ms,
                  struct gmx_wallcycle *wcycle,
                  const t_idef *idef,
                  const rvec x[], history_t *hist,
-                 rvec f[], t_forcerec *fr,
+                 rvec f[],
+                 gmx::ForceWithVirial *forceWithVirial,
+                 const t_forcerec *fr,
                  const struct t_pbc *pbc, const struct t_pbc *pbc_full,
                  const struct t_graph *g,
-                 gmx_enerdata_t *enerd, t_nrnb *nrnb, real *lambda,
+                 gmx_enerdata_t *enerd, t_nrnb *nrnb, const real *lambda,
                  const t_mdatoms *md,
                  struct t_fcdata *fcd, int *ddgatindex,
                  int force_flags);
@@ -117,10 +129,10 @@ void calc_listed(const t_commrec *cr,
  * The shift forces in fr are not affected. */
 void calc_listed_lambda(const t_idef *idef,
                         const rvec x[],
-                        t_forcerec *fr,
+                        const t_forcerec *fr,
                         const struct t_pbc *pbc, const struct t_graph *g,
                         gmx_grppairener_t *grpp, real *epot, t_nrnb *nrnb,
-                        real *lambda,
+                        const real *lambda,
                         const t_mdatoms *md,
                         struct t_fcdata *fcd, int *global_atom_index);
 
@@ -131,23 +143,52 @@ do_force_listed(struct gmx_wallcycle           *wcycle,
                 matrix                          box,
                 const t_lambda                 *fepvals,
                 const t_commrec                *cr,
+                const gmx_multisim_t           *ms,
                 const t_idef                   *idef,
                 const rvec                      x[],
                 history_t                      *hist,
-                rvec                            f[],
-                t_forcerec                     *fr,
+                rvec                           *forceForUseWithShiftForces,
+                gmx::ForceWithVirial           *forceWithVirial,
+                const t_forcerec               *fr,
                 const struct t_pbc             *pbc,
                 const struct t_graph           *graph,
                 gmx_enerdata_t                 *enerd,
                 t_nrnb                         *nrnb,
-                real                           *lambda,
+                const real                     *lambda,
                 const t_mdatoms                *md,
                 struct t_fcdata                *fcd,
                 int                            *global_atom_index,
                 int                             flags);
 
-#ifdef __cplusplus
-}
-#endif
+/*! \brief Initializes the GPU bonded setup */
+CUDA_FUNC_QUALIFIER
+void
+init_gpu_bonded(GpuBondedLists gmx_unused       *gpuBondedLists,
+                const gmx_ffparams_t gmx_unused &ffparams,
+                void gmx_unused                 *streamPtr) CUDA_FUNC_TERM
+
+/*! \brief Updates the bonded work to run on a GPU
+ *
+ * Intended to be called after each domain decomposition stage. */
+CUDA_FUNC_QUALIFIER
+void update_gpu_bonded(GpuBondedLists gmx_unused *gpuBondedLists) CUDA_FUNC_TERM
+
+/*! \brief Launches bonded kernels on a GPU */
+CUDA_FUNC_QUALIFIER
+void do_bonded_gpu(t_forcerec gmx_unused   *fr,
+                   int gmx_unused           forceFlags,
+                   void gmx_unused         *xqDevicePtr,
+                   const matrix gmx_unused  box,
+                   void gmx_unused         *forceDevicePtr,
+                   rvec gmx_unused         *fshiftDevicePtr) CUDA_FUNC_TERM
+
+/*! \brief Copies back the bonded energies */
+CUDA_FUNC_QUALIFIER
+void bonded_gpu_get_energies(t_forcerec gmx_unused     *fr,
+                             gmx_enerdata_t gmx_unused *enerd) CUDA_FUNC_TERM
+
+/*! \brief Clears the device side energy buffer */
+CUDA_FUNC_QUALIFIER
+void bonded_gpu_clear_energies(GpuBondedLists gmx_unused *gpuBondedLists) CUDA_FUNC_TERM
 
 #endif

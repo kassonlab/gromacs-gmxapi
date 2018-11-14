@@ -3,7 +3,7 @@
  *
  * Copyright (c) 1991-2000, University of Groningen, The Netherlands.
  * Copyright (c) 2001-2004, The GROMACS development team.
- * Copyright (c) 2013,2014,2015,2016,2017, by the GROMACS development team, led by
+ * Copyright (c) 2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -239,8 +239,7 @@ void xvgr_header(FILE *fp, const char *title, const std::string &xaxis,
 
     if (output_env_get_print_xvgr_codes(oenv))
     {
-        gmx_format_current_time(buf, STRLEN);
-        fprintf(fp, "# This file was created %s", buf);
+        fprintf(fp, "# This file was created %s", gmx_format_current_time().c_str());
         try
         {
             gmx::BinaryInformationSettings settings;
@@ -336,8 +335,19 @@ void xvgr_world(FILE *out, real xmin, real ymin, real xmax, real ymax,
     }
 }
 
-void xvgr_legend(FILE *out, int nsets, const char** setname,
-                 const gmx_output_env_t *oenv)
+static bool stringIsEmpty(const std::string &s)
+{
+    return s.empty();
+}
+
+static bool stringIsEmpty(const char *s)
+{
+    return (s == nullptr || s[0] == '\0');
+}
+
+template <typename T>
+static void xvgr_legend(FILE *out, int nsets, const T * setname,
+                        const gmx_output_env_t *oenv)
 {
     int  i;
     char buf[STRLEN];
@@ -352,7 +362,7 @@ void xvgr_legend(FILE *out, int nsets, const char** setname,
         fprintf(out, "@ legend length %d\n", 2);
         for (i = 0; (i < nsets); i++)
         {
-            if (setname[i])
+            if (!stringIsEmpty(setname[i]))
             {
                 if (output_env_get_xvg_format(oenv) == exvgXMGR)
                 {
@@ -367,6 +377,18 @@ void xvgr_legend(FILE *out, int nsets, const char** setname,
             }
         }
     }
+}
+
+void xvgrLegend(FILE                           *out,
+                const std::vector<std::string> &setNames,
+                const struct gmx_output_env_t  *oenv)
+{
+    xvgr_legend(out, setNames.size(), setNames.data(), oenv);
+}
+void xvgr_legend(FILE *out, int nsets, const char*const* setnames,
+                 const struct gmx_output_env_t *oenv)
+{
+    xvgr_legend<const char *>(out, nsets, setnames, oenv);
 }
 
 void xvgr_new_dataset(FILE *out, int nr_first, int nsets,
@@ -470,7 +492,7 @@ static char *fgets3(FILE *fp, char **ptr, int *len, int maxlen)
         curp         += len_remaining-1; /* overwrite the nul char in next iteration */
         len_remaining = 1;
     }
-    while ((std::strchr(*ptr, '\n') == nullptr) && (!feof(fp)));
+    while ((std::strchr(*ptr, '\n') == nullptr) && (feof(fp) == 0));
 
     if (*len + STRLEN >= maxlen)
     {
@@ -865,7 +887,7 @@ real **read_xvg_time(const char *fn,
                                 val_nalloc[set] = over_alloc_small(n);
                                 srenew(val[set], val_nalloc[set]);
                             }
-                            val[set][n] = (real)dbl;
+                            val[set][n] = static_cast<real>(dbl);
                         }
                     }
                     a++;
@@ -911,7 +933,7 @@ real **read_xvg_time(const char *fn,
             }
             if (n > 1)
             {
-                *dt = (real)((*t)[n-1]-(*t)[0])/(n-1.0);
+                *dt = static_cast<real>((*t)[n-1]-(*t)[0])/(n-1.0);
             }
             else
             {

@@ -3,7 +3,7 @@
  *
  * Copyright (c) 1991-2000, University of Groningen, The Netherlands.
  * Copyright (c) 2001-2004, The GROMACS development team.
- * Copyright (c) 2013,2014,2015,2016,2017, by the GROMACS development team, led by
+ * Copyright (c) 2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -37,32 +37,27 @@
 #ifndef GMX_MDTYPES_TYPES_FORCEREC_H
 #define GMX_MDTYPES_TYPES_FORCEREC_H
 
+#include <array>
+#include <vector>
+
 #include "gromacs/math/vectypes.h"
-#ifdef __cplusplus
-#include "gromacs/math/paddedvector.h"
-#endif
 #include "gromacs/mdtypes/interaction_const.h"
 #include "gromacs/mdtypes/md_enums.h"
-#include "gromacs/topology/idef.h"
 #include "gromacs/utility/basedefinitions.h"
 #include "gromacs/utility/real.h"
 
 struct ForceProviders;
 
 /* Abstract type for PME that is defined only in the routine that use them. */
-struct gmx_genborn_t;
 struct gmx_ns_t;
 struct gmx_pme_t;
 struct nonbonded_verlet_t;
 struct bonded_threading_t;
+struct GpuBondedLists;
 struct t_forcetable;
 struct t_nblist;
 struct t_nblists;
 struct t_QMMMrec;
-
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 /* macros for the cginfo data in forcerec
  *
@@ -110,40 +105,6 @@ extern "C" {
 enum {
     enbvdwNONE, enbvdwLJ, enbvdwBHAM, enbvdwTAB, enbvdwNR
 };
-/* OOR is "one over r" -- standard coul */
-enum {
-    enbcoulNONE, enbcoulOOR, enbcoulRF, enbcoulTAB, enbcoulGB, enbcoulFEWALD, enbcoulNR
-};
-
-enum {
-    egCOULSR, egLJSR, egBHAMSR,
-    egCOUL14, egLJ14, egGB, egNR
-};
-extern const char *egrp_nm[egNR+1];
-
-struct gmx_grppairener_t
-{
-    int   nener;      /* The number of energy group pairs     */
-    real *ener[egNR]; /* Energy terms for each pair of groups */
-};
-
-struct gmx_enerdata_t
-{
-    real                     term[F_NRE];         /* The energies for all different interaction types */
-    struct gmx_grppairener_t grpp;
-    double                   dvdl_lin[efptNR];    /* Contributions to dvdl with linear lam-dependence */
-    double                   dvdl_nonlin[efptNR]; /* Idem, but non-linear dependence                  */
-    int                      n_lambda;
-    int                      fep_state;           /*current fep state -- just for printing */
-    double                  *enerpart_lambda;     /* Partial energy for lambda and flambda[] */
-    real                     foreign_term[F_NRE]; /* alternate array for storing foreign lambda energies */
-    struct gmx_grppairener_t foreign_grpp;        /* alternate array for storing foreign lambda energies */
-};
-/* The idea is that dvdl terms with linear lambda dependence will be added
- * automatically to enerpart_lambda. Terms with non-linear lambda dependence
- * should explicitly determine the energies at foreign lambda points
- * when n_lambda > 0.
- */
 
 struct cginfo_mb_t
 {
@@ -159,14 +120,12 @@ struct gmx_ewald_tab_t;
 
 struct ewald_corr_thread_t;
 
-struct t_forcerec {
+struct t_forcerec { // NOLINT (clang-analyzer-optin.performance.Padding)
     struct interaction_const_t *ic;
-
-    /* Domain Decomposition */
-    gmx_bool bDomDec;
 
     /* PBC stuff */
     int                         ePBC;
+    //! Whether PBC must be considered for bonded interactions.
     gmx_bool                    bMolPBC;
     int                         rc_scaling;
     rvec                        posres_com;
@@ -192,19 +151,14 @@ struct t_forcerec {
     gmx_bool bAllvsAll;
     /* Private work data */
     void    *AllvsAll_work;
-    void    *AllvsAll_workgb;
 
     /* Cut-Off stuff.
      * Infinite cut-off's will be GMX_CUTOFF_INF (unlike in t_inputrec: 0).
      */
     real rlist;
 
-    /* Dielectric constant resp. multiplication factor for charges */
+    /* Parameters for generalized reaction field */
     real zsquare, temp;
-    real epsilon_r, epsilon_rf, epsfac;
-
-    /* Constants for reaction fields */
-    real kappa, k_rf, c_rf;
 
     /* Charge sum and dipole for topology A/B ([0]/[1]) for Ewald corrections */
     double qsum[2];
@@ -243,17 +197,6 @@ struct t_forcerec {
 
     struct t_forcetable *pairsTable; /* for 1-4 interactions, [pairs] and [pairs_nb] */
 
-    /* PPPM & Shifting stuff */
-    int   coulomb_modifier;
-    real  rcoulomb_switch, rcoulomb;
-    real *phi;
-
-    /* VdW stuff */
-    int    vdw_modifier;
-    double reppow;
-    real   rvdw_switch, rvdw;
-    real   bham_b_max;
-
     /* Free energy */
     int      efep;
     real     sc_alphavdw;
@@ -264,8 +207,6 @@ struct t_forcerec {
     real     sc_sigma6_min;
 
     /* NS Stuff */
-    int  eeltype;
-    int  vdwtype;
     int  cg0, hcg;
     /* solvent_opt contains the enum for the most common solvent
      * in the system, which will be optimized.
@@ -302,44 +243,23 @@ struct t_forcerec {
     /* The allocation size of vectors of size natoms_force */
     int nalloc_force;
 
-    /* Forces that should not enter into the virial summation:
-     * PPPM/PME/Ewald/posres
-     * If such forces are present in the system, bF_NoVirSum=TRUE.
+    /* Forces that should not enter into the coord x force virial summation:
+     * PPPM/PME/Ewald/posres/ForceProviders
      */
-    gmx_bool          bF_NoVirSum;
-#ifdef __cplusplus
-    // Does this structure have multiple definitions in the same shared object?!
+    /* True when we have contributions that are directly added to the virial */
+    gmx_bool                 haveDirectVirialContributions;
     /* TODO: Replace the pointer by an object once we got rid of C */
-    PaddedRVecVector *forceBufferNoVirialSummation;
-#else
-    void             *forceBufferNoVirialSummation_dummy;
-#endif
-    /* Pointer that points to forceNoVirialSummation when virial is calcaluted,
-     * points to the normal force vector when the virial is not requested
-     * or when bF_NoVirSum == FALSE.
-     */
-#ifdef __cplusplus
-    PaddedRVecVector *f_novirsum;
-#else
-    void             *f_novirsum_xdummy;
-#endif
+    std::vector<gmx::RVec>  *forceBufferForDirectVirialContributions;
 
-    /* Long-range forces and virial for PPPM/PME/Ewald */
+    /* Data for PPPM/PME/Ewald */
     struct gmx_pme_t *pmedata;
     int               ljpme_combination_rule;
-    tensor            vir_el_recip;
-    tensor            vir_lj_recip;
 
     /* PME/Ewald stuff */
-    gmx_bool                bEwald;
-    real                    ewaldcoeff_q;
-    real                    ewaldcoeff_lj;
     struct gmx_ewald_tab_t *ewald_table;
 
-    /* Virial Stuff */
+    /* Shift force array for computing the virial */
     rvec *fshift;
-    rvec  vir_diag_posres;
-    dvec  vir_wall_z;
 
     /* Non bonded Parameter lists */
     int      ntype; /* Number of atom types */
@@ -353,52 +273,12 @@ struct t_forcerec {
     /* Shell molecular dynamics flexible constraints */
     real fc_stepsize;
 
-    /* Generalized born implicit solvent */
-    gmx_bool              bGB;
-    /* Generalized born stuff */
-    real                  gb_epsilon_solvent;
-    /* Table data for GB */
-    struct t_forcetable  *gbtab;
-    /* VdW radius for each atomtype (dim is thus ntype) */
-    real                 *atype_radius;
-    /* Effective radius (derived from effective volume) for each type */
-    real                 *atype_vol;
-    /* Implicit solvent - surface tension for each atomtype */
-    real                 *atype_surftens;
-    /* Implicit solvent - radius for GB calculation */
-    real                 *atype_gb_radius;
-    /* Implicit solvent - overlap for HCT model */
-    real                 *atype_S_hct;
-    /* Generalized born interaction data */
-    struct gmx_genborn_t *born;
-
-    /* Table scale for GB */
-    real gbtabscale;
-    /* Table range for GB */
-    real gbtabr;
-    /* GB neighborlists (the sr list will contain for each atom all other atoms
-     * (for use in the SA calculation) and the lr list will contain
-     * for each atom all atoms 1-4 or greater (for use in the GB calculation)
-     */
-    struct t_nblist *gblist_sr;
-    struct t_nblist *gblist_lr;
-    struct t_nblist *gblist;
-
-    /* Inverse square root of the Born radii for implicit solvent */
-    real *invsqrta;
-    /* Derivatives of the potential with respect to the Born radii */
-    real *dvda;
-    /* Derivatives of the Born radii with respect to coordinates */
-    real *dadx;
-    real *dadx_rawptr;
-    int   nalloc_dadx; /* Allocated size of dadx */
-
     /* If > 0 signals Test Particle Insertion,
      * the value is the number of atoms of the molecule to insert
      * Only the energy difference due to the addition of the last molecule
      * should be calculated.
      */
-    gmx_bool n_tpi;
+    int n_tpi;
 
     /* Neighbor searching stuff */
     struct gmx_ns_t *ns;
@@ -429,7 +309,9 @@ struct t_forcerec {
     real userreal4;
 
     /* Pointer to struct for managing threading of bonded force calculation */
-    struct bonded_threading_t *bonded_threading;
+    struct bonded_threading_t *bondedThreading;
+
+    GpuBondedLists            *gpuBondedLists;
 
     /* Ewald correction thread local virial and energy data */
     int                         nthread_ewc;
@@ -447,9 +329,5 @@ struct t_forcerec {
 #define BHAMC(nbfp, ntp, ai, aj)  (nbfp)[3*((ntp)*(ai)+(aj))]
 #define BHAMA(nbfp, ntp, ai, aj)  (nbfp)[3*((ntp)*(ai)+(aj))+1]
 #define BHAMB(nbfp, ntp, ai, aj)  (nbfp)[3*((ntp)*(ai)+(aj))+2]
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

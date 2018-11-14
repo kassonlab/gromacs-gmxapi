@@ -1,7 +1,7 @@
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
- * Copyright (c) 2017, by the GROMACS development team, led by
+ * Copyright (c) 2017,2018, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -83,13 +83,13 @@ class IMDOutputProvider
          * \param[in] oenv  The output environment for xvg files
          */
         virtual void initOutput(FILE *fplog, int nfile, const t_filenm fnm[],
-                                bool bAppendFiles, const gmx_output_env_t *oenv) {};
+                                bool bAppendFiles, const gmx_output_env_t *oenv) = 0;
 
         //! Finalizes output from a simulation run.
-        virtual void finishOutput() {};
+        virtual void finishOutput() = 0;
 
     protected:
-        ~IMDOutputProvider() {}
+        virtual ~IMDOutputProvider() {}
 };
 
 } // namespace gmx

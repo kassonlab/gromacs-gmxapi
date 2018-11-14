@@ -3,7 +3,7 @@
  *
  * Copyright (c) 1991-2000, University of Groningen, The Netherlands.
  * Copyright (c) 2001-2004, The GROMACS development team.
- * Copyright (c) 2013,2014,2015,2016, by the GROMACS development team, led by
+ * Copyright (c) 2013,2014,2015,2016,2018, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -44,23 +44,142 @@
 #ifndef GMX_LISTED_FORCES_MANAGE_THREADING_H
 #define GMX_LISTED_FORCES_MANAGE_THREADING_H
 
+#include "config.h"
+
 #include <cstdio>
 
-#include "gromacs/mdtypes/forcerec.h"
-#include "gromacs/topology/idef.h"
+#include <string>
 
-#ifdef __cplusplus
-extern "C" {
+#include "gromacs/gpu_utils/hostallocator.h"
+#include "gromacs/topology/idef.h"
+#include "gromacs/utility/arrayref.h"
+
+struct bonded_threading_t;
+struct gmx_mtop_t;
+struct t_inputrec;
+
+/*! \brief The number on bonded function types supported on GPUs */
+constexpr int c_numFtypesOnGpu = 8;
+
+/*! \brief List of all bonded function types supported on GPUs
+ *
+ * \note This list should be in sync with the actual GPU code.
+ * \note Perturbed interactions are not supported on GPUs.
+ * \note The function types in the list are ordered on increasing value.
+ * \note Currently bonded are only supported with CUDA, not with OpenCL.
+ */
+constexpr std::array<int, c_numFtypesOnGpu> ftypesOnGpu =
+{
+    F_BONDS,
+    F_ANGLES,
+    F_UREY_BRADLEY,
+    F_PDIHS,
+    F_RBDIHS,
+    F_IDIHS,
+    F_PIDIHS,
+    F_LJ14
+};
+
+/*! \libinternal \brief Version of InteractionList that supports pinning */
+struct HostInteractionList
+{
+    /*! \brief Returns the total number of elements in iatoms */
+    int size() const
+    {
+        return iatoms.size();
+    }
+
+    /*! \brief List of interactions, see explanation further down */
+    std::vector < int, gmx::HostAllocator < int>> iatoms = {{}, gmx::HostAllocationPolicy(gmx::PinningPolicy::PinnedIfSupported)};
+};
+
+/*! \brief Convenience alias for set of pinned interaction lists */
+using HostInteractionLists = std::array<HostInteractionList, F_NRE>;
+
+/*! \internal \brief Struct for storing lists of bonded interaction for evaluation on a GPU */
+struct GpuBondedLists
+{
+    GpuBondedLists()
+    {
+        for (int ftype = 0; ftype < F_NRE; ftype++)
+        {
+            iListsDevice[ftype].nr     = 0;
+            iListsDevice[ftype].iatoms = nullptr;
+            iListsDevice[ftype].nalloc = 0;
+        }
+    }
+
+    /*! \brief Destructor, non-default needed for freeing device side buffers */
+    ~GpuBondedLists()
+#if GMX_GPU == GMX_GPU_CUDA
+    ;
+#else
+    {
+    }
 #endif
 
-/*! \brief Divide the listed interactions over the threads
+    HostInteractionLists  iLists;                      /**< The interaction lists */
+    bool                  haveInteractions;            /**< Tells whether there are any interaction in iLists */
+
+    t_iparams            *forceparamsDevice = nullptr; /**< Bonded parameters for device-side use */
+    t_ilist               iListsDevice[F_NRE];         /**< Interaction lists on the device */
+
+    //! \brief Host-side virial buffer
+    std::vector < float, gmx::HostAllocator < float>> vtot = {{}, gmx::HostAllocationPolicy(gmx::PinningPolicy::PinnedIfSupported)};
+    //! \brief Device-side total virial
+    float                *vtotDevice   = nullptr;
+
+    //! \brief Bonded GPU stream
+    void                 *stream;
+};
+
+
+namespace gmx
+{
+
+/*! \brief Checks whether the GROMACS build allows to compute bonded interactions on a GPU.
+ *
+ * \param[out] error  If non-null, the diagnostic message when bondeds cannot run on a GPU.
+ *
+ * \returns true when this build can run bonded interactions on a GPU, false otherwise.
+ *
+ * \throws std::bad_alloc when out of memory.
+ */
+bool buildSupportsGpuBondeds(std::string *error);
+
+/*! \brief Checks whether the input system allows to compute bonded interactions on a GPU.
+ *
+ * \param[in]  ir     Input system.
+ * \param[in]  mtop   Complete system topology to search for supported interactions.
+ * \param[out] error  If non-null, the error message if the input is not supported on GPU.
+ *
+ * \returns true if PME can run on GPU with this input, false otherwise.
+ */
+bool inputSupportsGpuBondeds(const t_inputrec &ir,
+                             const gmx_mtop_t &mtop,
+                             std::string      *error);
+
+}   // namespace gmx
+
+/*! \brief Copy bonded interactions assigned to the GPU to \p gpuBondedLists */
+void assign_bondeds_to_gpu(GpuBondedLists           *gpuBondedLists,
+                           gmx::ArrayRef<const int>  nbnxnAtomOrder,
+                           const t_idef             &idef);
+
+/*! \brief Divide the listed interactions over the threads and GPU
  *
  * Uses fr->nthreads for the number of threads, and sets up the
- * thread-force buffer reduction. This should be called each time the
- * bonded setup changes; i.e. at start-up without domain decomposition
- * and at DD.
+ * thread-force buffer reduction.
+ * This should be called each time the bonded setup changes;
+ * i.e. at start-up without domain decomposition and at DD.
  */
-void setup_bonded_threading(t_forcerec *fr, t_idef *idef);
+void setup_bonded_threading(bonded_threading_t *bt,
+                            int                 numAtoms,
+                            bool                useGpuForBondes,
+                            const t_idef       &idef);
+
+//! Destructor.
+void tear_down_bonded_threading(bonded_threading_t *bt);
 
 /*! \brief Initialize the bonded threading data structures
  *
@@ -68,10 +187,12 @@ void setup_bonded_threading(t_forcerec *fr, t_idef *idef);
  * A pointer to this struct is returned as \p *bb_ptr.
  */
 void init_bonded_threading(FILE *fplog, int nenergrp,
-                           struct bonded_threading_t **bt_ptr);
+                           bonded_threading_t **bt_ptr);
 
-#ifdef __cplusplus
+/*! \brief Returns whether there are bonded interactions assigned to the GPU */
+static inline bool bonded_gpu_have_interactions(GpuBondedLists *gpuBondedLists)
+{
+    return (gpuBondedLists != nullptr && gpuBondedLists->haveInteractions);
 }
-#endif
 
 #endif

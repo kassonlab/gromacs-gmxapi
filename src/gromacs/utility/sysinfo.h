@@ -1,7 +1,7 @@
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
- * Copyright (c) 2014,2017, by the GROMACS development team, led by
+ * Copyright (c) 2014,2017,2018, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -48,6 +48,8 @@
 #include <stddef.h>
 #include <time.h>
 
+#include <string>
+
 /*! \addtogroup module_utility
  * \{
  */
@@ -71,13 +73,13 @@ int gmx_gethostname(char *buf, size_t len);
  *
  * Does not throw.
  */
-int gmx_getpid(void);
+int gmx_getpid();
 /*! \brief
  * Returns the current user ID, or -1 if not available.
  *
  * Does not throw.
  */
-int gmx_getuid(void);
+int gmx_getuid();
 /*! \brief
  * Gets the current user name, if available.
  *
@@ -92,18 +94,16 @@ int gmx_getusername(char *buf, size_t len);
 /*! \brief
  * Portable version of ctime_r.
  *
- * Does not throw.
+ * \throws std::bad_alloc when out of memory.
  */
-char *gmx_ctime_r(const time_t *clock, char *buf, size_t len);
+std::string
+gmx_ctime_r(const time_t *clock);
 /*! \brief
  * Gets the current time as a string.
  *
- * \param[out] buf  Buffer to receive the string.
- * \param[in]  len  Length of buffer \p buf (26 characters should be sufficient).
- *
- * Does not throw.
+ * \throws std::bad_alloc when out of memory.
  */
-void gmx_format_current_time(char *buf, size_t len);
+std::string gmx_format_current_time();
 
 /*! \brief
  * Wrapper for nice().

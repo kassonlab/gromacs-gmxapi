@@ -1,7 +1,7 @@
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
- * Copyright (c) 2012,2013,2014,2015,2016, by the GROMACS development team, led by
+ * Copyright (c) 2012,2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -58,10 +58,17 @@ namespace test
  *
  * This function is automatically called by unittest_main.cpp.
  *
+ * \param[in] dataPath Filepath to input files.
+ * \param[in] tempPath Filepath to temporary files.
+ * \param[in] usesMpi  If the test is run with MPI or not.
+ * \param[in] usesHardwareDetection If hardwaredetection is enabled.
+ * \param[in] argc Number of cmdline options
+ * \param[in] argv Cmdline options.
+ *
  * \ingroup module_testutils
  */
 void initTestUtils(const char *dataPath, const char *tempPath, bool usesMpi,
-                   int *argc, char ***argv);
+                   bool usesHardwareDetection, int *argc, char ***argv);
 
 /*! \internal
  * \brief
@@ -76,6 +83,19 @@ void initTestUtils(const char *dataPath, const char *tempPath, bool usesMpi,
  */
 void finalizeTestUtils();
 //! \endcond
+
+/*! \brief Declare a function that all unit test implementations can use
+ * to set up any environment that they need.
+ *
+ * When registering the unit test in CMake, the HARDWARE_DETECTION
+ * flag requires that the code for that unit test implements this
+ * function.  Otherwise, a default stub implementation is provided.
+ *
+ * This approach conforms to the recommendation by GoogleTest to
+ * arrange for the code that sets up the global test environment to be
+ * called from main, rather than potentially rely on brittle static
+ * initialization order. */
+void callAddGlobalTestEnvironment();
 
 } // namespace test
 } // namespace gmx

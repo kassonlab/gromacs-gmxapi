@@ -1,7 +1,7 @@
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
- * Copyright (c) 2009,2010,2011,2014, by the GROMACS development team, led by
+ * Copyright (c) 2009,2010,2011,2014,2018, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -87,6 +87,8 @@
 #ifndef GMX_md5_INCLUDED
 #  define GMX_md5_INCLUDED
 
+#include <array>
+
 /*
  * This package supports both compile-time and run-time determination of CPU
  * byte order.  If ARCH_IS_BIG_ENDIAN is defined as 0, the code will be
@@ -107,11 +109,6 @@ typedef struct md5_state_s {
     md5_byte_t buf[64];     /* accumulate block */
 } md5_state_t;
 
-#ifdef __cplusplus
-extern "C"
-{
-#endif
-
 /* Initialize the algorithm. */
 void gmx_md5_init(md5_state_t *pms);
 
@@ -119,10 +116,6 @@ void gmx_md5_init(md5_state_t *pms);
 void gmx_md5_append(md5_state_t *pms, const md5_byte_t *data, int nbytes);
 
 /* Finish the message and return the digest. */
-void gmx_md5_finish(md5_state_t *pms, md5_byte_t digest[16]);
-
-#ifdef __cplusplus
-}  /* end extern "C" */
-#endif
+std::array<unsigned char, 16> gmx_md5_finish(md5_state_t *pms);
 
 #endif

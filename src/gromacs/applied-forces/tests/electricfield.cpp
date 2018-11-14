@@ -1,7 +1,7 @@
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
- * Copyright (c) 2015,2016,2017, by the GROMACS development team, led by
+ * Copyright (c) 2015,2016,2017,2018, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -46,9 +46,11 @@
 #include <gtest/gtest.h>
 
 #include "gromacs/gmxlib/network.h"
+#include "gromacs/math/paddedvector.h"
 #include "gromacs/math/vec.h"
 #include "gromacs/mdlib/forcerec.h"
-#include "gromacs/mdtypes/forcerec.h"
+#include "gromacs/mdtypes/enerdata.h"
+#include "gromacs/mdtypes/forceoutput.h"
 #include "gromacs/mdtypes/iforceprovider.h"
 #include "gromacs/mdtypes/imdmodule.h"
 #include "gromacs/mdtypes/imdpoptionprovider.h"
@@ -92,10 +94,8 @@ class ElectricFieldTest : public ::testing::Test
             GMX_RELEASE_ASSERT(dim >= 0 && dim < DIM, "Dimension should be 0, 1 or 2");
 
             gmx::KeyValueTreeBuilder     mdpValues;
-            mdpValues.rootObject().addValue(gmx::formatString("E%s", dimXYZ[dim]),
-                                            gmx::formatString("1 %g 0", E0));
-            mdpValues.rootObject().addValue(gmx::formatString("E%s-t", dimXYZ[dim]),
-                                            gmx::formatString("3 %g 0 %g 0 %g 0", omega, t0, sigma));
+            mdpValues.rootObject().addValue(gmx::formatString("electric-field-%s", dimXYZ[dim]),
+                                            gmx::formatString("%g %g %g %g", E0, omega, t0, sigma));
 
             gmx::KeyValueTreeTransformer transform;
             transform.rules()->addRule()
@@ -109,15 +109,20 @@ class ElectricFieldTest : public ::testing::Test
             ForceProviders forceProviders;
             module->initForceProviders(&forceProviders);
 
-            t_mdatoms        md;
-            PaddedRVecVector f = { { 0, 0, 0 } };
+            t_mdatoms               md;
+            PaddedVector<gmx::RVec> f = { {0, 0, 0} };
+            gmx::ForceWithVirial    forceWithVirial(f, true);
             md.homenr = 1;
             snew(md.chargeA, md.homenr);
             md.chargeA[0] = 1;
 
-            t_commrec  *cr = init_commrec();
-            forceProviders.calculateForces(cr, &md, nullptr, 0, nullptr,
-                                           gmx::EmptyArrayRef(), f);
+            t_commrec                     *cr       = init_commrec();
+            matrix                         boxDummy = { {0, 0, 0}, {0, 0, 0}, {0, 0, 0} };
+            gmx_enerdata_t                 enerdDummy;
+
+            gmx::ForceProviderInput        forceProviderInput(gmx::EmptyArrayRef {}, md, 0.0, boxDummy, *cr);
+            gmx::ForceProviderOutput       forceProviderOutput(&forceWithVirial, &enerdDummy);
+            forceProviders.calculateForces(forceProviderInput, &forceProviderOutput);
             done_commrec(cr);
 
             EXPECT_REAL_EQ_TOL(f[0][dim], expectedValue, tolerance);

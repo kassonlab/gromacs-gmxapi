@@ -1,7 +1,7 @@
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
- * Copyright (c) 2017, by the GROMACS development team, led by
+ * Copyright (c) 2017,2018, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -35,6 +35,24 @@
 #ifndef GMX_COMPAT_MAKE_UNIQUE_H
 #define GMX_COMPAT_MAKE_UNIQUE_H
 /*! \libinternal
+ * \defgroup module_compat C++ "standard" library compatibility helpers.
+ *
+ * \brief Provide uniform interface to selected C++ standard and
+ * popular library features.
+ *
+ * For some features not available on all platforms supported by
+ * \Gromacs, provides back-ports or mappings to available standard
+ * library implementations as appropriate.
+ *
+ * Backported implementations of features from newer C++ standards, or
+ * from community libraries such as Abseil or the Guidelines Support
+ * Library may also be considered for inclusion here. We generally
+ * expect that features included here are either already standard,
+ * proposed for the standard, or so useful in solving a frequently
+ * occuring problem that their use is not controversial.
+ */
+
+/*!
  * \file
  * \brief Provides template gmx::compat::make_unique
  *
@@ -44,9 +62,10 @@
  * though additional wrapping has been added for use in \Gromacs.
  *
  * \author M. Eric Irrgang <ericirrgang@gmail.com>
- * \ingroup group_compatibility
+ * \ingroup module_compat
+ * \inlibraryapi
  */
-/*! \addtogroup group_compatibility
+/*! \addtogroup module_compat
  * ### gmx::compat::make_unique
  *
  * Provide a trivially adapted implementation of the C++ standard library `make_unique` function template.
@@ -102,7 +121,7 @@ make_unique(Args && ...) = delete;
 
 ///\endcond
 
-}      // namespace gmx::compat
+}      // namespace compat
 }      // namespace gmx
 
 #endif // header guard

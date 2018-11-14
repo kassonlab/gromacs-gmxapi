@@ -1,7 +1,7 @@
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
- * Copyright (c) 2016,2017, by the GROMACS development team, led by
+ * Copyright (c) 2016,2017,2018, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -54,6 +54,7 @@ nbnxn_kernel_prune_4xn(nbnxn_pairlist_t *         nbl,
                        real                       rlistInner)
 {
 #ifdef GMX_NBNXN_SIMD_4XN
+    using namespace gmx;
     const nbnxn_ci_t * gmx_restrict ciOuter  = nbl->ciOuter;
     nbnxn_ci_t       * gmx_restrict ciInner  = nbl->ci;
 
@@ -87,12 +88,9 @@ nbnxn_kernel_prune_4xn(nbnxn_pairlist_t *         nbl,
         SimdReal shZ_S   = SimdReal(shiftvec[ish3 + 2]);
 
 #if UNROLLJ <= 4
-        int      sci     = ci*STRIDE;
-        int      scix    = sci*DIM;
+        int      scix    = ci*STRIDE*DIM;
 #else
-        int      sci     = (ci >> 1)*STRIDE;
-        int      scix    = sci*DIM + (ci & 1)*(STRIDE >> 1);
-        sci             += (ci & 1)*(STRIDE >> 1);
+        int      scix    = (ci >> 1)*STRIDE*DIM + (ci & 1)*(STRIDE >> 1);
 #endif
 
         /* Load i atom data */
@@ -117,8 +115,8 @@ nbnxn_kernel_prune_4xn(nbnxn_pairlist_t *         nbl,
             int cj      = cjOuter[cjind].cj;
 
             /* Atom indices (of the first atom in the cluster) */
-            int aj      = cj*UNROLLJ;
 #if UNROLLJ == STRIDE
+            int aj      = cj*UNROLLJ;
             int ajx     = aj*DIM;
 #else
             int ajx     = (cj >> 1)*DIM*STRIDE + (cj & 1)*UNROLLJ;
@@ -127,9 +125,9 @@ nbnxn_kernel_prune_4xn(nbnxn_pairlist_t *         nbl,
             int ajz     = ajy + STRIDE;
 
             /* load j atom coordinates */
-            SimdReal jx_S   = load(x + ajx);
-            SimdReal jy_S   = load(x + ajy);
-            SimdReal jz_S   = load(x + ajz);
+            SimdReal jx_S   = load<SimdReal>(x + ajx);
+            SimdReal jy_S   = load<SimdReal>(x + ajy);
+            SimdReal jz_S   = load<SimdReal>(x + ajz);
 
             /* Calculate distance */
             SimdReal dx_S0  = ix_S0 - jx_S;
