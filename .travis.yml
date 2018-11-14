@@ -76,15 +76,17 @@ before_script:
   - pip install pytest numpy networkx sphinx sphinx_rtd_theme
 
 script:
-#  # Note that as of gromacs-gmxapi 0.0.6, gmxapi ensemble management is not compatible with MPI-enabled gromacs-gmxapi
-#  - if [ "${CI_MPI}" = 0 ] ; then source $HOME/install/gromacs/bin/GMXRC && ./ci_scripts/pygmx_0_0_7.sh ; fi
-#  - if [ "${CI_MPI}" = 0 ] ; then ./ci_scripts/sample_restraint.sh release-0_0_7 ; fi
+  # Note that as of gromacs-gmxapi 0.0.6, gmxapi ensemble management is not compatible with MPI-enabled gromacs-gmxapi
   - |
-    if [ "${TRAVIS_BRANCH}" != master -a "${CI_MPI}" = 0 ]
-        then source $HOME/install/gromacs/bin/GMXRC && ./ci_scripts/pygmx_devel.sh
+    if [ "${CI_MPI}" = 0 ] ; then
+      source $HOME/install/gromacs/bin/GMXRC &&
+      ./ci_scripts/pygmx_0_0_7.sh &&
+      ./ci_scripts/sample_restraint.sh release-0_0_7
     fi
   - |
-    if [ "${TRAVIS_BRANCH}" != master -a "${CI_MPI}" = 0 ] ; then
+    if [ "${TRAVIS_BRANCH}" != master -a "${CI_MPI}" = 0 ]; then
+      source $HOME/install/gromacs/bin/GMXRC &&
+      ./ci_scripts/pygmx_devel.sh &&
       ./ci_scripts/sample_restraint.sh devel
     fi
 

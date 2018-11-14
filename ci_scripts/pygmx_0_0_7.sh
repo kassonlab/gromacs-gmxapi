@@ -1,11 +1,14 @@
 #!/bin/bash
 set -ev
 
+BRANCH=release-0_0_7
+
 pushd $HOME
- git clone --depth=1 --no-single-branch https://github.com/kassonlab/gmxapi.git
+ rm -rf gmxapi
+ wget https://github.com/kassonlab/gmxapi/archive/${BRANCH}.zip
+ unzip $BRANCH
+ mv gmxapi-$BRANCH gmxapi
  pushd gmxapi
-  # Only checks the most recent patch in the 0.0.6 release branch.
-  git checkout release-0_0_6
   rm -rf build
   mkdir -p build
   pushd build

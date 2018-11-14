@@ -1,10 +1,14 @@
 #!/bin/bash
 set -ev
 
+BRANCH=devel
+
 pushd $HOME
- git clone --depth=1 --no-single-branch https://github.com/kassonlab/gmxapi.git
+ rm -rf gmxapi
+ wget https://github.com/kassonlab/gmxapi/archive/${BRANCH}.zip
+ unzip $BRANCH
+ mv gmxapi-$BRANCH gmxapi
  pushd gmxapi
-  git checkout devel
   rm -rf build
   mkdir -p build
   pushd build
