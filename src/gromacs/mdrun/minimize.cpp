@@ -812,6 +812,8 @@ class EnergyEvaluator
         gmx::MDAtoms         *mdAtoms;
         //! Handles how to calculate the forces.
         t_forcerec           *fr;
+        //! Schedule of force-calculation work each step for this task.
+        gmx::PpForceWorkload *ppForceWorkload;
         //! Stores the computed energies.
         gmx_enerdata_t       *enerd;
 };
@@ -868,7 +870,7 @@ EnergyEvaluator::run(em_state_t *ems, rvec mu_tot,
              count, nrnb, wcycle, top, &top_global->groups,
              ems->s.box, ems->s.x.arrayRefWithPadding(), &ems->s.hist,
              ems->f.arrayRefWithPadding(), force_vir, mdAtoms->mdatoms(), enerd, fcd,
-             ems->s.lambda, graph, fr, vsite, mu_tot, t, nullptr,
+             ems->s.lambda, graph, fr, ppForceWorkload, vsite, mu_tot, t, nullptr,
              GMX_FORCE_STATECHANGED | GMX_FORCE_ALLFORCES |
              GMX_FORCE_VIRIAL | GMX_FORCE_ENERGY |
              (bNS ? GMX_FORCE_NS : 0),
@@ -1154,7 +1156,7 @@ Integrator::do_cg()
         top_global, top,
         inputrec, nrnb, wcycle, gstat,
         vsite, constr, fcd, graph,
-        mdAtoms, fr, enerd
+        mdAtoms, fr, ppForceWorkload, enerd
     };
     /* Call the force routine and some auxiliary (neighboursearching etc.) */
     /* do_force always puts the charge groups in the box and shifts again
@@ -1835,7 +1837,7 @@ Integrator::do_lbfgs()
         top_global, top,
         inputrec, nrnb, wcycle, gstat,
         vsite, constr, fcd, graph,
-        mdAtoms, fr, enerd
+        mdAtoms, fr, ppForceWorkload, enerd
     };
     energyEvaluator.run(&ems, mu_tot, vir, pres, -1, TRUE);
 
@@ -2492,7 +2494,7 @@ Integrator::do_steep()
         top_global, top,
         inputrec, nrnb, wcycle, gstat,
         vsite, constr, fcd, graph,
-        mdAtoms, fr, enerd
+        mdAtoms, fr, ppForceWorkload, enerd
     };
 
     /**** HERE STARTS THE LOOP ****
@@ -2795,7 +2797,7 @@ Integrator::do_nm()
         top_global, top,
         inputrec, nrnb, wcycle, gstat,
         vsite, constr, fcd, graph,
-        mdAtoms, fr, enerd
+        mdAtoms, fr, ppForceWorkload, enerd
     };
     energyEvaluator.run(&state_work, mu_tot, vir, pres, -1, TRUE);
     cr->nnodes = nnodes;
@@ -2876,6 +2878,7 @@ Integrator::do_nm()
                                         &top_global->groups,
                                         shellfc,
                                         fr,
+                                        ppForceWorkload,
                                         t,
                                         mu_tot,
                                         vsite,
@@ -2886,7 +2889,7 @@ Integrator::do_nm()
                 }
                 else
                 {
-                    energyEvaluator.run(&state_work, mu_tot, vir, pres, atom*2+dx, FALSE);
+                    energyEvaluator.run(&state_work, mu_tot, vir, pres, aid*2+dx, FALSE);
                 }
 
                 cr->nnodes = nnodes;
@@ -2919,7 +2922,7 @@ Integrator::do_nm()
             }
             else
             {
-                for (node = 0; (node < nnodes && atom+node < atom_index.size()); node++)
+                for (node = 0; (node < nnodes && aid+node < atom_index.size()); node++)
                 {
                     if (node > 0)
                     {
@@ -2931,7 +2934,7 @@ Integrator::do_nm()
 #endif
                     }
 
-                    row = (atom + node)*DIM + d;
+                    row = (aid + node)*DIM + d;
 
                     for (size_t j = 0; j < atom_index.size(); j++)
                     {

@@ -29,6 +29,8 @@ Patch releases
 .. toctree::
    :maxdepth: 1
 
+   2019/2019.1
+
 Major release
 ^^^^^^^^^^^^^
 
@@ -55,6 +57,7 @@ Patch releases
 .. toctree::
    :maxdepth: 1
 
+   2018/2018.5
    2018/2018.4
    2018/2018.3
    2018/2018.2

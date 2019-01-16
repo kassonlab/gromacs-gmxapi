@@ -1227,7 +1227,7 @@ static int do_cpt_state(XDR *xd,
                 case estDISRE_RM3TAV: ret         = do_cpte_n_reals(xd, part, i, sflags, &state->hist.ndisrepairs, &state->hist.disre_rm3tav, list); break;
                 case estORIRE_INITF:  ret         = do_cpte_real (xd, part, i, sflags, &state->hist.orire_initf, list); break;
                 case estORIRE_DTAV:   ret         = do_cpte_n_reals(xd, part, i, sflags, &state->hist.norire_Dtav, &state->hist.orire_Dtav, list); break;
-                case estPREVSTEPCOM:  ret         = doVector<double>(xd, part, i, sflags, &state->com_prev_step, list); break;
+                case estPULLCOMPREVSTEP:      ret = doVector<double>(xd, part, i, sflags, &state->pull_com_prev_step, list); break;
                 default:
                     gmx_fatal(FARGS, "Unknown state entry %d\n"
                               "You are reading a checkpoint file written by different code, which is not supported", i);
@@ -1944,7 +1944,7 @@ static int do_cpt_files(XDR *xd, gmx_bool bRead,
         if (bRead)
         {
             do_cpt_string_err(xd, "output filename", buf, list);
-            std::strncpy(outputfile.filename, buf.data(), buf.size()-1);
+            std::copy(std::begin(buf), std::end(buf), std::begin(outputfile.filename));
 
             if (do_cpt_int(xd, "file_offset_high", &offset_high, list) != 0)
             {
@@ -2761,6 +2761,23 @@ void load_checkpoint(const char *fn, t_fileio *logfio,
         gmx_bcast(sizeof(*bReadEkin), bReadEkin, cr);
     }
     ir->bContinuation    = TRUE;
+    // TODO Should the following condition be <=? Currently if you
+    // pass a checkpoint written by an normal completion to a restart,
+    // mdrun will read all input, does some work but no steps, and
+    // write successful output. But perhaps that is not desirable.
+    if ((ir->nsteps >= 0) && (ir->nsteps < headerContents.step))
+    {
+        // Note that we do not intend to support the use of mdrun
+        // -nsteps to circumvent this condition.
+        char nstepsString[STEPSTRSIZE], stepString[STEPSTRSIZE];
+        gmx_step_str(ir->nsteps, nstepsString);
+        gmx_step_str(headerContents.step, stepString);
+        gmx_fatal(FARGS, "The input requested %s steps, however the checkpoint "
+                  "file has already reached step %s. The simulation will not "
+                  "proceed, because either your simulation is already complete, "
+                  "or your combination of input files don't match.",
+                  nstepsString, stepString);
+    }
     if (ir->nsteps >= 0)
     {
         ir->nsteps          += ir->init_step - headerContents.step;

@@ -75,7 +75,7 @@
 #include "gromacs/hardware/detecthardware.h"
 #include "gromacs/hardware/printhardware.h"
 #include "gromacs/listed-forces/disre.h"
-#include "gromacs/listed-forces/manage-threading.h"
+#include "gromacs/listed-forces/gpubonded.h"
 #include "gromacs/listed-forces/orires.h"
 #include "gromacs/math/functions.h"
 #include "gromacs/math/utilities.h"
@@ -93,6 +93,7 @@
 #include "gromacs/mdlib/nbnxn_gpu_data_mgmt.h"
 #include "gromacs/mdlib/nbnxn_search.h"
 #include "gromacs/mdlib/nbnxn_tuning.h"
+#include "gromacs/mdlib/ppforceworkload.h"
 #include "gromacs/mdlib/qmmm.h"
 #include "gromacs/mdlib/sighandler.h"
 #include "gromacs/mdlib/sim_util.h"
@@ -613,9 +614,10 @@ int Mdrunner::mdrunner()
             // If the user specified the number of ranks, then we must
             // respect that, but in default mode, we need to allow for
             // the number of GPUs to choose the number of ranks.
-
+            auto canUseGpuForNonbonded = buildSupportsNonbondedOnGpu(nullptr);
             useGpuForNonbonded = decideWhetherToUseGpusForNonbondedWithThreadMpi
                     (nonbondedTarget, gpuIdsToUse, userGpuTaskAssignment, emulateGpuNonbonded,
+                    canUseGpuForNonbonded,
                     inputrec->cutoff_scheme == ecutsVERLET,
                     gpuAccelerationOfNonbondedIsUseful(mdlog, inputrec, GMX_THREAD_MPI),
                     hw_opt.nthreads_tmpi);
@@ -671,7 +673,7 @@ int Mdrunner::mdrunner()
     //
     // Note that when bonded interactions run on a GPU they always run
     // alongside a nonbonded task, so do not influence task assignment
-    // even though they affect the force calculation schedule.
+    // even though they affect the force calculation workload.
     bool useGpuForNonbonded = false;
     bool useGpuForPme       = false;
     bool useGpuForBonded    = false;
@@ -681,10 +683,13 @@ int Mdrunner::mdrunner()
         // different nodes, which is the user's responsibilty to
         // handle. If unsuitable, we will notice that during task
         // assignment.
-        bool gpusWereDetected  = hwinfo->ngpu_compatible_tot > 0;
-        bool usingVerletScheme = inputrec->cutoff_scheme == ecutsVERLET;
+        bool gpusWereDetected      = hwinfo->ngpu_compatible_tot > 0;
+        bool usingVerletScheme     = inputrec->cutoff_scheme == ecutsVERLET;
+        auto canUseGpuForNonbonded = buildSupportsNonbondedOnGpu(nullptr);
         useGpuForNonbonded = decideWhetherToUseGpusForNonbonded(nonbondedTarget, userGpuTaskAssignment,
-                                                                emulateGpuNonbonded, usingVerletScheme,
+                                                                emulateGpuNonbonded,
+                                                                canUseGpuForNonbonded,
+                                                                usingVerletScheme,
                                                                 gpuAccelerationOfNonbondedIsUseful(mdlog, inputrec, !GMX_THREAD_MPI),
                                                                 gpusWereDetected);
         auto canUseGpuForPme   = pme_gpu_supports_build(*hwinfo, nullptr) && pme_gpu_supports_input(*inputrec, mtop, nullptr);
@@ -869,7 +874,7 @@ int Mdrunner::mdrunner()
         {
             // Now we can start normal logging to the truncated log file.
             fplog    = gmx_fio_getfp(logFileHandle);
-            prepareLogAppending(cr->nodeid, cr->nnodes, fplog);
+            prepareLogAppending(fplog);
             logOwner = buildLogger(fplog, cr);
             mdlog    = logOwner.logger();
         }
@@ -1389,7 +1394,7 @@ int Mdrunner::mdrunner()
                                     || observablesHistory.edsamHistory);
         auto constr              = makeConstraints(mtop, *inputrec, doEssentialDynamics,
                                                    fplog, *mdAtoms->mdatoms(),
-                                                   cr, *ms, nrnb, wcycle, fr->bMolPBC);
+                                                   cr, ms, nrnb, wcycle, fr->bMolPBC);
 
         if (DOMAINDECOMP(cr))
         {
@@ -1401,6 +1406,13 @@ int Mdrunner::mdrunner()
                             domdecOptions.checkBondedInteractions,
                             fr->cginfo_mb);
         }
+
+        // TODO This is not the right place to manage the lifetime of
+        // this data structure, but currently it's the easiest way to
+        // make it work. Later, it should probably be made/updated
+        // after the workload for the lifetime of a PP domain is
+        // understood.
+        PpForceWorkload ppForceWorkload;
 
         GMX_ASSERT(stopHandlerBuilder_, "Runner must provide StopHandlerBuilder to integrator.");
         /* Now do whatever the user wants us to do (how flexible...) */
@@ -1417,6 +1429,7 @@ int Mdrunner::mdrunner()
             globalState.get(),
             &observablesHistory,
             mdAtoms.get(), nrnb, wcycle, fr,
+            &ppForceWorkload,
             replExParams,
             membed,
             walltime_accounting,

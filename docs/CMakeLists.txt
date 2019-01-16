@@ -119,12 +119,13 @@ else()
     elseif(NOT SPHINX_FOUND)
         set(MANUAL_BUILD_IS_POSSIBLE OFF)
         set(MANUAL_BUILD_NOT_POSSIBLE_REASON "Sphinx has not been found and is needed to create the LaTex input files")
-    elseif(NOT PDFLATEX_COMPILER OR NOT IMAGE_CONVERT_POSSIBLE)
+    elseif(NOT PDFLATEX_COMPILER)
         set(MANUAL_BUILD_IS_POSSIBLE OFF)
-        set(MANUAL_BUILD_NOT_POSSIBLE_REASON "pdflatex or some other dependency (ImageMagick convert) is not available")
-        if (NOT IMAGE_CONVERT_POSSIBLE)
-            set(NO_IMAGE_CONVERT_REASON "Can not convert files for online or pdf manual")
-        endif()
+        set(MANUAL_BUILD_NOT_POSSIBLE_REASON "pdflatex is not available")
+    elseif(NOT IMAGE_CONVERT_POSSIBLE)
+        set(MANUAL_BUILD_IS_POSSIBLE OFF)
+        set(MANUAL_BUILD_NOT_POSSIBLE_REASON "a working form of ImageMagick convert is not available")
+        set(NO_IMAGE_CONVERT_REASON "Can not convert files for online or pdf manual")
         # TODO Later, identify other dependencies like bibtex,
         # make_index, date, some graphics conversion program,
         # etc. Perhaps patch UseLATEX.cmake and contribute upstream.
@@ -229,6 +230,7 @@ if (SPHINX_FOUND)
         reference-manual/special/qmmm.rst
         reference-manual/special/vmd-imd.rst
         reference-manual/special/membrane-embedding.rst
+        reference-manual/special/mimic-qmmm.rst
         # Analysis chapter
         reference-manual/analysis.rst
         reference-manual/analysis/using-groups.rst
@@ -345,6 +347,7 @@ if (SPHINX_FOUND)
         dev-manual/includestyle.rst
         dev-manual/index.rst
         dev-manual/jenkins.rst
+        dev-manual/known-issues.rst
         dev-manual/language-features.rst
         dev-manual/naming.rst
         dev-manual/overview.rst
@@ -364,6 +367,7 @@ if (SPHINX_FOUND)
         how-to/visualize.rst
         install-guide/index.rst
         release-notes/index.rst
+        release-notes/2019/2019.1.rst
         release-notes/2019/major/highlights.rst
         release-notes/2019/major/features.rst
         release-notes/2019/major/performance.rst
@@ -373,6 +377,7 @@ if (SPHINX_FOUND)
         release-notes/2019/major/deprecated-functionality.rst
         release-notes/2019/major/portability.rst
         release-notes/2019/major/miscellaneous.rst
+        release-notes/2018/2018.5.rst
         release-notes/2018/2018.4.rst
         release-notes/2018/2018.3.rst
         release-notes/2018/2018.2.rst

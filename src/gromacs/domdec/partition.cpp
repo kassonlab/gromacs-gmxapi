@@ -1,7 +1,7 @@
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
- * Copyright (c) 2018, by the GROMACS development team, led by
+ * Copyright (c) 2018,2019, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -879,7 +879,7 @@ static void get_load_distribution(gmx_domdec_t *dd, gmx_wallcycle_t wcycle)
 
     for (int d = dd->ndim - 1; d >= 0; d--)
     {
-        const DDCellsizesWithDlb &cellsizes = comm->cellsizesWithDlb[d];
+        const DDCellsizesWithDlb *cellsizes = (isDlbOn(dd->comm) ? &comm->cellsizesWithDlb[d] : nullptr);
         const int                 dim       = dd->dim[d];
         /* Check if we participate in the communication in this dimension */
         if (d == dd->ndim-1 ||
@@ -888,7 +888,7 @@ static void get_load_distribution(gmx_domdec_t *dd, gmx_wallcycle_t wcycle)
             load = &comm->load[d];
             if (isDlbOn(dd->comm))
             {
-                cell_frac = cellsizes.fracUpper - cellsizes.fracLower;
+                cell_frac = cellsizes->fracUpper - cellsizes->fracLower;
             }
             int pos = 0;
             if (d == dd->ndim-1)
@@ -901,8 +901,8 @@ static void get_load_distribution(gmx_domdec_t *dd, gmx_wallcycle_t wcycle)
                     sbuf[pos++] = cell_frac;
                     if (d > 0)
                     {
-                        sbuf[pos++] = cellsizes.fracLowerMax;
-                        sbuf[pos++] = cellsizes.fracUpperMin;
+                        sbuf[pos++] = cellsizes->fracLowerMax;
+                        sbuf[pos++] = cellsizes->fracUpperMin;
                     }
                 }
                 if (bSepPME)
@@ -922,8 +922,8 @@ static void get_load_distribution(gmx_domdec_t *dd, gmx_wallcycle_t wcycle)
                     sbuf[pos++] = comm->load[d+1].flags;
                     if (d > 0)
                     {
-                        sbuf[pos++] = cellsizes.fracLowerMax;
-                        sbuf[pos++] = cellsizes.fracUpperMin;
+                        sbuf[pos++] = cellsizes->fracLowerMax;
+                        sbuf[pos++] = cellsizes->fracUpperMin;
                     }
                 }
                 if (bSepPME)
@@ -948,7 +948,7 @@ static void get_load_distribution(gmx_domdec_t *dd, gmx_wallcycle_t wcycle)
 
                 if (isDlbOn(comm))
                 {
-                    rowMaster = cellsizes.rowMaster.get();
+                    rowMaster = cellsizes->rowMaster.get();
                 }
                 load->sum      = 0;
                 load->max      = 0;
@@ -1090,7 +1090,7 @@ static void print_dd_load_av(FILE *fplog, gmx_domdec_t *dd)
         float imbalance = comm->load_max*numPpRanks/comm->load_sum - 1;
         lossFraction    = dd_force_imb_perf_loss(dd);
 
-        std::string msg         = "\n Dynamic load balancing report:\n";
+        std::string msg         = "\nDynamic load balancing report:\n";
         std::string dlbStateStr;
 
         switch (dd->comm->dlbState)
@@ -1127,7 +1127,7 @@ static void print_dd_load_av(FILE *fplog, gmx_domdec_t *dd)
         msg += gmx::formatString(" Part of the total run time spent waiting due to load imbalance: %.1f%%.\n",
                                  lossFraction*100);
         fprintf(fplog, "%s", msg.c_str());
-        fprintf(stderr, "%s", msg.c_str());
+        fprintf(stderr, "\n%s", msg.c_str());
     }
 
     /* Print during what percentage of steps the  load balancing was limited */
@@ -1176,19 +1176,30 @@ static void print_dd_load_av(FILE *fplog, gmx_domdec_t *dd)
 
     if (lossFraction >= DD_PERF_LOSS_WARN)
     {
-        sprintf(buf,
-                "NOTE: %.1f %% of the available CPU time was lost due to load imbalance\n"
-                "      in the domain decomposition.\n", lossFraction*100);
+        std::string message = gmx::formatString(
+                    "NOTE: %.1f %% of the available CPU time was lost due to load imbalance\n"
+                    "      in the domain decomposition.\n", lossFraction*100);
+
+        bool hadSuggestion = false;
         if (!isDlbOn(comm))
         {
-            sprintf(buf+strlen(buf), "      You might want to use dynamic load balancing (option -dlb.)\n");
+            message      += "      You might want to use dynamic load balancing (option -dlb.)\n";
+            hadSuggestion = true;
         }
         else if (dlbWasLimited)
         {
-            sprintf(buf+strlen(buf), "      You might want to decrease the cell size limit (options -rdd, -rcon and/or -dds).\n");
+            message      += "      You might want to decrease the cell size limit (options -rdd, -rcon and/or -dds).\n";
+            hadSuggestion = true;
         }
-        fprintf(fplog, "%s\n", buf);
-        fprintf(stderr, "%s\n", buf);
+        message += gmx::formatString(
+                    "      You can %sconsider manually changing the decomposition (option -dd);\n"
+                    "      e.g. by using fewer domains along the box dimension in which there is\n"
+                    "      considerable inhomogeneity in the simulated system.",
+                    hadSuggestion ? "also " : "");
+
+
+        fprintf(fplog, "%s\n", message.c_str());
+        fprintf(stderr, "%s\n", message.c_str());
     }
     if (numPmeRanks > 0 && std::fabs(lossFractionPme) >= DD_PERF_LOSS_WARN)
     {
