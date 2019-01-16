@@ -1731,7 +1731,7 @@ static void init_pull_group_index(FILE *fplog, const t_commrec *cr,
     /* In parallel, store we need to extract localWeights from weights at DD time */
     std::vector<real>  &weights = ((cr && PAR(cr)) ? pg->globalWeights : pg->localWeights);
 
-    const gmx_groups_t *groups  = &mtop->groups;
+    const gmx_groups_t &groups  = mtop->groups;
 
     /* Count frozen dimensions and (weighted) mass */
     int    nfrozen = 0;
@@ -1787,13 +1787,13 @@ static void init_pull_group_index(FILE *fplog, const t_commrec *cr,
             }
             else
             {
-                if (groups->grpnr[egcTC] == nullptr)
+                if (groups.grpnr[egcTC] == nullptr)
                 {
                     mbd = ir->delta_t/ir->opts.tau_t[0];
                 }
                 else
                 {
-                    mbd = ir->delta_t/ir->opts.tau_t[groups->grpnr[egcTC][ii]];
+                    mbd = ir->delta_t/ir->opts.tau_t[groups.grpnr[egcTC][ii]];
                 }
             }
             w                   *= m/mbd;

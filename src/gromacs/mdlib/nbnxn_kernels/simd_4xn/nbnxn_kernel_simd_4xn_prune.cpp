@@ -1,7 +1,7 @@
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
- * Copyright (c) 2016,2017,2018, by the GROMACS development team, led by
+ * Copyright (c) 2016,2017,2018,2019, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -48,28 +48,34 @@
 
 /* Prune a single nbnxn_pairtlist_t entry with distance rlistInner */
 void
-nbnxn_kernel_prune_4xn(nbnxn_pairlist_t *         nbl,
+nbnxn_kernel_prune_4xn(NbnxnPairlistCpu *         nbl,
                        const nbnxn_atomdata_t *   nbat,
                        const rvec * gmx_restrict  shift_vec,
                        real                       rlistInner)
 {
 #ifdef GMX_NBNXN_SIMD_4XN
     using namespace gmx;
-    const nbnxn_ci_t * gmx_restrict ciOuter  = nbl->ciOuter;
-    nbnxn_ci_t       * gmx_restrict ciInner  = nbl->ci;
 
-    const nbnxn_cj_t * gmx_restrict cjOuter  = nbl->cjOuter;
-    nbnxn_cj_t       * gmx_restrict cjInner  = nbl->cj;
+    /* We avoid push_back() for efficiency reasons and resize after filling */
+    nbl->ci.resize(nbl->ciOuter.size());
+    nbl->cj.resize(nbl->cjOuter.size());
+
+    const nbnxn_ci_t * gmx_restrict ciOuter  = nbl->ciOuter.data();
+    nbnxn_ci_t       * gmx_restrict ciInner  = nbl->ci.data();
+
+    const nbnxn_cj_t * gmx_restrict cjOuter  = nbl->cjOuter.data();
+    nbnxn_cj_t       * gmx_restrict cjInner  = nbl->cj.data();
 
     const real       * gmx_restrict shiftvec = shift_vec[0];
     const real       * gmx_restrict x        = nbat->x;
 
     const SimdReal                  rlist2_S(rlistInner*rlistInner);
 
-    /* Initialize the new list as empty and add pairs that are in range */
-    int nciInner = 0;
-    int ncjInner = 0;
-    for (int i = 0; i < nbl->nciOuter; i++)
+    /* Initialize the new list count as empty and add pairs that are in range */
+    int       nciInner = 0;
+    int       ncjInner = 0;
+    const int nciOuter = nbl->ciOuter.size();
+    for (int i = 0; i < nciOuter; i++)
     {
         const nbnxn_ci_t * gmx_restrict ciEntry = &ciOuter[i];
 
@@ -174,7 +180,8 @@ nbnxn_kernel_prune_4xn(nbnxn_pairlist_t *         nbl,
         }
     }
 
-    nbl->nci = nciInner;
+    nbl->ci.resize(nciInner);
+    nbl->cj.resize(ncjInner);
 
 #else  /* GMX_NBNXN_SIMD_4XN */
 

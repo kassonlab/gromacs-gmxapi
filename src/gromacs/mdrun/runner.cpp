@@ -3,7 +3,7 @@
  *
  * Copyright (c) 1991-2000, University of Groningen, The Netherlands.
  * Copyright (c) 2001-2004, The GROMACS development team.
- * Copyright (c) 2011,2012,2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
+ * Copyright (c) 2011,2012,2013,2014,2015,2016,2017,2018,2019, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -785,11 +785,6 @@ int Mdrunner::mdrunner()
         gmx_fatal(FARGS, "The .mdp file specified an energy mininization or normal mode algorithm, and these are not compatible with mdrun -rerun");
     }
 
-    if (can_use_allvsall(inputrec, TRUE, cr, fplog) && DOMAINDECOMP(cr))
-    {
-        gmx_fatal(FARGS, "All-vs-all loops do not work with domain decomposition, use a single MPI rank");
-    }
-
     if (!(EEL_PME(inputrec->coulombtype) || EVDW_PME(inputrec->vdwtype)))
     {
         if (domdecOptions.numPmeRanks > 0)
@@ -1462,6 +1457,9 @@ int Mdrunner::mdrunner()
                pmedata,
                EI_DYNAMICS(inputrec->eI) && !isMultiSim(ms));
 
+    // clean up cycle counter
+    wallcycle_destroy(wcycle);
+
     // Free PME data
     if (pmedata)
     {
@@ -1517,11 +1515,11 @@ int Mdrunner::mdrunner()
        wait for that. */
     if (PAR(cr) && MASTER(cr))
     {
-        done_commrec(cr);
         tMPI_Finalize();
     }
+    //TODO free commrec in MPI simulations
+    done_commrec(cr);
 #endif
-
     return rc;
 }
 

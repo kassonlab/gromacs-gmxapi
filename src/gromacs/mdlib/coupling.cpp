@@ -3,7 +3,7 @@
  *
  * Copyright (c) 1991-2000, University of Groningen, The Netherlands.
  * Copyright (c) 2001-2004, The GROMACS development team.
- * Copyright (c) 2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
+ * Copyright (c) 2013,2014,2015,2016,2017,2018,2019, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -111,9 +111,7 @@ static void NHC_trotter(const t_grpopts *opts, int nvar, const gmx_ekindata_t *e
     int           i, j, mi, mj;
     double        Ekin, Efac, reft, kT, nd;
     double        dt;
-    t_grp_tcstat *tcstat;
     double       *ivxi, *ixi;
-    double       *iQinv;
     double       *GQ;
     gmx_bool      bBarostat;
     int           mstepsi, mstepsj;
@@ -139,17 +137,18 @@ static void NHC_trotter(const t_grpopts *opts, int nvar, const gmx_ekindata_t *e
 
         ivxi = &vxi[i*nh];
         ixi  = &xi[i*nh];
+        gmx::ArrayRef<const double> iQinv;
         if (bBarostat)
         {
-            iQinv = &(MassQ->QPinv[i*nh]);
+            iQinv = gmx::arrayRefFromArray(&MassQ->QPinv[i*nh], nh);
             nd    = 1.0; /* THIS WILL CHANGE IF NOT ISOTROPIC */
             reft  = std::max<real>(0, opts->ref_t[0]);
             Ekin  = gmx::square(*veta)/MassQ->Winv;
         }
         else
         {
-            iQinv  = &(MassQ->Qinv[i*nh]);
-            tcstat = &ekind->tcstat[i];
+            iQinv  = gmx::arrayRefFromArray(&MassQ->Qinv[i*nh], nh);
+            const t_grp_tcstat *tcstat = &ekind->tcstat[i];
             nd     = opts->nrdf[i];
             reft   = std::max<real>(0, opts->ref_t[i]);
             if (bEkinAveVel)
@@ -736,7 +735,7 @@ void berendsen_pscale(const t_inputrec *ir, const matrix mu,
     inc_nrnb(nrnb, eNR_PCOUPL, nr_atoms);
 }
 
-void berendsen_tcoupl(const t_inputrec *ir, const gmx_ekindata_t *ekind, real dt,
+void berendsen_tcoupl(const t_inputrec *ir, gmx_ekindata_t *ekind, real dt,
                       std::vector<double> &therm_integral)
 {
     const t_grpopts *opts = &ir->opts;
@@ -781,7 +780,8 @@ void berendsen_tcoupl(const t_inputrec *ir, const gmx_ekindata_t *ekind, real dt
 void andersen_tcoupl(const t_inputrec *ir, int64_t step,
                      const t_commrec *cr, const t_mdatoms *md,
                      gmx::ArrayRef<gmx::RVec> v,
-                     real rate, const gmx_bool *randomize, const real *boltzfac)
+                     real rate, const std::vector<bool> &randomize,
+                     gmx::ArrayRef<const real> boltzfac)
 {
     const int                                 *gatindex = (DOMAINDECOMP(cr) ? cr->dd->globalAtomIndices.data() : nullptr);
     int                                        i;
@@ -855,7 +855,8 @@ void nosehoover_tcoupl(const t_grpopts *opts, const gmx_ekindata_t *ekind, real 
 void trotter_update(const t_inputrec *ir, int64_t step, gmx_ekindata_t *ekind,
                     const gmx_enerdata_t *enerd, t_state *state,
                     const tensor vir, const t_mdatoms *md,
-                    const t_extmass *MassQ, const int * const *trotter_seqlist, int trotter_seqno)
+                    const t_extmass *MassQ, gmx::ArrayRef < std::vector < int>> trotter_seqlist,
+                    int trotter_seqno)
 {
 
     int              n, i, d, ngtc, gc = 0, t;
@@ -864,7 +865,6 @@ void trotter_update(const t_inputrec *ir, int64_t step, gmx_ekindata_t *ekind,
     int64_t          step_eff;
     real             dt;
     double          *scalefac, dtc;
-    const int       *trotter_seq;
     rvec             sumv = {0, 0, 0};
     gmx_bool         bCouple;
 
@@ -883,7 +883,7 @@ void trotter_update(const t_inputrec *ir, int64_t step, gmx_ekindata_t *ekind,
     bCouple = (ir->nsttcouple == 1 ||
                do_per_step(step_eff+ir->nsttcouple, ir->nsttcouple));
 
-    trotter_seq = trotter_seqlist[trotter_seqno];
+    const gmx::ArrayRef<const int> trotter_seq = trotter_seqlist[trotter_seqno];
 
     if ((trotter_seq[0] == etrtSKIPALL) || (!bCouple))
     {
@@ -987,7 +987,7 @@ extern void init_npt_masses(const t_inputrec *ir, t_state *state, t_extmass *Mas
     {
         if (bInit)
         {
-            snew(MassQ->Qinv, ngtc);
+            MassQ->Qinv.resize(ngtc);
         }
         for (i = 0; (i < ngtc); i++)
         {
@@ -1033,7 +1033,7 @@ extern void init_npt_masses(const t_inputrec *ir, t_state *state, t_extmass *Mas
         /* Allocate space for thermostat variables */
         if (bInit)
         {
-            snew(MassQ->Qinv, ngtc*nh);
+            MassQ->Qinv.resize(ngtc * nh);
         }
 
         /* now, set temperature variables */
@@ -1068,12 +1068,12 @@ extern void init_npt_masses(const t_inputrec *ir, t_state *state, t_extmass *Mas
     }
 }
 
-int **init_npt_vars(const t_inputrec *ir, t_state *state, t_extmass *MassQ, gmx_bool bTrotter)
+std::array < std::vector < int>, ettTSEQMAX> init_npt_vars(const t_inputrec *ir, t_state *state,
+                                                           t_extmass *MassQ, gmx_bool bTrotter)
 {
     int              i, j, nnhpres, nh;
     const t_grpopts *opts;
     real             bmass, qmass, reft, kT;
-    int            **trotter_seq;
 
     opts    = &(ir->opts); /* just for ease of referencing */
     nnhpres = state->nnhpres;
@@ -1087,14 +1087,10 @@ int **init_npt_vars(const t_inputrec *ir, t_state *state, t_extmass *MassQ, gmx_
     init_npt_masses(ir, state, MassQ, TRUE);
 
     /* first, initialize clear all the trotter calls */
-    snew(trotter_seq, ettTSEQMAX);
+    std::array < std::vector < int>, ettTSEQMAX> trotter_seq;
     for (i = 0; i < ettTSEQMAX; i++)
     {
-        snew(trotter_seq[i], NTROTTERPARTS);
-        for (j = 0; j < NTROTTERPARTS; j++)
-        {
-            trotter_seq[i][j] = etrtNONE;
-        }
+        trotter_seq[i].resize(NTROTTERPARTS, etrtNONE);
         trotter_seq[i][0] = etrtSKIPALL;
     }
 
@@ -1220,7 +1216,7 @@ int **init_npt_vars(const t_inputrec *ir, t_state *state, t_extmass *MassQ, gmx_
             bmass = DIM*DIM; /* recommended mass parameters for isotropic barostat */
     }
 
-    snew(MassQ->QPinv, nnhpres*opts->nhchainlength);
+    MassQ->QPinv.resize(nnhpres*opts->nhchainlength);
 
     /* barostat temperature */
     if ((ir->tau_p > 0) && (opts->ref_t[0] > 0))
@@ -1568,19 +1564,18 @@ void vrescale_tcoupl(const t_inputrec *ir, int64_t step,
 void rescale_velocities(const gmx_ekindata_t *ekind, const t_mdatoms *mdatoms,
                         int start, int end, rvec v[])
 {
-    t_grp_acc      *gstat;
-    t_grp_tcstat   *tcstat;
     unsigned short *cACC, *cTC;
     int             ga, gt, n, d;
     real            lg;
     rvec            vrel;
 
-    tcstat = ekind->tcstat;
     cTC    = mdatoms->cTC;
+
+    gmx::ArrayRef<const t_grp_tcstat> tcstat = ekind->tcstat;
 
     if (ekind->bNEMD)
     {
-        gstat  = ekind->grpstat;
+        gmx::ArrayRef<const t_grp_acc> gstat = ekind->grpstat;
         cACC   = mdatoms->cACC;
 
         ga = 0;

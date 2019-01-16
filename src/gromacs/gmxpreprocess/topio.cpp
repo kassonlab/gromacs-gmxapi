@@ -3,7 +3,7 @@
  *
  * Copyright (c) 1991-2000, University of Groningen, The Netherlands.
  * Copyright (c) 2001-2004, The GROMACS development team.
- * Copyright (c) 2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
+ * Copyright (c) 2013,2014,2015,2016,2017,2018,2019, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -48,11 +48,13 @@
 
 #include <algorithm>
 
+#include <unordered_set>
 #include <sys/types.h>
 
 #include "gromacs/fileio/gmxfio.h"
 #include "gromacs/fileio/warninp.h"
 #include "gromacs/gmxpreprocess/gmxcpp.h"
+#include "gromacs/gmxpreprocess/gpp_atomtype.h"
 #include "gromacs/gmxpreprocess/gpp_bond_atomtype.h"
 #include "gromacs/gmxpreprocess/gpp_nextnb.h"
 #include "gromacs/gmxpreprocess/grompp-impl.h"
@@ -81,47 +83,6 @@
 
 #define OPENDIR     '[' /* starting sign for directive */
 #define CLOSEDIR    ']' /* ending sign for directive   */
-
-static void free_nbparam(t_nbparam **param, int nr)
-{
-    int i;
-
-    assert(param);
-    for (i = 0; i < nr; i++)
-    {
-        assert(param[i]);
-        sfree(param[i]);
-    }
-    sfree(param);
-}
-
-static int copy_nbparams(t_nbparam **param, int ftype, t_params *plist, int nr)
-{
-    int i, j, f;
-    int nrfp, ncopy;
-
-    nrfp = NRFP(ftype);
-
-    ncopy = 0;
-    for (i = 0; i < nr; i++)
-    {
-        for (j = 0; j <= i; j++)
-        {
-            assert(param);
-            if (param[i][j].bSet)
-            {
-                for (f = 0; f < nrfp; f++)
-                {
-                    plist->param[nr*i+j].c[f] = param[i][j].c[f];
-                    plist->param[nr*j+i].c[f] = param[i][j].c[f];
-                }
-                ncopy++;
-            }
-        }
-    }
-
-    return ncopy;
-}
 
 static void gen_pairs(t_params *nbs, t_params *pairs, real fudge, int comb)
 {
@@ -176,7 +137,7 @@ static void gen_pairs(t_params *nbs, t_params *pairs, real fudge, int comb)
     }
 }
 
-double check_mol(const gmx_mtop_t *mtop, warninp_t wi)
+double check_mol(const gmx_mtop_t *mtop, warninp *wi)
 {
     char     buf[256];
     int      i, ri, pt;
@@ -282,7 +243,7 @@ static void sum_q(const t_atoms *atoms, int numMols,
 }
 
 static void get_nbparm(char *nb_str, char *comb_str, int *nb, int *comb,
-                       warninp_t wi)
+                       warninp *wi)
 {
     int  i;
     char warn_buf[STRLEN];
@@ -328,7 +289,7 @@ static void get_nbparm(char *nb_str, char *comb_str, int *nb, int *comb,
 }
 
 static char ** cpp_opts(const char *define, const char *include,
-                        warninp_t wi)
+                        warninp *wi)
 {
     int         n, len;
     int         ncppopts = 0;
@@ -415,7 +376,7 @@ static void make_atoms_sys(const std::vector<gmx_molblock_t> &molblock,
 static char **read_topol(const char *infile, const char *outfile,
                          const char *define, const char *include,
                          t_symtab    *symtab,
-                         gpp_atomtype_t atype,
+                         gpp_atomtype *atype,
                          int         *nrmols,
                          t_molinfo   **molinfo,
                          t_molinfo   **intermolecular_interactions,
@@ -429,7 +390,7 @@ static char **read_topol(const char *infile, const char *outfile,
                          bool        bFEP,
                          bool        bZero,
                          bool        usingFullRangeElectrostatics,
-                         warninp_t       wi)
+                         warninp    *wi)
 {
     FILE                 *out;
     int                   i, sl, nb_funct;
@@ -441,13 +402,13 @@ static char **read_topol(const char *infile, const char *outfile,
     double                fLJ, fQQ, fPOW;
     t_molinfo            *mi0   = nullptr;
     DirStack             *DS;
-    directive             d, newd;
+    Directive             d, newd;
     t_nbparam           **nbparam, **pair;
     gmx::ExclusionBlocks *exclusionBlocks;
     real                  fudgeLJ = -1;    /* Multiplication factor to generate 1-4 from LJ */
     bool                  bReadDefaults, bReadMolType, bGenPairs, bWarn_copy_A_B;
     double                qt = 0, qBt = 0; /* total charge */
-    t_bond_atomtype       batype;
+    gpp_bond_atomtype    *batype;
     int                   lastcg = -1;
     int                   dcatt  = -1, nmol_couple;
     /* File handling variables */
@@ -481,12 +442,12 @@ static char **read_topol(const char *infile, const char *outfile,
     }
 
     /* some local variables */
-    DS_Init(&DS);                /* directive stack	*/
-    nmol            = 0;         /* no molecules yet...	*/
-    d               = d_invalid; /* first thing should be a directive */
-    nbparam         = nullptr;   /* The temporary non-bonded matrix */
-    pair            = nullptr;   /* The temporary pair interaction matrix */
-    exclusionBlocks = nullptr;   /* the extra exclusions */
+    DS_Init(&DS);                           /* directive stack	*/
+    nmol            = 0;                    /* no molecules yet...	*/
+    d               = Directive::d_invalid; /* first thing should be a directive */
+    nbparam         = nullptr;              /* The temporary non-bonded matrix */
+    pair            = nullptr;              /* The temporary pair interaction matrix */
+    exclusionBlocks = nullptr;              /* the extra exclusions */
     nb_funct        = F_LJ;
 
     *reppow  = 12.0;      /* Default value for repulsion power     */
@@ -587,7 +548,7 @@ static char **read_topol(const char *infile, const char *outfile,
                     }
                     trim (dirstr);
 
-                    if ((newd = str2dir(dirstr)) == d_invalid)
+                    if ((newd = str2dir(dirstr)) == Directive::d_invalid)
                     {
                         sprintf(errbuf, "Invalid directive %s", dirstr);
                         warning_error(wi, errbuf);
@@ -606,10 +567,10 @@ static char **read_topol(const char *infile, const char *outfile,
                                been present, and which actually are */
                             gmx_fatal(FARGS, "%s\nInvalid order for directive %s",
                                       cpp_error(&handle, eCPP_SYNTAX), dir2str(newd));
-                            /* d = d_invalid; */
+                            /* d = Directive::d_invalid; */
                         }
 
-                        if (d == d_intermolecular_interactions)
+                        if (d == Directive::d_intermolecular_interactions)
                         {
                             if (*intermolecular_interactions == nullptr)
                             {
@@ -627,7 +588,7 @@ static char **read_topol(const char *infile, const char *outfile,
                     }
                     sfree(dirstr);
                 }
-                else if (d != d_invalid)
+                else if (d != Directive::d_invalid)
                 {
                     /* Not a directive, just a plain string
                      * use a gigantic switch to decode,
@@ -635,7 +596,7 @@ static char **read_topol(const char *infile, const char *outfile,
                      */
                     switch (d)
                     {
-                        case d_defaults:
+                        case Directive::d_defaults:
                             if (bReadDefaults)
                             {
                                 gmx_fatal(FARGS, "%s\nFound a second defaults directive.\n",
@@ -676,21 +637,21 @@ static char **read_topol(const char *infile, const char *outfile,
                                     *reppow   = fPOW;
                                 }
                             }
-                            nb_funct = ifunc_index(d_nonbond_params, nb_funct);
+                            nb_funct = ifunc_index(Directive::d_nonbond_params, nb_funct);
 
                             break;
-                        case d_atomtypes:
+                        case Directive::d_atomtypes:
                             push_at(symtab, atype, batype, pline, nb_funct,
                                     &nbparam, bGenPairs ? &pair : nullptr, wi);
                             break;
 
-                        case d_bondtypes:
+                        case Directive::d_bondtypes:
                             push_bt(d, plist, 2, nullptr, batype, pline, wi);
                             break;
-                        case d_constrainttypes:
+                        case Directive::d_constrainttypes:
                             push_bt(d, plist, 2, nullptr, batype, pline, wi);
                             break;
-                        case d_pairtypes:
+                        case Directive::d_pairtypes:
                             if (bGenPairs)
                             {
                                 push_nbt(d, pair, atype, pline, F_LJ14, wi);
@@ -700,47 +661,35 @@ static char **read_topol(const char *infile, const char *outfile,
                                 push_bt(d, plist, 2, atype, nullptr, pline, wi);
                             }
                             break;
-                        case d_angletypes:
+                        case Directive::d_angletypes:
                             push_bt(d, plist, 3, nullptr, batype, pline, wi);
                             break;
-                        case d_dihedraltypes:
+                        case Directive::d_dihedraltypes:
                             /* Special routine that can read both 2 and 4 atom dihedral definitions. */
                             push_dihedraltype(d, plist, batype, pline, wi);
                             break;
 
-                        case d_nonbond_params:
+                        case Directive::d_nonbond_params:
                             push_nbt(d, nbparam, atype, pline, nb_funct, wi);
                             break;
-                        /*
-                           case d_blocktype:
-                           nblock++;
-                           srenew(block,nblock);
-                           srenew(blockinfo,nblock);
-                           blk0=&(block[nblock-1]);
-                           bi0=&(blockinfo[nblock-1]);
-                           init_top(blk0);
-                           init_molinfo(bi0);
-                           push_molt(symtab,bi0,pline);
-                           break;
-                         */
 
-                        case d_implicit_genborn_params:
+                        case Directive::d_implicit_genborn_params:
                             // Skip this line, so old topologies with
                             // GB parameters can be read.
                             break;
 
-                        case d_implicit_surface_params:
+                        case Directive::d_implicit_surface_params:
                             // Skip this line, so that any topologies
                             // with surface parameters can be read
                             // (even though these were never formally
                             // supported).
                             break;
 
-                        case d_cmaptypes:
+                        case Directive::d_cmaptypes:
                             push_cmaptype(d, plist, 5, atype, batype, pline, wi);
                             break;
 
-                        case d_moleculetype:
+                        case Directive::d_moleculetype:
                         {
                             if (!bReadMolType)
                             {
@@ -785,47 +734,47 @@ static char **read_topol(const char *infile, const char *outfile,
                             mi0->atoms.havePdbInfo          = FALSE;
                             break;
                         }
-                        case d_atoms:
+                        case Directive::d_atoms:
                             push_atom(symtab, &(mi0->cgs), &(mi0->atoms), atype, pline, &lastcg, wi);
                             break;
 
-                        case d_pairs:
+                        case Directive::d_pairs:
                             push_bond(d, plist, mi0->plist, &(mi0->atoms), atype, pline, FALSE,
                                       bGenPairs, *fudgeQQ, bZero, &bWarn_copy_A_B, wi);
                             break;
-                        case d_pairs_nb:
+                        case Directive::d_pairs_nb:
                             push_bond(d, plist, mi0->plist, &(mi0->atoms), atype, pline, FALSE,
                                       FALSE, 1.0, bZero, &bWarn_copy_A_B, wi);
                             break;
 
-                        case d_vsites2:
-                        case d_vsites3:
-                        case d_vsites4:
-                        case d_bonds:
-                        case d_angles:
-                        case d_constraints:
-                        case d_settles:
-                        case d_position_restraints:
-                        case d_angle_restraints:
-                        case d_angle_restraints_z:
-                        case d_distance_restraints:
-                        case d_orientation_restraints:
-                        case d_dihedral_restraints:
-                        case d_dihedrals:
-                        case d_polarization:
-                        case d_water_polarization:
-                        case d_thole_polarization:
+                        case Directive::d_vsites2:
+                        case Directive::d_vsites3:
+                        case Directive::d_vsites4:
+                        case Directive::d_bonds:
+                        case Directive::d_angles:
+                        case Directive::d_constraints:
+                        case Directive::d_settles:
+                        case Directive::d_position_restraints:
+                        case Directive::d_angle_restraints:
+                        case Directive::d_angle_restraints_z:
+                        case Directive::d_distance_restraints:
+                        case Directive::d_orientation_restraints:
+                        case Directive::d_dihedral_restraints:
+                        case Directive::d_dihedrals:
+                        case Directive::d_polarization:
+                        case Directive::d_water_polarization:
+                        case Directive::d_thole_polarization:
                             push_bond(d, plist, mi0->plist, &(mi0->atoms), atype, pline, TRUE,
                                       bGenPairs, *fudgeQQ, bZero, &bWarn_copy_A_B, wi);
                             break;
-                        case d_cmap:
+                        case Directive::d_cmap:
                             push_cmap(d, plist, mi0->plist, &(mi0->atoms), atype, pline, wi);
                             break;
 
-                        case d_vsitesn:
+                        case Directive::d_vsitesn:
                             push_vsitesn(d, mi0->plist, &(mi0->atoms), pline, wi);
                             break;
-                        case d_exclusions:
+                        case Directive::d_exclusions:
                             GMX_ASSERT(exclusionBlocks, "exclusionBlocks must always be allocated so exclusions can be processed");
                             if (!exclusionBlocks[nmol-1].nr)
                             {
@@ -833,11 +782,11 @@ static char **read_topol(const char *infile, const char *outfile,
                             }
                             push_excl(pline, &(exclusionBlocks[nmol-1]), wi);
                             break;
-                        case d_system:
+                        case Directive::d_system:
                             trim(pline);
                             title = put_symtab(symtab, pline);
                             break;
-                        case d_molecules:
+                        case Directive::d_molecules:
                         {
                             int      whichmol;
                             bool     bCouple;
@@ -904,6 +853,14 @@ static char **read_topol(const char *infile, const char *outfile,
         }
     }
     while (!done);
+
+    // Check that all strings defined with -D were used when processing topology
+    std::string unusedDefineWarning = checkAndWarnForUnusedDefines(*handle);
+    if (!unusedDefineWarning.empty())
+    {
+        warning(wi, unusedDefineWarning);
+    }
+
     sfree(cpp_opts_return);
 
     if (out)
@@ -995,14 +952,14 @@ char **do_top(bool                          bVerbose,
               int                          *combination_rule,
               double                       *repulsion_power,
               real                         *fudgeQQ,
-              gpp_atomtype_t                atype,
+              gpp_atomtype                 *atype,
               int                          *nrmols,
               t_molinfo                   **molinfo,
               t_molinfo                   **intermolecular_interactions,
               const t_inputrec             *ir,
               std::vector<gmx_molblock_t>  *molblock,
               bool                         *ffParametrizedWithHBondConstraints,
-              warninp_t                     wi)
+              warninp                      *wi)
 {
     /* Tmpfile might contain a long path */
     const char *tmpfile;
@@ -1359,7 +1316,7 @@ static void generate_qmexcl_moltype(gmx_moltype_t *molt, const unsigned char *gr
     free(blink);
 } /* generate_qmexcl */
 
-void generate_qmexcl(gmx_mtop_t *sys, t_inputrec *ir, warninp_t wi, GmxQmmmMode qmmmMode)
+void generate_qmexcl(gmx_mtop_t *sys, t_inputrec *ir, warninp *wi, GmxQmmmMode qmmmMode)
 {
     /* This routine expects molt->molt[m].ilist to be of size F_NRE and ordered.
      */

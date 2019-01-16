@@ -1,7 +1,7 @@
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
- * Copyright (c) 2012,2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
+ * Copyright (c) 2012,2013,2014,2015,2016,2017,2018,2019, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -411,7 +411,7 @@ nbnxn_atomdata_init_simple_exclusion_masks(nbnxn_atomdata_t *nbat)
      */
     int        simd_4xn_diag_size;
 
-    simd_4xn_diag_size = std::max(NBNXN_CPU_CLUSTER_I_SIZE, simd_width);
+    simd_4xn_diag_size = std::max(c_nbnxnCpuIClusterSize, simd_width);
     snew_aligned(nbat->simd_4xn_diagonal_j_minus_i, simd_4xn_diag_size, NBNXN_MEM_ALIGN);
     for (int j = 0; j < simd_4xn_diag_size; j++)
     {
@@ -434,7 +434,7 @@ nbnxn_atomdata_init_simple_exclusion_masks(nbnxn_atomdata_t *nbat)
      * In single precision this means the real and integer SIMD registers
      * are of equal size.
      */
-    simd_excl_size = NBNXN_CPU_CLUSTER_I_SIZE*simd_width;
+    simd_excl_size = c_nbnxnCpuIClusterSize*simd_width;
 #if GMX_DOUBLE && !GMX_SIMD_HAVE_INT32_LOGICAL
     snew_aligned(nbat->simd_exclusion_filter64, simd_excl_size,   NBNXN_MEM_ALIGN);
 #else
@@ -465,7 +465,7 @@ nbnxn_atomdata_init_simple_exclusion_masks(nbnxn_atomdata_t *nbat)
     // Matching code exists in set_ci_top_excls() to generate indices into this array.
     // Those indices are used in the kernels.
 
-    simd_excl_size = NBNXN_CPU_CLUSTER_I_SIZE*NBNXN_CPU_CLUSTER_I_SIZE;
+    simd_excl_size = c_nbnxnCpuIClusterSize*c_nbnxnCpuIClusterSize;
     const real simdFalse =  0.0;
     const real simdTrue  =  1.0;
     real      *simd_interaction_array;
@@ -484,18 +484,16 @@ nbnxn_atomdata_init_simple_exclusion_masks(nbnxn_atomdata_t *nbat)
 }
 #endif
 
-/* Initializes an nbnxn_atomdata_t data structure */
-void nbnxn_atomdata_init(const gmx::MDLogger &mdlog,
-                         nbnxn_atomdata_t *nbat,
-                         int nb_kernel_type,
-                         int enbnxninitcombrule,
-                         int ntype, const real *nbfp,
-                         int n_energygroups,
-                         int nout,
-                         nbnxn_alloc_t *alloc,
-                         nbnxn_free_t  *free)
+/* Initializes the nbnxn_atomdata_t parameters data structure */
+static void nbnxn_atomdata_params_init(const gmx::MDLogger &mdlog,
+                                       nbnxn_atomdata_t *nbat,
+                                       int nb_kernel_type,
+                                       int enbnxninitcombrule,
+                                       int ntype, const real *nbfp,
+                                       int n_energygroups,
+                                       nbnxn_alloc_t *alloc,
+                                       nbnxn_free_t  *free)
 {
-    int      nth;
     real     c6, c12, tol;
     char    *ptr;
     gmx_bool simple, bCombGeom, bCombLB, bSIMD;
@@ -666,16 +664,52 @@ void nbnxn_atomdata_init(const gmx::MDLogger &mdlog,
 
     set_lj_parameter_data(nbat, bSIMD);
 
-    nbat->natoms  = 0;
-    nbat->type    = nullptr;
-    nbat->lj_comb = nullptr;
+    nbat->nenergrp = n_energygroups;
+    if (!simple)
+    {
+        // We now check for energy groups already when starting mdrun
+        GMX_RELEASE_ASSERT(n_energygroups == 1, "GPU kernels do not support energy groups");
+    }
+    /* Temporary storage goes as #grp^3*simd_width^2/2, so limit to 64 */
+    if (nbat->nenergrp > 64)
+    {
+        gmx_fatal(FARGS, "With NxN kernels not more than 64 energy groups are supported\n");
+    }
+    nbat->neg_2log = 1;
+    while (nbat->nenergrp > (1<<nbat->neg_2log))
+    {
+        nbat->neg_2log++;
+    }
+}
+
+/* Initializes an nbnxn_atomdata_t data structure */
+void nbnxn_atomdata_init(const gmx::MDLogger &mdlog,
+                         nbnxn_atomdata_t *nbat,
+                         int nb_kernel_type,
+                         int enbnxninitcombrule,
+                         int ntype, const real *nbfp,
+                         int n_energygroups,
+                         int nout,
+                         nbnxn_alloc_t *alloc,
+                         nbnxn_free_t  *free)
+{
+    nbnxn_atomdata_params_init(mdlog, nbat, nb_kernel_type,
+                               enbnxninitcombrule, ntype, nbfp, n_energygroups,
+                               alloc, free);
+
+    const gmx_bool simple = nbnxn_kernel_pairlist_simple(nb_kernel_type);
+    const gmx_bool bSIMD  = (nb_kernel_type == nbnxnk4xN_SIMD_4xN ||
+                             nb_kernel_type == nbnxnk4xN_SIMD_2xNN);
+
+    set_lj_parameter_data(nbat, bSIMD);
+
     if (simple)
     {
         int pack_x;
 
         if (bSIMD)
         {
-            pack_x = std::max(NBNXN_CPU_CLUSTER_I_SIZE,
+            pack_x = std::max(c_nbnxnCpuIClusterSize,
                               nbnxn_kernel_to_cluster_j_size(nb_kernel_type));
             switch (pack_x)
             {
@@ -701,25 +735,9 @@ void nbnxn_atomdata_init(const gmx::MDLogger &mdlog,
         nbat->XFormat = nbatXYZQ;
         nbat->FFormat = nbatXYZ;
     }
-    nbat->q        = nullptr;
-    nbat->nenergrp = n_energygroups;
-    if (!simple)
-    {
-        // We now check for energy groups already when starting mdrun
-        GMX_RELEASE_ASSERT(n_energygroups == 1, "GPU kernels do not support energy groups");
-    }
-    /* Temporary storage goes as #grp^3*simd_width^2/2, so limit to 64 */
-    if (nbat->nenergrp > 64)
-    {
-        gmx_fatal(FARGS, "With NxN kernels not more than 64 energy groups are supported\n");
-    }
-    nbat->neg_2log = 1;
-    while (nbat->nenergrp > (1<<nbat->neg_2log))
-    {
-        nbat->neg_2log++;
-    }
-    nbat->energrp = nullptr;
+
     nbat->alloc(reinterpret_cast<void **>(&nbat->shift_vec), SHIFTS*sizeof(*nbat->shift_vec));
+
     nbat->xstride = (nbat->XFormat == nbatXYZQ ? STRIDE_XYZQ : DIM);
     nbat->fstride = (nbat->FFormat == nbatXYZQ ? STRIDE_XYZQ : DIM);
     nbat->x       = nullptr;
@@ -745,9 +763,9 @@ void nbnxn_atomdata_init(const gmx::MDLogger &mdlog,
     nbat->buffer_flags.flag        = nullptr;
     nbat->buffer_flags.flag_nalloc = 0;
 
-    nth = gmx_omp_nthreads_get(emntNonbonded);
+    const int   nth = gmx_omp_nthreads_get(emntNonbonded);
 
-    ptr = getenv("GMX_USE_TREEREDUCE");
+    const char *ptr = getenv("GMX_USE_TREEREDUCE");
     if (ptr != nullptr)
     {
         nbat->bUseTreeReduce = (strtol(ptr, nullptr, 10) != 0);

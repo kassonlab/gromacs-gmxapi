@@ -3,7 +3,7 @@
  *
  * Copyright (c) 1991-2000, University of Groningen, The Netherlands.
  * Copyright (c) 2001-2004, The GROMACS development team.
- * Copyright (c) 2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
+ * Copyright (c) 2013,2014,2015,2016,2017,2018,2019, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -53,10 +53,13 @@
 #include "gromacs/gmxpreprocess/gen_ad.h"
 #include "gromacs/gmxpreprocess/gen_vsite.h"
 #include "gromacs/gmxpreprocess/gpp_nextnb.h"
+#include "gromacs/gmxpreprocess/grompp-impl.h"
 #include "gromacs/gmxpreprocess/h_db.h"
+#include "gromacs/gmxpreprocess/hackblock.h"
 #include "gromacs/gmxpreprocess/notset.h"
 #include "gromacs/gmxpreprocess/pgutil.h"
 #include "gromacs/gmxpreprocess/resall.h"
+#include "gromacs/gmxpreprocess/specbond.h"
 #include "gromacs/gmxpreprocess/topdirs.h"
 #include "gromacs/gmxpreprocess/topio.h"
 #include "gromacs/gmxpreprocess/toputil.h"
@@ -633,7 +636,7 @@ static void print_top_water(FILE *out, const char *ffdir, const char *water)
 
 static void print_top_system(FILE *out, const char *title)
 {
-    fprintf(out, "[ %s ]\n", dir2str(d_system));
+    fprintf(out, "[ %s ]\n", dir2str(Directive::d_system));
     fprintf(out, "; Name\n");
     fprintf(out, "%s\n\n", title[0] ? title : "Protein");
 }
@@ -661,7 +664,7 @@ void print_top_mols(FILE *out,
 
     if (nmol)
     {
-        fprintf(out, "[ %s ]\n", dir2str(d_molecules));
+        fprintf(out, "[ %s ]\n", dir2str(Directive::d_molecules));
         fprintf(out, "; %-15s %5s\n", "Compound", "#mols");
         for (int i = 0; i < nmol; i++)
         {
@@ -673,34 +676,34 @@ void print_top_mols(FILE *out,
 void write_top(FILE *out, const char *pr, const char *molname,
                t_atoms *at, bool bRTPresname,
                int bts[], t_params plist[], t_excls excls[],
-               gpp_atomtype_t atype, int *cgnr, int nrexcl)
+               gpp_atomtype *atype, int *cgnr, int nrexcl)
 /* NOTE: nrexcl is not the size of *excl! */
 {
     if (at && atype && cgnr)
     {
-        fprintf(out, "[ %s ]\n", dir2str(d_moleculetype));
+        fprintf(out, "[ %s ]\n", dir2str(Directive::d_moleculetype));
         fprintf(out, "; %-15s %5s\n", "Name", "nrexcl");
         fprintf(out, "%-15s %5d\n\n", molname ? molname : "Protein", nrexcl);
 
         print_atoms(out, atype, at, cgnr, bRTPresname);
-        print_bondeds(out, at->nr, d_bonds,      F_BONDS,    bts[ebtsBONDS], plist);
-        print_bondeds(out, at->nr, d_constraints, F_CONSTR,   0,              plist);
-        print_bondeds(out, at->nr, d_constraints, F_CONSTRNC, 0,              plist);
-        print_bondeds(out, at->nr, d_pairs,      F_LJ14,     0,              plist);
+        print_bondeds(out, at->nr, Directive::d_bonds,      F_BONDS,    bts[ebtsBONDS], plist);
+        print_bondeds(out, at->nr, Directive::d_constraints, F_CONSTR,   0,              plist);
+        print_bondeds(out, at->nr, Directive::d_constraints, F_CONSTRNC, 0,              plist);
+        print_bondeds(out, at->nr, Directive::d_pairs,      F_LJ14,     0,              plist);
         print_excl(out, at->nr, excls);
-        print_bondeds(out, at->nr, d_angles,     F_ANGLES,   bts[ebtsANGLES], plist);
-        print_bondeds(out, at->nr, d_dihedrals,  F_PDIHS,    bts[ebtsPDIHS], plist);
-        print_bondeds(out, at->nr, d_dihedrals,  F_IDIHS,    bts[ebtsIDIHS], plist);
-        print_bondeds(out, at->nr, d_cmap,       F_CMAP,     bts[ebtsCMAP],  plist);
-        print_bondeds(out, at->nr, d_polarization, F_POLARIZATION,   0,       plist);
-        print_bondeds(out, at->nr, d_thole_polarization, F_THOLE_POL, 0,       plist);
-        print_bondeds(out, at->nr, d_vsites2,    F_VSITE2,   0,              plist);
-        print_bondeds(out, at->nr, d_vsites3,    F_VSITE3,   0,              plist);
-        print_bondeds(out, at->nr, d_vsites3,    F_VSITE3FD, 0,              plist);
-        print_bondeds(out, at->nr, d_vsites3,    F_VSITE3FAD, 0,              plist);
-        print_bondeds(out, at->nr, d_vsites3,    F_VSITE3OUT, 0,              plist);
-        print_bondeds(out, at->nr, d_vsites4,    F_VSITE4FD, 0,              plist);
-        print_bondeds(out, at->nr, d_vsites4,    F_VSITE4FDN, 0,             plist);
+        print_bondeds(out, at->nr, Directive::d_angles,     F_ANGLES,   bts[ebtsANGLES], plist);
+        print_bondeds(out, at->nr, Directive::d_dihedrals,  F_PDIHS,    bts[ebtsPDIHS], plist);
+        print_bondeds(out, at->nr, Directive::d_dihedrals,  F_IDIHS,    bts[ebtsIDIHS], plist);
+        print_bondeds(out, at->nr, Directive::d_cmap,       F_CMAP,     bts[ebtsCMAP],  plist);
+        print_bondeds(out, at->nr, Directive::d_polarization, F_POLARIZATION,   0,       plist);
+        print_bondeds(out, at->nr, Directive::d_thole_polarization, F_THOLE_POL, 0,       plist);
+        print_bondeds(out, at->nr, Directive::d_vsites2,    F_VSITE2,   0,              plist);
+        print_bondeds(out, at->nr, Directive::d_vsites3,    F_VSITE3,   0,              plist);
+        print_bondeds(out, at->nr, Directive::d_vsites3,    F_VSITE3FD, 0,              plist);
+        print_bondeds(out, at->nr, Directive::d_vsites3,    F_VSITE3FAD, 0,              plist);
+        print_bondeds(out, at->nr, Directive::d_vsites3,    F_VSITE3OUT, 0,              plist);
+        print_bondeds(out, at->nr, Directive::d_vsites4,    F_VSITE4FD, 0,              plist);
+        print_bondeds(out, at->nr, Directive::d_vsites4,    F_VSITE4FDN, 0,             plist);
 
         if (pr)
         {
@@ -1502,7 +1505,7 @@ scrub_charge_groups(int *cgnr, int natoms)
 
 
 void pdb2top(FILE *top_file, const char *posre_fn, const char *molname,
-             t_atoms *atoms, rvec **x, gpp_atomtype_t atype, t_symtab *tab,
+             t_atoms *atoms, rvec **x, gpp_atomtype *atype, t_symtab *tab,
              int nrtp, t_restp rtp[],
              t_restp *restp, t_hackblock *hb,
              bool bAllowMissing,

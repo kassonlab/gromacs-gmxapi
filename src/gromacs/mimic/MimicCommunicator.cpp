@@ -1,7 +1,7 @@
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
- * Copyright (c) 2018, by the GROMACS development team, led by
+ * Copyright (c) 2018,2019, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -62,7 +62,7 @@ constexpr int TYPE_INT = 0, TYPE_DOUBLE = 0;
  */
 static void MCL_init_client(const char *) // NOLINT(readability-named-parameter)
 {
-    gmx_fatal(FARGS, "GROMACS is compiled without MiMiC support! Please, recompile with -DGMX_MIMIC=ON");
+    GMX_RELEASE_ASSERT(GMX_MIMIC, "GROMACS is compiled without MiMiC support! Please, recompile with -DGMX_MIMIC=ON");
 }
 
 /*! \brief Stub communication library function to call in case if
@@ -70,7 +70,7 @@ static void MCL_init_client(const char *) // NOLINT(readability-named-parameter)
  */
 static void MCL_send(void *, int, int, int) // NOLINT(readability-named-parameter)
 {
-    gmx_fatal(FARGS, "GROMACS is compiled without MiMiC support! Please, recompile with -DGMX_MIMIC=ON");
+    GMX_RELEASE_ASSERT(GMX_MIMIC, "GROMACS is compiled without MiMiC support! Please, recompile with -DGMX_MIMIC=ON");
 }
 
 /*! \brief Stub communication library function to call in case if
@@ -78,15 +78,15 @@ static void MCL_send(void *, int, int, int) // NOLINT(readability-named-paramete
  */
 static void MCL_receive(void *, int, int, int) // NOLINT(readability-named-parameter)
 {
-    gmx_fatal(FARGS, "GROMACS is compiled without MiMiC support! Please, recompile with -DGMX_MIMIC=ON");
+    GMX_RELEASE_ASSERT(GMX_MIMIC, "GROMACS is compiled without MiMiC support! Please, recompile with -DGMX_MIMIC=ON");
 }
 
 /*! \brief Stub communication library function to call in case if
  * GROMACS is compiled without MiMiC. Calling causes GROMACS to exit!
  */
-static void MCL_destroy() // NOLINT(readability-named-parameter)
+static void MCL_destroy()
 {
-    gmx_fatal(FARGS, "GROMACS is compiled without MiMiC support! Please, recompile with -DGMX_MIMIC=ON");
+    GMX_RELEASE_ASSERT(GMX_MIMIC, "GROMACS is compiled without MiMiC support! Please, recompile with -DGMX_MIMIC=ON");
 }
 #endif
 
@@ -97,8 +97,8 @@ void gmx::MimicCommunicator::init()
     return MCL_init_client(path);
 }
 
-void gmx::MimicCommunicator::sendInitData(gmx_mtop_t                 *mtop,
-                                          HostVector<gmx::RVec>       coords)
+void gmx::MimicCommunicator::sendInitData(gmx_mtop_t                  *mtop,
+                                          PaddedHostVector<gmx::RVec>  coords)
 {
     MCL_send(&mtop->natoms, 1, TYPE_INT, 0);
     MCL_send(&mtop->atomtypes.nr, 1, TYPE_INT, 0);
@@ -239,7 +239,7 @@ int64_t gmx::MimicCommunicator::getStepNumber()
     return steps;
 }
 
-void gmx::MimicCommunicator::getCoords(HostVector<RVec> *x, const int natoms)
+void gmx::MimicCommunicator::getCoords(PaddedHostVector<RVec> *x, const int natoms)
 {
     std::vector<double> coords(natoms * 3);
     MCL_receive(&*coords.begin(), 3 * natoms, TYPE_DOUBLE, 0);

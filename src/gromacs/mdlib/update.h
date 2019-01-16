@@ -3,7 +3,7 @@
  *
  * Copyright (c) 1991-2000, University of Groningen, The Netherlands.
  * Copyright (c) 2001-2004, The GROMACS development team.
- * Copyright (c) 2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
+ * Copyright (c) 2013,2014,2015,2016,2017,2018,2019, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -39,6 +39,7 @@
 
 #include "gromacs/math/paddedvector.h"
 #include "gromacs/math/vectypes.h"
+#include "gromacs/mdtypes/md_enums.h"
 #include "gromacs/timing/wallcycle.h"
 #include "gromacs/utility/arrayref.h"
 #include "gromacs/utility/basedefinitions.h"
@@ -214,29 +215,28 @@ void
 restore_ekinstate_from_state(const t_commrec *cr,
                              gmx_ekindata_t *ekind, const ekinstate_t *ekinstate);
 
-void berendsen_tcoupl(const t_inputrec *ir, const gmx_ekindata_t *ekind, real dt,
+void berendsen_tcoupl(const t_inputrec *ir, gmx_ekindata_t *ekind, real dt,
                       std::vector<double> &therm_integral); //NOLINT(google-runtime-references)
 
 void andersen_tcoupl(const t_inputrec *ir, int64_t step,
                      const t_commrec *cr, const t_mdatoms *md,
                      gmx::ArrayRef<gmx::RVec> v,
-                     real rate, const gmx_bool *randomize, const real *boltzfac);
+                     real rate, const std::vector<bool> &randomize,
+                     gmx::ArrayRef<const real> boltzfac);
 
 void nosehoover_tcoupl(const t_grpopts *opts, const gmx_ekindata_t *ekind, real dt,
                        double xi[], double vxi[], const t_extmass *MassQ);
 
 void trotter_update(const t_inputrec *ir, int64_t step, gmx_ekindata_t *ekind,
-                    const gmx_enerdata_t *enerd, t_state *state, const tensor vir, const t_mdatoms *md,
-                    const t_extmass *MassQ, const int * const *trotter_seqlist, int trotter_seqno);
+                    const gmx_enerdata_t *enerd, t_state *state, const tensor vir,
+                    const t_mdatoms *md, const t_extmass *MassQ,
+                    gmx::ArrayRef < std::vector < int>> trotter_seqlist, int trotter_seqno);
 
-int **init_npt_vars(const t_inputrec *ir, t_state *state, t_extmass *Mass, gmx_bool bTrotter);
+std::array < std::vector < int>, ettTSEQMAX> init_npt_vars(const t_inputrec *ir, t_state *state,
+                                                           t_extmass *Mass, gmx_bool bTrotter);
 
 real NPT_energy(const t_inputrec *ir, const t_state *state, const t_extmass *MassQ);
 /* computes all the pressure/tempertature control energy terms to get a conserved energy */
-
-// TODO: This doesn't seem to be used or implemented anywhere
-void NBaroT_trotter(t_grpopts *opts, real dt,
-                    double xi[], double vxi[], real *veta, t_extmass *MassQ);
 
 void vrescale_tcoupl(const t_inputrec *ir, int64_t step,
                      gmx_ekindata_t *ekind, real dt,
@@ -277,10 +277,4 @@ void berendsen_pscale(const t_inputrec *ir, const matrix mu,
                       int start, int nr_atoms,
                       rvec x[], const unsigned short cFREEZE[],
                       t_nrnb *nrnb);
-
-// TODO: This doesn't seem to be used or implemented anywhere
-void correct_ekin(FILE *log, int start, int end, rvec v[],
-                  rvec vcm, real mass[], real tmass, tensor ekin);
-/* Correct ekin for vcm */
-
 #endif

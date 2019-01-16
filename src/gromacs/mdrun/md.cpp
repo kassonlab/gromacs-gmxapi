@@ -3,7 +3,7 @@
  *
  * Copyright (c) 1991-2000, University of Groningen, The Netherlands.
  * Copyright (c) 2001-2004, The GROMACS development team.
- * Copyright (c) 2011,2012,2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
+ * Copyright (c) 2011,2012,2013,2014,2015,2016,2017,2018,2019, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -166,10 +166,9 @@ void gmx::Integrator::do_md()
     tensor                  force_vir, shake_vir, total_vir, tmp_vir, pres;
     int                     i, m;
     rvec                    mu_tot;
-    t_vcm                  *vcm;
     matrix                  parrinellorahmanMu, M;
     gmx_repl_ex_t           repl_ex = nullptr;
-    gmx_localtop_t         *top;
+    gmx_localtop_t          top;
     t_mdebin               *mdebin   = nullptr;
     gmx_enerdata_t         *enerd;
     PaddedVector<gmx::RVec> f {};
@@ -177,7 +176,6 @@ void gmx::Integrator::do_md()
     gmx_update_t           *upd   = nullptr;
     t_graph                *graph = nullptr;
     gmx_groups_t           *groups;
-    gmx_ekindata_t         *ekind;
     gmx_shellfc_t          *shellfc;
     gmx_bool                bSumEkinhOld, bDoReplEx, bExchanged, bNeedRepartition;
     gmx_bool                bTemp, bPres, bTrotter;
@@ -192,11 +190,9 @@ void gmx::Integrator::do_md()
     real                    saved_conserved_quantity = 0;
     real                    last_ekin                = 0;
     t_extmass               MassQ;
-    int                   **trotter_seq;
     char                    sbuf[STEPSTRSIZE], sbuf2[STEPSTRSIZE];
 
     /* PME load balancing data for GPU kernels */
-    pme_load_balancing_t *pme_loadbal      = nullptr;
     gmx_bool              bPMETune         = FALSE;
     gmx_bool              bPMETunePrinting = FALSE;
 
@@ -257,7 +253,7 @@ void gmx::Integrator::do_md()
             &t, &t0, state_global, lam0,
             nrnb, top_global, &upd, deform,
             nfile, fnm, &outf, &mdebin,
-            force_vir, shake_vir, total_vir, pres, mu_tot, &bSimAnn, &vcm, wcycle);
+            force_vir, shake_vir, total_vir, pres, mu_tot, &bSimAnn, wcycle);
 
     /* Energy terms and groups */
     snew(enerd, 1);
@@ -265,7 +261,8 @@ void gmx::Integrator::do_md()
                   enerd);
 
     /* Kinetic energy data */
-    snew(ekind, 1);
+    std::unique_ptr<gmx_ekindata_t> eKinData = compat::make_unique<gmx_ekindata_t>();
+    gmx_ekindata_t                 *ekind    = eKinData.get();
     init_ekindata(fplog, top_global, &(ir->opts), ekind);
     /* Copy the cos acceleration to the groups struct */
     ekind->cosacc.cos_accel = ir->cos_accel;
@@ -298,7 +295,7 @@ void gmx::Integrator::do_md()
 
     if (DOMAINDECOMP(cr))
     {
-        top = dd_init_local_top(top_global);
+        dd_init_local_top(*top_global, &top);
 
         stateInstance = compat::make_unique<t_state>();
         state         = stateInstance.get();
@@ -306,8 +303,8 @@ void gmx::Integrator::do_md()
 
         /* Distribute the charge groups over the nodes from the master node */
         dd_partition_system(fplog, mdlog, ir->init_step, cr, TRUE, 1,
-                            state_global, top_global, ir,
-                            state, &f, mdAtoms, top, fr,
+                            state_global, *top_global, ir,
+                            state, &f, mdAtoms, &top, fr,
                             vsite, constr,
                             nrnb, nullptr, FALSE);
         shouldCheckNumberOfBondedInteractions = true;
@@ -320,8 +317,8 @@ void gmx::Integrator::do_md()
         /* Copy the pointer to the global state */
         state = state_global;
 
-        snew(top, 1);
-        mdAlgorithmsSetupAtomData(cr, ir, top_global, top, fr,
+        /* Generate and initialize new topology */
+        mdAlgorithmsSetupAtomData(cr, ir, *top_global, &top, fr,
                                   &graph, mdAtoms, constr, vsite, shellfc);
 
         update_realloc(upd, state->natoms);
@@ -408,6 +405,8 @@ void gmx::Integrator::do_md()
      * Coulomb. It is not supported with only LJ PME. */
     bPMETune = (mdrunOptions.tunePme && EEL_PME(fr->ic->eeltype) &&
                 !mdrunOptions.reproducible && ir->cutoff_scheme != ecutsGROUP);
+
+    pme_load_balancing_t *pme_loadbal      = nullptr;
     if (bPMETune)
     {
         pme_loadbal_init(&pme_loadbal, cr, mdlog, *ir, state->box,
@@ -450,7 +449,7 @@ void gmx::Integrator::do_md()
         {
             /* Construct the virtual sites for the initial configuration */
             construct_vsites(vsite, state->x.rvec_array(), ir->delta_t, nullptr,
-                             top->idef.iparams, top->idef.il,
+                             top.idef.iparams, top.idef.il,
                              fr->ePBC, fr->bMolPBC, cr, state->box);
         }
     }
@@ -487,6 +486,10 @@ void gmx::Integrator::do_md()
                   | (continuationOptions.haveReadEkin ? CGLO_READEKIN : 0));
 
     bSumEkinhOld = FALSE;
+
+    t_vcm vcm(top_global->groups, *ir);
+    reportComRemovalInfo(fplog, vcm);
+
     /* To minimize communication, compute_globals computes the COM velocity
      * and the kinetic energy for the velocities without COM motion removed.
      * Thus to get the kinetic energy without the COM contribution, we need
@@ -500,14 +503,14 @@ void gmx::Integrator::do_md()
             cglo_flags_iteration |= CGLO_STOPCM;
             cglo_flags_iteration &= ~CGLO_TEMPERATURE;
         }
-        compute_globals(fplog, gstat, cr, ir, fr, ekind, state, mdatoms, nrnb, vcm,
+        compute_globals(fplog, gstat, cr, ir, fr, ekind, state, mdatoms, nrnb, &vcm,
                         nullptr, enerd, force_vir, shake_vir, total_vir, pres, mu_tot,
                         constr, &nullSignaller, state->box,
                         &totalNumberOfBondedInteractions, &bSumEkinhOld, cglo_flags_iteration
                         | (shouldCheckNumberOfBondedInteractions ? CGLO_CHECK_NUMBER_OF_BONDED_INTERACTIONS : 0));
     }
     checkNumberOfBondedInteractions(mdlog, cr, totalNumberOfBondedInteractions,
-                                    top_global, top, state,
+                                    top_global, &top, state,
                                     &shouldCheckNumberOfBondedInteractions);
     if (ir->eI == eiVVAK)
     {
@@ -517,7 +520,7 @@ void gmx::Integrator::do_md()
            kinetic energy calculation.  This minimized excess variables, but
            perhaps loses some logic?*/
 
-        compute_globals(fplog, gstat, cr, ir, fr, ekind, state, mdatoms, nrnb, vcm,
+        compute_globals(fplog, gstat, cr, ir, fr, ekind, state, mdatoms, nrnb, &vcm,
                         nullptr, enerd, force_vir, shake_vir, total_vir, pres, mu_tot,
                         constr, &nullSignaller, state->box,
                         nullptr, &bSumEkinhOld,
@@ -535,7 +538,7 @@ void gmx::Integrator::do_md()
 
     /* need to make an initiation call to get the Trotter variables set, as well as other constants for non-trotter
        temperature control */
-    trotter_seq = init_npt_vars(ir, state, &MassQ, bTrotter);
+    auto trotter_seq = init_npt_vars(ir, state, &MassQ, bTrotter);
 
     if (MASTER(cr))
     {
@@ -762,8 +765,8 @@ void gmx::Integrator::do_md()
                 /* Repartition the domain decomposition */
                 dd_partition_system(fplog, mdlog, step, cr,
                                     bMasterState, nstglobalcomm,
-                                    state_global, top_global, ir,
-                                    state, &f, mdAtoms, top, fr,
+                                    state_global, *top_global, ir,
+                                    state, &f, mdAtoms, &top, fr,
                                     vsite, constr,
                                     nrnb, wcycle,
                                     do_verbose && !bPMETunePrinting);
@@ -788,13 +791,13 @@ void gmx::Integrator::do_md()
             /* We need the kinetic energy at minus the half step for determining
              * the full step kinetic energy and possibly for T-coupling.*/
             /* This may not be quite working correctly yet . . . . */
-            compute_globals(fplog, gstat, cr, ir, fr, ekind, state, mdatoms, nrnb, vcm,
+            compute_globals(fplog, gstat, cr, ir, fr, ekind, state, mdatoms, nrnb, &vcm,
                             wcycle, enerd, nullptr, nullptr, nullptr, nullptr, mu_tot,
                             constr, &nullSignaller, state->box,
                             &totalNumberOfBondedInteractions, &bSumEkinhOld,
                             CGLO_GSTAT | CGLO_TEMPERATURE | CGLO_CHECK_NUMBER_OF_BONDED_INTERACTIONS);
             checkNumberOfBondedInteractions(mdlog, cr, totalNumberOfBondedInteractions,
-                                            top_global, top, state,
+                                            top_global, &top, state,
                                             &shouldCheckNumberOfBondedInteractions);
         }
         clear_mat(force_vir);
@@ -844,7 +847,7 @@ void gmx::Integrator::do_md()
             /* Now is the time to relax the shells */
             relax_shell_flexcon(fplog, cr, ms, mdrunOptions.verbose,
                                 enforcedRotation, step,
-                                ir, bNS, force_flags, top,
+                                ir, bNS, force_flags, &top,
                                 constr, enerd, fcd,
                                 state, f.arrayRefWithPadding(), force_vir, mdatoms,
                                 nrnb, wcycle, graph, groups,
@@ -873,7 +876,7 @@ void gmx::Integrator::do_md()
              * Check comments in sim_util.c
              */
             do_force(fplog, cr, ms, ir, awh.get(), enforcedRotation,
-                     step, nrnb, wcycle, top, groups,
+                     step, nrnb, wcycle, &top, groups,
                      state->box, state->x.arrayRefWithPadding(), &state->hist,
                      f.arrayRefWithPadding(), force_vir, mdatoms, enerd, fcd,
                      state->lambda, graph,
@@ -936,7 +939,7 @@ void gmx::Integrator::do_md()
             if (bGStat || do_per_step(step-1, nstglobalcomm))
             {
                 wallcycle_stop(wcycle, ewcUPDATE);
-                compute_globals(fplog, gstat, cr, ir, fr, ekind, state, mdatoms, nrnb, vcm,
+                compute_globals(fplog, gstat, cr, ir, fr, ekind, state, mdatoms, nrnb, &vcm,
                                 wcycle, enerd, force_vir, shake_vir, total_vir, pres, mu_tot,
                                 constr, &nullSignaller, state->box,
                                 &totalNumberOfBondedInteractions, &bSumEkinhOld,
@@ -957,7 +960,7 @@ void gmx::Integrator::do_md()
                    b) If we are using EkinAveEkin for the kinetic energy for the temperature control, we still feed in
                    EkinAveVel because it's needed for the pressure */
                 checkNumberOfBondedInteractions(mdlog, cr, totalNumberOfBondedInteractions,
-                                                top_global, top, state,
+                                                top_global, &top, state,
                                                 &shouldCheckNumberOfBondedInteractions);
                 wallcycle_start(wcycle, ewcUPDATE);
             }
@@ -991,7 +994,7 @@ void gmx::Integrator::do_md()
                     /* We need the kinetic energy at minus the half step for determining
                      * the full step kinetic energy and possibly for T-coupling.*/
                     /* This may not be quite working correctly yet . . . . */
-                    compute_globals(fplog, gstat, cr, ir, fr, ekind, state, mdatoms, nrnb, vcm,
+                    compute_globals(fplog, gstat, cr, ir, fr, ekind, state, mdatoms, nrnb, &vcm,
                                     wcycle, enerd, nullptr, nullptr, nullptr, nullptr, mu_tot,
                                     constr, &nullSignaller, state->box,
                                     nullptr, &bSumEkinhOld,
@@ -1172,7 +1175,7 @@ void gmx::Integrator::do_md()
         {
             /* erase F_EKIN and F_TEMP here? */
             /* just compute the kinetic energy at the half step to perform a trotter step */
-            compute_globals(fplog, gstat, cr, ir, fr, ekind, state, mdatoms, nrnb, vcm,
+            compute_globals(fplog, gstat, cr, ir, fr, ekind, state, mdatoms, nrnb, &vcm,
                             wcycle, enerd, force_vir, shake_vir, total_vir, pres, mu_tot,
                             constr, &nullSignaller, lastbox,
                             nullptr, &bSumEkinhOld,
@@ -1227,7 +1230,7 @@ void gmx::Integrator::do_md()
                 shift_self(graph, state->box, state->x.rvec_array());
             }
             construct_vsites(vsite, state->x.rvec_array(), ir->delta_t, state->v.rvec_array(),
-                             top->idef.iparams, top->idef.il,
+                             top.idef.iparams, top.idef.il,
                              fr->ePBC, fr->bMolPBC, cr, state->box);
 
             if (graph != nullptr)
@@ -1259,7 +1262,7 @@ void gmx::Integrator::do_md()
                 bool                doIntraSimSignal = true;
                 SimulationSignaller signaller(&signals, cr, ms, doInterSimSignal, doIntraSimSignal);
 
-                compute_globals(fplog, gstat, cr, ir, fr, ekind, state, mdatoms, nrnb, vcm,
+                compute_globals(fplog, gstat, cr, ir, fr, ekind, state, mdatoms, nrnb, &vcm,
                                 wcycle, enerd, force_vir, shake_vir, total_vir, pres, mu_tot,
                                 constr, &signaller,
                                 lastbox,
@@ -1273,7 +1276,7 @@ void gmx::Integrator::do_md()
                                 | (shouldCheckNumberOfBondedInteractions ? CGLO_CHECK_NUMBER_OF_BONDED_INTERACTIONS : 0)
                                 );
                 checkNumberOfBondedInteractions(mdlog, cr, totalNumberOfBondedInteractions,
-                                                top_global, top, state,
+                                                top_global, &top, state,
                                                 &shouldCheckNumberOfBondedInteractions);
             }
         }
@@ -1425,8 +1428,8 @@ void gmx::Integrator::do_md()
         if ( (bExchanged || bNeedRepartition) && DOMAINDECOMP(cr) )
         {
             dd_partition_system(fplog, mdlog, step, cr, TRUE, 1,
-                                state_global, top_global, ir,
-                                state, &f, mdAtoms, top, fr,
+                                state_global, *top_global, ir,
+                                state, &f, mdAtoms, &top, fr,
                                 vsite, constr,
                                 nrnb, wcycle, FALSE);
             shouldCheckNumberOfBondedInteractions = true;
@@ -1526,6 +1529,8 @@ void gmx::Integrator::do_md()
     walltime_accounting_set_nsteps_done(walltime_accounting, step_rel);
 
     destroy_enerdata(enerd);
+
     sfree(enerd);
-    sfree(top);
+    global_stat_destroy(gstat);
+
 }

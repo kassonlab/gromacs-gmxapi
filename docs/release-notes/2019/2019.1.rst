@@ -10,29 +10,8 @@ in the :ref:`release-notes`.
 Fixes where mdrun could behave incorrectly
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Fix segmentation fault in mdrun with domain decomposition
----------------------------------------------------------
-
-:issue: `2813`
-
-Fix possible division by zero in enforced-rotation code
--------------------------------------------------------
-
-:issue: `1431`
-
 Fixes for ``gmx`` tools
 ^^^^^^^^^^^^^^^^^^^^^^^
-
-Fix trjconv -ndec
----------------------------------------------------------
-
-This only works for writing .xtc files. The code and documentation now
-works correctly with .gro files, which was changed in 2016 release series so that
-it would only write fixed-width columns.
-
-:issue: `2824`
-:issue: `2037`
-
 
 Fixes to improve portability
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^

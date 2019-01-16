@@ -1,7 +1,7 @@
 #
 # This file is part of the GROMACS molecular simulation package.
 #
-# Copyright (c) 2014,2015,2016,2017,2018, by the GROMACS development team, led by
+# Copyright (c) 2014,2015,2016,2017,2018,2019, by the GROMACS development team, led by
 # Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
 # and including many others, as listed in the AUTHORS file in the
 # top-level source directory and at http://www.gromacs.org.
@@ -367,6 +367,15 @@ if (SPHINX_FOUND)
         how-to/visualize.rst
         install-guide/index.rst
         release-notes/index.rst
+        release-notes/highlights.rst
+        release-notes/features.rst
+        release-notes/performance.rst
+        release-notes/tools.rst
+        release-notes/bugs-fixed.rst
+        release-notes/removed-functionality.rst
+        release-notes/deprecated-functionality.rst
+        release-notes/portability.rst
+        release-notes/miscellaneous.rst
         release-notes/2019/2019.1.rst
         release-notes/2019/major/highlights.rst
         release-notes/2019/major/features.rst
@@ -534,7 +543,7 @@ if (SPHINX_FOUND)
     add_custom_target(install-guide
         COMMAND
             ${SPHINX_EXECUTABLE}
-            -q -E -b text
+            -q -b text
             -w sphinx-install.log
             -d ${CMAKE_CURRENT_BINARY_DIR}/install-guide/_doctrees
             -c ${SPHINX_INPUT_DIR}
@@ -557,12 +566,13 @@ if (SPHINX_FOUND)
     add_custom_target(webpage-sphinx
         DEPENDS sphinx-programs
         DEPENDS sphinx-input
-        DEPENDS sphinx-image-conversion 
+        DEPENDS sphinx-image-conversion
+        DEPENDS manual 
         COMMAND
             ${CMAKE_COMMAND} -E make_directory ${SPHINX_INPUT_DIR}/_static
         COMMAND
             ${SPHINX_EXECUTABLE}
-            -q -E -b html
+            -q -b html
             -w sphinx-html.log
             -d "${SPHINX_CACHE_DIR}"
             "${SPHINX_INPUT_DIR}"
@@ -576,7 +586,7 @@ if (SPHINX_FOUND)
     add_custom_target(man
         COMMAND
             ${SPHINX_EXECUTABLE}
-            -q -E -b man
+            -q -b man
             -w sphinx-man.log
             -d ${SPHINX_CACHE_DIR}
             -t do_man
