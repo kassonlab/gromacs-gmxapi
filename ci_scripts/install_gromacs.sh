@@ -21,6 +21,7 @@ pushd build
          -DGMX_DOUBLE=$GMX_DOUBLE \
          -DGMX_MPI=$GMX_MPI \
          -DGMX_THREAD_MPI=$GMX_THREAD_MPI \
+         -DGMXAPI=ON \
          -DCMAKE_INSTALL_PREFIX=$HOME/install/gromacs \
          ..
     make -j2 check

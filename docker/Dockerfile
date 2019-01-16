@@ -43,6 +43,7 @@ RUN (mkdir -p /home/jovyan/gromacs-build && \
     rm -f CMakeCache.txt && \
     cmake /home/jovyan/gromacs-source \
         -DCMAKE_INSTALL_PREFIX=/home/jovyan/install/gromacs \
+        -DGMXAPI=ON \
         -DGMX_THREAD_MPI=ON \
         -DGMX_BUILD_HELP=OFF \
         -DGMX_SIMD=AVX_256 \
