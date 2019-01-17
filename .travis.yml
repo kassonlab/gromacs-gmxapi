@@ -65,6 +65,7 @@ before_install:
 install:
   - export CCACHE_DIR=$HOME/.ccache_gromacs
   - ccache -s
+  - ./ci_scripts/install_cmake.sh
   - ./ci_scripts/install_gromacs.sh
 
 before_script:
