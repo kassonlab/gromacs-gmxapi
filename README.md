@@ -1,4 +1,5 @@
 This is a fork of the [main Gromacs project](http://www.gromacs.org/) in which interface, API, and extensibility issues are being investigated.
+It exists primarily to support the [`gmxapi`](https://github.com/kassonlab/gmxapi) companion project that provides a Python module and bindings.
 The forked project lives on GitHub at [https://github.com/kassonlab/gromacs-gmxapi](https://github.com/kassonlab/gromacs-gmxapi/)
 
 [![Build Status](https://travis-ci.org/kassonlab/gromacs-gmxapi.svg?branch=master)](https://travis-ci.org/kassonlab/gromacs-gmxapi)
@@ -11,13 +12,22 @@ This README.md file supplants the main README file to avoid merge conflicts whil
 
 # Installation
 
+Note that unless you need the most experimental gmxapi features,
+you should probably be building and installing either GROMACS 2019
+or the (upstream) GROMACS master branch.
+
 Install as you would a regular copy of GROMACS. The following example downloads the source into a directory named `gromacs`,
 creates a parallel (out-of-source) `build` directory, configures, builds, and installs. Use e.g. `make -j10 install` to build in parallel with 10 processes.
 
     $ git clone https://github.com/kassonlab/gromacs-gmxapi.git
     $ mkdir build
     $ cd build
-    $ cmake ../gromacs-gmxapi -DCMAKE_INSTALL_PREFIX=/path/to/where/i/want/gromacs -DGMX_THREAD_MPI=ON -DGMX_GPU=OFF -DGMX_BUILD_OWN_FFTW=ON                                                                                                                                                                                             
+    $ cmake ../gromacs-gmxapi \
+      -DCMAKE_INSTALL_PREFIX=/path/to/where/i/want/gromacs \
+      -DGMX_THREAD_MPI=ON \
+      -DGMX_GPU=OFF \
+      -DGMX_ENABLE_CCACHE=ON \
+      -DGMXAPI=ON
     $ make install
 
 You may then either source the GMXRC file (as usual for GROMACS use) or export the environment variable
@@ -38,6 +48,11 @@ Then refer either to `docs/html/doxygen/api-user/index.html` or
 Also, please use the issue tracking system or feel free to suggest other modes of communication.
 
 # Releases, Compatibility, and Versioning
+
+The [0.0.7 Python package](https://github.com/kassonlab/gmxapi)
+builds against the canonical GROMACS 2019 release.
+Future releases will likely occur as commits in the upstream
+[GROMACS](https://github.com/gromacs/gromacs.git) master branch.
 
 Beginning with the 1.0 release, gmxapi will follow traditional semantic versioning for API compatibility.
 ABI compatibility guarantees are TBD. For 0.0.x, expect API incompatibility for each release. For 0.1.x
