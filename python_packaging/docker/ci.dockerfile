@@ -65,11 +65,10 @@ ADD --chown=testing:testing src/gmxapi /home/testing/gmxapi/src/gmxapi
 RUN . $HOME/testing/bin/activate && \
     . /usr/local/gromacs/bin/GMXRC && \
     (cd $HOME/gmxapi/src && \
-     pip install . \
+     pip install . --verbose \
     )
 
-# Enable this dir when there is something to test (i.e. fr1)
-#ADD --chown=testing:testing src/test /home/testing/gmxapi/test
+ADD --chown=testing:testing src/test /home/testing/gmxapi/test
 ADD --chown=testing:testing scripts /home/testing/scripts
 ADD --chown=testing:testing test /home/testing/test
 
