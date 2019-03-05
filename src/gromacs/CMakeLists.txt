@@ -1,7 +1,7 @@
 #
 # This file is part of the GROMACS molecular simulation package.
 #
-# Copyright (c) 2010,2011,2012,2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
+# Copyright (c) 2010,2011,2012,2013,2014,2015,2016,2017,2018,2019, by the GROMACS development team, led by
 # Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
 # and including many others, as listed in the AUTHORS file in the
 # top-level source directory and at http://www.gromacs.org.
@@ -227,6 +227,17 @@ if (GMX_USE_OPENCL)
             message(FATAL_ERROR "Did not find required external clFFT library, consider setting clFFT_ROOT_DIR")
         endif()
 
+        if(MSVC)
+            message(FATAL_ERROR
+"An OpenCL build was requested with Visual Studio compiler, but GROMACS
+requires clFFT, which was not found on your system. GROMACS does bundle
+clFFT to help with building for OpenCL, but that clFFT has not yet been
+ported to the more recent versions of that compiler that GROMACS itself
+requires. Thus for now, OpenCL is not available with MSVC and the internal
+build of clFFT in GROMACS 2019. Either change compiler, try installing
+a clFFT package, or use the latest GROMACS 2018 point release.")
+        endif()
+
         # Fall back on the internal version
         set (_clFFT_dir ../external/clFFT/src)
         add_subdirectory(${_clFFT_dir} clFFT-build)
@@ -269,7 +280,7 @@ endif()
 # source files, and issue warnings about that. Remove the use of
 # -Wno-missing-prototypes here and above when the group scheme is
 # removed.
-if (HAS_NO_MISSING_PROTO AND "${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
+if (HAS_NO_MISSING_PROTO AND "${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
     target_compile_options(libgromacs_generated PRIVATE "-Wno-missing-prototypes")
 endif()
 if (HAS_NO_MSVC_UNUSED)

@@ -82,7 +82,6 @@
 #       This ID is used for the source code tarball.
 #   GMX_MANUAL_DOI_ID
 #       Same as above, but for the reference manual.
-# Setting and retrieving of those variables is handled in gmxCheckReleaseDOI.cmake
 # They are collected into a single section below.
 # The following variables are set based on these:
 #   GMX_VERSION            String composed from GMX_VERSION_* numeric variables
@@ -196,7 +195,7 @@
 # The GROMACS convention is that these are the version number of the next
 # release that is going to be made from this branch.
 set(GMX_VERSION_MAJOR 2019)
-set(GMX_VERSION_PATCH 1)
+set(GMX_VERSION_PATCH 2)
 # The suffix, on the other hand, is used mainly for betas and release
 # candidates, where it signifies the most recent such release from
 # this branch; it will be empty before the first such release, as well
@@ -241,7 +240,7 @@ set(REGRESSIONTEST_BRANCH "refs/heads/release-2019")
 # build the regressiontests tarball with all the right naming. The
 # naming affects the md5sum that has to go here, and if it isn't right
 # release workflow will report a failure.
-set(REGRESSIONTEST_MD5SUM "1271a74bfe91028b7f184866d5aee98e" CACHE INTERNAL "MD5 sum of the regressiontests tarball for this GROMACS version")
+set(REGRESSIONTEST_MD5SUM "36103a0078bf9a802e16ec982b4e5c4c" CACHE INTERNAL "MD5 sum of the regressiontests tarball for this GROMACS version")
 
 math(EXPR GMX_VERSION_NUMERIC
      "${GMX_VERSION_MAJOR}*10000 + ${GMX_VERSION_PATCH}")
