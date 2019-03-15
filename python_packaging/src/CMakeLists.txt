@@ -61,6 +61,22 @@ cmake_policy(SET CMP0067 NEW)
 # See https://crascit.com/2015/03/28/enabling-cxx11-in-cmake/
 #set(CMAKE_CXX_EXTENSIONS OFF)
 
+find_package(gmxapi 0.0.8 REQUIRED
+             HINTS "$ENV{GROMACS_DIR}"
+             )
+if(gmxapi_FOUND)
+    set(_suffix "")
+    # GROMACS master branch and forked development branches may have divergent
+    # pre-release APIs. This check allows us to distinguish them and behave
+    # differently if needed. github.com/kassonlab/gromacs-gmxapi devel branch
+    # sets gmxapi_EXPERIMENTAL=TRUE. Upstream GROMACS master branch does not.
+    # Ref: https://github.com/kassonlab/gmxapi/issues/166
+    if(gmxapi_EXPERIMENTAL)
+        set(_suffix " (unofficial)")
+    endif()
+    message(STATUS "Found gmxapi version ${gmxapi_VERSION}${_suffix}")
+endif()
+
 add_subdirectory(external/pybind)
 
 set(GMXAPI_PYTHON_EXTENSION_SOURCES
@@ -75,6 +91,13 @@ target_include_directories(_gmxapi PRIVATE
                            ${CMAKE_CURRENT_SOURCE_DIR}/gmxapi
                            ${CMAKE_CURRENT_BINARY_DIR}/gmxapi
                            )
+
+# RPATH management: make sure build artifacts can find GROMACS library.
+set_target_properties(_gmxapi PROPERTIES SKIP_BUILD_RPATH FALSE)
+set_target_properties(_gmxapi PROPERTIES BUILD_WITH_INSTALL_RPATH TRUE)
+set_target_properties(_gmxapi PROPERTIES INSTALL_RPATH_USE_LINK_PATH TRUE)
+
+target_link_libraries(_gmxapi PRIVATE Gromacs::gmxapi)
 
 install(TARGETS _gmxapi LIBRARY DESTINATION gmxapi)
 
