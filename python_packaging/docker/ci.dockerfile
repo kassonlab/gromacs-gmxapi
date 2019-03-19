@@ -49,8 +49,7 @@ USER testing
 # TODO: Clean up pip cache.
 RUN python3 -m venv $HOME/testing
 RUN . $HOME/testing/bin/activate && \
-    pip install --upgrade pip setuptools && \
-    pip install jupyter
+    pip install --upgrade pip setuptools
 
 ADD --chown=testing:testing requirements-test.txt /home/testing/gmxapi/
 
@@ -71,7 +70,6 @@ RUN . $HOME/testing/bin/activate && \
 
 # Enable this dir when there is something to test (i.e. fr1)
 #ADD --chown=testing:testing src/test /home/testing/gmxapi/test
-ADD --chown=testing:testing acceptance /home/testing/acceptance
 ADD --chown=testing:testing scripts /home/testing/scripts
 ADD --chown=testing:testing test /home/testing/test
 

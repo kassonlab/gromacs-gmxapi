@@ -20,8 +20,8 @@ framework during automatic test discovery.
 
 `conftest.py` and `pytest.ini` provide configuration for `pytest`.
 
-`sampleoperation.py` is a module that test scripts can load to mimic external
-Python code in user scripts.
+Tests are organized according to the functional requirements
+documented in `roadmap.rst` in the `python_packaging` directory.
 
 ## Usage
 

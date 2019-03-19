@@ -33,6 +33,8 @@
 # the research papers on the package. Check out http://www.gromacs.org.
 
 """Reusable definitions for test modules.
+
+Define the ``withmpi_only`` test decorator.
 """
 
 import pytest
