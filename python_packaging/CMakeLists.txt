@@ -32,7 +32,10 @@
 # To help us fund GROMACS development, we humbly ask that you cite
 # the research papers on the package. Check out http://www.gromacs.org.
 
-# Unimplemented.
+# Stub file for future higher-level CMake management. Ultimately, we want to
+# drive building and testing from the repository-level CMake configuration, but
+# in the initial packaging, tests are somewhat manual and installation of the
+# Python package is driven through the setup.py file in src.
 #
 # To be driven by a higher-level CMake configuration, a CMakeLists.txt file at this level would
 # 1. configure: copy the contents of `src` to the build directory, potentially
