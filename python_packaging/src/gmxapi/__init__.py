@@ -45,6 +45,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 logger.info("Importing gmxapi.")
 
-__all__ = ['operation']
+__all__ = ['commandline_operation', 'operation']
 
 from gmxapi import operation
+from gmxapi.commandline import commandline_operation
