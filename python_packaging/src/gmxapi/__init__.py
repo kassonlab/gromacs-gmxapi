@@ -45,4 +45,6 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 logger.info("Importing gmxapi.")
 
-__all__ = []
+__all__ = ['operation']
+
+from gmxapi import operation
