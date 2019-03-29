@@ -1,3 +1,4 @@
+#
 # This file is part of the GROMACS molecular simulation package.
 #
 # Copyright (c) 2019, by the GROMACS development team, led by
@@ -31,55 +32,20 @@
 # To help us fund GROMACS development, we humbly ask that you cite
 # the research papers on the package. Check out http://www.gromacs.org.
 
-"""
-Exceptions and Warnings raised by gmxapi module operations
-==========================================================
+"""Reusable definitions for test modules.
 
-Errors, warnings, and other exceptions used in the GROMACS
-Python package are defined in the `exceptions` submodule.
-
-The gmxapi Python package defines a root exception,
-exceptions.Error, from which all Exceptions thrown from
-within the module should derive. If a published component of
-the gmxapi package throws an exception that cannot be caught
-as a gmxapi.exceptions.Error, please report the bug.
+Define the ``withmpi_only`` test decorator.
 """
 
-__all__ = ['ApiError',
-           'Error',
-           'ProtocolError',
-           'UsageError',
-           'ValueError',
-           'Warning'
-           ]
+import pytest
 
+withmpi_only = None
 
-class Error(Exception):
-    """Base exception for gmx.exceptions classes."""
-
-
-class Warning(Warning):
-    """Base warning class for gmx.exceptions."""
-
-
-class ApiError(Error):
-    """An API operation was attempted with an incompatible object."""
-
-
-class ProtocolError(Error):
-    """Unexpected API behavior or protocol violation.
-
-    This exception generally indicates a gmxapi bug, since it should only
-    occur through incorrect assumptions or misuse of API implementation internals.
-    """
-
-
-class UsageError(Error):
-    """Unsupported syntax or call signatures.
-
-    Generic usage error for gmxapi module.
-    """
-
-
-class ValueError(Error):
-    """A user-provided value cannot be interpreted or doesn't make sense."""
+try:
+    from mpi4py import MPI
+    withmpi_only = \
+        pytest.mark.skipif(not MPI.Is_initialized() or MPI.COMM_WORLD.Get_size() < 2,
+                           reason="Test requires at least 2 MPI ranks," +
+                                  "but MPI is not initialized or context is too small.")
+except ImportError:
+    withmpi_only = pytest.mark.skip(reason="Test requires at least 2 MPI ranks, but mpi4py is not available.")
