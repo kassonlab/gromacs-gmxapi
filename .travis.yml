@@ -52,7 +52,7 @@ jobs:
         - docker push gmxapi/gromacs-$MATRIX:$FORKPOINT
         - docker push gmxapi/gromacs-$MATRIX:latest
     - stage: pygmxapi
-      env: MATRIX=mpich REF=fr0
+      env: MATRIX=mpich
       before_script:
         - source python_packaging/ci_scripts/gitrefs && export FORKPOINT
         - docker pull gmxapi/gromacs-$MATRIX
@@ -64,6 +64,7 @@ jobs:
       after_success:
         - |
           if [ "$TRAVIS_PULL_REQUEST" = "false" ]; then
+            REF=${TRAVIS_TAG:-${TRAVIS_BRANCH}}
             docker tag ci-$MATRIX gmxapi/ci-$MATRIX:$REF
             docker tag ci-$MATRIX gmxapi/ci-$MATRIX:`git show -s --pretty=format:"%h"`
             docker login -u="$DOCKER_USERNAME" -p="$DOCKER_PASSWORD"
