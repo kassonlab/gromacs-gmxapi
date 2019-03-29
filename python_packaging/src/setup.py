@@ -53,7 +53,7 @@ from setuptools import setup
 setup(
     name='gmxapi',
 
-    # TODO: replace with CMake variables from GMXAPI version.
+    # TODO: (pending infrastructure and further discussion) Replace with CMake variables from GMXAPI version.
     version='0.1.0.dev0',
     python_requires='>=3.4, <4',
     setup_requires=['setuptools>=28'],
