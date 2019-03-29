@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+#
 # This file is part of the GROMACS molecular simulation package.
 #
 # Copyright (c) 2019, by the GROMACS development team, led by
@@ -30,56 +32,20 @@
 #
 # To help us fund GROMACS development, we humbly ask that you cite
 # the research papers on the package. Check out http://www.gromacs.org.
+import os
+import unittest
 
-"""
-Exceptions and Warnings raised by gmxapi module operations
-==========================================================
-
-Errors, warnings, and other exceptions used in the GROMACS
-Python package are defined in the `exceptions` submodule.
-
-The gmxapi Python package defines a root exception,
-exceptions.Error, from which all Exceptions thrown from
-within the module should derive. If a published component of
-the gmxapi package throws an exception that cannot be caught
-as a gmxapi.exceptions.Error, please report the bug.
-"""
-
-__all__ = ['ApiError',
-           'Error',
-           'ProtocolError',
-           'UsageError',
-           'ValueError',
-           'Warning'
-           ]
+from gmxapi import util
 
 
-class Error(Exception):
-    """Base exception for gmx.exceptions classes."""
+class WhichUtilTestCase(unittest.TestCase):
+    """test util.which"""
+    def test_find_executable(self):
+        # This command exists pretty much everywhere...
+        executable = '/usr/bin/env'
+        if os.path.exists(executable):
+            assert util.which('env') == '/usr/bin/env'
 
 
-class Warning(Warning):
-    """Base warning class for gmx.exceptions."""
-
-
-class ApiError(Error):
-    """An API operation was attempted with an incompatible object."""
-
-
-class ProtocolError(Error):
-    """Unexpected API behavior or protocol violation.
-
-    This exception generally indicates a gmxapi bug, since it should only
-    occur through incorrect assumptions or misuse of API implementation internals.
-    """
-
-
-class UsageError(Error):
-    """Unsupported syntax or call signatures.
-
-    Generic usage error for gmxapi module.
-    """
-
-
-class ValueError(Error):
-    """A user-provided value cannot be interpreted or doesn't make sense."""
+if __name__ == '__main__':
+    unittest.main()
