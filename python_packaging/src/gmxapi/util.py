@@ -1,3 +1,4 @@
+#
 # This file is part of the GROMACS molecular simulation package.
 #
 # Copyright (c) 2019, by the GROMACS development team, led by
@@ -30,56 +31,48 @@
 #
 # To help us fund GROMACS development, we humbly ask that you cite
 # the research papers on the package. Check out http://www.gromacs.org.
-
-"""
-Exceptions and Warnings raised by gmxapi module operations
-==========================================================
-
-Errors, warnings, and other exceptions used in the GROMACS
-Python package are defined in the `exceptions` submodule.
-
-The gmxapi Python package defines a root exception,
-exceptions.Error, from which all Exceptions thrown from
-within the module should derive. If a published component of
-the gmxapi package throws an exception that cannot be caught
-as a gmxapi.exceptions.Error, please report the bug.
+"""Utility functions supporting the Gromacs Python interface.
 """
 
-__all__ = ['ApiError',
-           'Error',
-           'ProtocolError',
-           'UsageError',
-           'ValueError',
-           'Warning'
-           ]
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
+from __future__ import unicode_literals
+
+__all__ = ['which']
+
+import os
+
+from gmxapi import exceptions
 
 
-class Error(Exception):
-    """Base exception for gmx.exceptions classes."""
-
-
-class Warning(Warning):
-    """Base warning class for gmx.exceptions."""
-
-
-class ApiError(Error):
-    """An API operation was attempted with an incompatible object."""
-
-
-class ProtocolError(Error):
-    """Unexpected API behavior or protocol violation.
-
-    This exception generally indicates a gmxapi bug, since it should only
-    occur through incorrect assumptions or misuse of API implementation internals.
+def which(command):
     """
+    Get the full path of an executable that can be resolved by the shell.
 
+    :param command: executable in the user's PATH
+    :return: Absolute path of executable.
 
-class UsageError(Error):
-    """Unsupported syntax or call signatures.
-
-    Generic usage error for gmxapi module.
+    Ref: https://stackoverflow.com/questions/377017/test-if-executable-exists-in-python
     """
+    try:
+        command_path = os.fsencode(command)
+    except:
+        raise exceptions.ValueError("Argument must be representable on the command line.")
+    if os.path.exists(command_path):
+        command_path = os.path.abspath(command_path)
+        if os.access(command_path, os.X_OK):
+            return command_path
+    else:
+        # Try to find the executable on the default PATH
+        from shutil import which
+        return which(command)
 
 
-class ValueError(Error):
-    """A user-provided value cannot be interpreted or doesn't make sense."""
+def _test():
+    import doctest
+    doctest.testmod()
+
+
+if __name__ == "__main__":
+    _test()
