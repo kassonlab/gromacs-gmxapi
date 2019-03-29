@@ -32,41 +32,30 @@
 # To help us fund GROMACS development, we humbly ask that you cite
 # the research papers on the package. Check out http://www.gromacs.org.
 
-# Python setuptools script to build and install the gmxapi Python interface
-# from a GROMACS installation directory.
+"""Test gmxapi functionality described in roadmap.rst."""
 
-# Usage note: things go smoothly when we stick to the setup.py convention of
-# having a package source directory with the same name as the package at the
-# same level as the setup.py script and only expect `pip install .` in the
-# setup.py directory. If we play with the layout more, it is hard to keep all
-# of the `pip` and `setup.py` cases working as expected. This is annoying
-# because running the Python interpreter immediately from the same directory
-# can find the uninstalled source instead of the installed package. We can
-# ease this pain by building an sdist in the enclosing CMake build scope
-# and encouraging users to `pip install the_sdist.archive`. Otherwise, we
-# just have to document that we only support full build-install of the Python
-# package from the directory containing setup.py, which may clutter that
-# directory with some artifacts.
+import pytest
 
-from setuptools import setup
+import gmxapi as gmx
+from gmxapi.version import has_feature
 
-setup(
-    name='gmxapi',
+@pytest.mark.skipif(not has_feature('fr1'),
+                   reason="Feature level not met.")
+def test_fr1():
+    """FR1: Wrap importable Python code.
 
-    # TODO: (pending infrastructure and further discussion) Replace with CMake variables from GMXAPI version.
-    version='0.1.0.dev3',
-    python_requires='>=3.4, <4',
-    setup_requires=['setuptools>=28'],
+    gmxapi compatible operations are implemented with simple machinery that allows
+    compartmentalized progress on functionality to be highly decoupled from
+    implementing user-facing tools. Tools are provided in `gmx.operation` and
+    demonstrated by implementing `gmx.commandline_operation`.
+    """
+    # commandline_operation helper creates a set of operations
+    # that includes the discovery and execution of the program
+    # named in `executable`.
+    operation = gmx.commandline_operation(executable='true')
+    operation.run()
+    assert operation.output.returncode.result() == 0
 
-    packages=['gmxapi'],
-
-    author='M. Eric Irrgang',
-    author_email='info@gmxapi.org',
-    description='gmxapi Python interface for GROMACS',
-    license='LGPL',
-    url='http://gmxapi.org/',
-
-    # The installed package will contain compiled C++ extensions that cannot be loaded
-    # directly from a zip file.
-    zip_safe=False
-)
+    operation = gmx.commandline_operation(executable='false')
+    operation.run()
+    assert operation.output.returncode.result() == 1
