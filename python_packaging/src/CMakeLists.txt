@@ -55,6 +55,12 @@ set(CMAKE_OSX_ARCHITECTURES x86_64 CACHE STRING
 
 project(gmxapi VERSION 0.1.0)
 
+# Check if Python package is being built directly or via add_subdirectory
+set(GMXAPI_MASTER_PROJECT OFF)
+if (CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
+    set(GMXAPI_MASTER_PROJECT ON)
+endif()
+
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -63,9 +69,11 @@ cmake_policy(SET CMP0054 NEW)
 # honor the language standard settings for try_compile()
 cmake_policy(SET CMP0067 NEW)
 
-find_package(gmxapi 0.0.8 REQUIRED
-             HINTS "$ENV{GROMACS_DIR}"
-             )
+if(GMXAPI_MASTER_PROJECT)
+    find_package(gmxapi 0.0.8 REQUIRED
+                 HINTS "$ENV{GROMACS_DIR}"
+                 )
+endif()
 if(gmxapi_FOUND)
     set(_suffix "")
     # GROMACS master branch and development branches may have divergent
@@ -81,7 +89,13 @@ endif()
 
 # TODO: Account for externally-provided pybind headers where recommended by packaging system.
 # Reference https://redmine.gromacs.org/issues/2896
-add_subdirectory(external/pybind)
+set(GMXAPI_USE_BUNDLED_PYBIND ON CACHE BOOL
+    "Use pybind11 headers bundled with this repository. If OFF, CMake does `find_package(pybind11)`.")
+if(GMXAPI_USE_BUNDLED_PYBIND)
+    add_subdirectory(external/pybind)
+else()
+    find_package(pybind11 2.2 REQUIRED)
+endif()
 
 set(GMXAPI_PYTHON_EXTENSION_SOURCES
     gmxapi/module.cpp
@@ -106,9 +120,9 @@ target_link_libraries(_gmxapi PRIVATE Gromacs::gmxapi)
 install(TARGETS _gmxapi LIBRARY DESTINATION gmxapi)
 
 if(NOT SKBUILD)
-    # TODO: Determine packaging and installation cases and implementation.
+    # TODO: Determine on packaging and installation cases and implementation.
     # Reference https://redmine.gromacs.org/issues/2896 for additional discussion.
-    message(WARNING "CMake should be run by scikit-build through setup.py for proper Python packaging.")
+    # Currently, CMake should be run by scikit-build through setup.py for proper Python packaging.
     # Try to do something sensible. Collect Python sources as setup.py would.
     file(GLOB_RECURSE _py_sources CONFIGURE_DEPENDS $CMAKE_CURRENT_SOURCE_DIR/gmxapi/*.py)
     install(FILES ${_py_sources} DESTINATION gmxapi)

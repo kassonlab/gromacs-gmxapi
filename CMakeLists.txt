@@ -865,6 +865,14 @@ if (BUILD_TESTING)
     add_subdirectory(tests)
 endif()
 
+# TODO: Determine control flow and defaults for package installation and testing use cases.
+# Ref: http://redmine.gromacs.org/issues/2896
+option(GMX_PYTHON_PACKAGE "Configure gmxapi Python package" OFF)
+mark_as_advanced(GMX_PYTHON_PACKAGE)
+if(GMX_PYTHON_PACKAGE)
+    add_subdirectory(python_packaging)
+endif()
+
 gmx_cpack_write_config()
 
 # Issue a warning if NVIDIA GPUs were detected, but CUDA was not found.
