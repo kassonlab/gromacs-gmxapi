@@ -42,7 +42,6 @@ import pytest
 
 import gmxapi as gmx
 from gmxapi import commandline_operation
-from gmxapi import util
 
 
 class ImmediateResultTestCase(unittest.TestCase):

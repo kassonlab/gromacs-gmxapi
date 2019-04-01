@@ -35,16 +35,16 @@
 
 """Unit tests for the gmxapi.commandline module."""
 
+import shutil
 import unittest
 
 from gmxapi import commandline
-from gmxapi import util
 
 
 class SimpleCliTestCase(unittest.TestCase):
     """Test creation and execution of the basic cli() command line wrapper."""
     def test_true(self):
-        command = util.which('true')
+        command = shutil.which('true')
         operation = commandline.cli(command=[command], shell=False)
 
         # Note: 'stdout' and 'stderr' not mapped.
@@ -63,21 +63,21 @@ class SimpleCliTestCase(unittest.TestCase):
         assert operation.output.returncode.result() == 0
 
     def test_false_explicit(self):
-        command = util.which('false')
+        command = shutil.which('false')
         operation = commandline.cli(command=[command], shell=False)
         # Explicitly run the operation.
         operation.run()
         assert operation.output.returncode.result() == 1
 
     def test_false_implicit(self):
-        command = util.which('false')
+        command = shutil.which('false')
         operation = commandline.cli(command=[command], shell=False)
         # Allow the operation to be executed implicitly to satisfy data constraint.
         assert operation.output.returncode.result() == 1
 
     def test_echo(self):
         # TODO: (FR5+) do we want to pipeline or checkpoint stdout somehow?
-        operation = commandline.cli(command=[util.which('echo'), 'hi', 'there'])
+        operation = commandline.cli(command=[shutil.which('echo'), 'hi', 'there'])
         assert operation.output.returncode.result() == 0
 
 
