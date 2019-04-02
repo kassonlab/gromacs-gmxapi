@@ -37,7 +37,6 @@ Provide command line operation.
 
 __all__ = ['commandline_operation']
 
-from os import devnull
 import shutil
 import subprocess
 
