@@ -37,9 +37,9 @@ Provide command line operation.
 
 __all__ = ['commandline_operation']
 
+from os import devnull
 import shutil
 import subprocess
-from os import devnull
 
 from gmxapi import exceptions
 from gmxapi import logger as root_logger
@@ -137,24 +137,27 @@ def cli(command: list = None, shell: bool = None, output=None):
     except Exception:
         raise exceptions.ValueError('command argument could not be resolved to an executable file path.')
 
-    # TODO: (FR9) can these be a responsibility of the code providing 'resources'?
-    stdin = open(devnull, 'r')
-    stdout = open(devnull, 'w')
-    stderr = open(devnull, 'w')
+    # TODO: (FR9) Can OS input/output filehandles be a responsibility of
+    #  the code providing 'resources'?
 
-    erroroutput = None
+    erroroutput = ''
     logger.debug('executing subprocess')
-    with stdin as null_in, stdout as null_out, stderr as null_err:
-        try:
-            returncode = subprocess.check_call(command,
-                                               shell=shell,
-                                               stdin=null_in,
-                                               stdout=null_out,
-                                               stderr=null_err)
-        except subprocess.CalledProcessError as e:
-            logger.info("commandline operation had non-zero return status when calling {}".format(e.cmd))
-            erroroutput = e.output
-            returncode = e.returncode
+    try:
+        # TODO: If Python >=3.5 is required, switch to subprocess.run()
+        command_output = subprocess.check_output(command,
+                                                 shell=shell,
+                                                 stdin=subprocess.DEVNULL,
+                                                 stderr=subprocess.STDOUT,
+                                                 )
+        returncode = 0
+        # TODO: Resource management code should manage a safe data object for `output`.
+        # WARNING: We have no reason to assume the output is utf-8 encoded text!!!
+        for line in command_output.decode('utf-8').split('\n'):
+            logger.debug(line)
+    except subprocess.CalledProcessError as e:
+        logger.info("commandline operation had non-zero return status when calling {}".format(e.cmd))
+        erroroutput = e.output.decode('utf-8')
+        returncode = e.returncode
     # resources.output.erroroutput.publish(erroroutput)
     # resources.output.returncode.publish(returncode)
     # `publish` is descriptive, but redundant. Access to the output data handler is
@@ -252,6 +255,8 @@ def commandline_operation(executable=None,
         input_files = {}
     if output_files is None:
         output_files = {}
+    if isinstance(arguments, (str, bytes)):
+        arguments = [arguments]
     command = concatenate_lists([[executable],
                                  arguments,
                                  filemap_to_flag_list(input_files),
