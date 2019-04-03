@@ -42,12 +42,12 @@ from __future__ import unicode_literals
 __all__ = []
 
 from os import devnull
+import shutil
 import subprocess
 
 from gmxapi import exceptions
 from gmxapi import logging
 from gmxapi.operation import function_wrapper, append_list, concatenate_lists, make_constant
-from gmxapi import util
 
 # Module-level logger
 logger = logging.getLogger(__name__)
@@ -137,7 +137,7 @@ def cli(command: list = None, shell: bool = None, output=None):
         command = [command]
     command = list([arg for arg in command])
     try:
-        command[0] = util.which(command[0])
+        command[0] = shutil.which(command[0])
     except Exception:
         raise exceptions.ValueError('command argument could not be resolved to an executable file path.')
 

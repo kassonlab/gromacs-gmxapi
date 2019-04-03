@@ -35,6 +35,7 @@
 """Test gmxapi functionality described in roadmap.rst."""
 
 import os
+import shutil
 import stat
 import tempfile
 
@@ -54,7 +55,7 @@ def test_fr3():
         # Make a shell script that acts like the type of tool we are wrapping.
         scriptname = os.path.join(directory, 'clicommand.sh')
         with open(scriptname, 'w') as fh:
-            fh.write('\n'.join(['#!' + gmx.util.which('bash'),
+            fh.write('\n'.join(['#!' + shutil.which('bash'),
                                 '# Concatenate an input file and a string argument to an output file.',
                                 '# Mock a utility with the tested syntax.',
                                 '#     clicommand.sh "some words" -i inputfile -o outputfile',
