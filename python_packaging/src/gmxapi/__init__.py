@@ -36,6 +36,7 @@
 
 # Import system facilities
 import logging
+import os
 
 # Define `logger` attribute that is used by submodules to create sub-loggers.
 logging.getLogger().addHandler(logging.NullHandler(level=logging.DEBUG))
@@ -45,7 +46,36 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 logger.info("Importing gmxapi.")
 
-__all__ = ['commandline_operation', 'operation']
+__all__ = ['commandline_operation', 'exceptions', 'operation']
 
+from gmxapi import exceptions
 from gmxapi import operation
 from gmxapi.commandline import commandline_operation
+from gmxapi import _gmxapi
+
+
+def mdrun(input=None):
+    """MD simulation operation.
+
+    Arguments:
+        input : valid simulation input
+
+    Returns:
+        runnable operation to perform the specified simulation
+
+    The returned object has a `run()` method to launch the simulation.
+    Otherwise, this operation does not yet support the gmxapi data flow model.
+
+    `input` may be a TPR file name.
+    """
+    try:
+        filename = os.path.abspath(input)
+    except Exception as E:
+        raise exceptions.ValueError('input must be a valid file name.') from E
+    try:
+        system = _gmxapi.from_tpr(filename)
+        context = _gmxapi.Context()
+        md = system.launch(context)
+    except Exception as e:
+        raise exceptions.ApiError('Unhandled error from library: {}'.format(e)) from e
+    return md
