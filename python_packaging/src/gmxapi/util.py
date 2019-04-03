@@ -31,8 +31,43 @@
 #
 # To help us fund GROMACS development, we humbly ask that you cite
 # the research papers on the package. Check out http://www.gromacs.org.
+"""Utility functions supporting the Gromacs Python interface.
+"""
 
-# Note: pytest complains if there are no tests to run.
-# TODO: (FR1) remove when there is something else to test
-def test_import():
-    import gmxapi
+import os
+
+__all__ = ['which']
+
+from gmxapi import exceptions
+
+
+def which(command):
+    """
+    Get the full path of an executable that can be resolved by the shell.
+
+    :param command: executable in the user's PATH
+    :return: Absolute path of executable.
+
+    Ref: https://stackoverflow.com/questions/377017/test-if-executable-exists-in-python
+    """
+    try:
+        command_path = os.fsencode(command)
+    except:
+        raise exceptions.ValueError("Argument must be representable on the command line.")
+    if os.path.exists(command_path):
+        command_path = os.path.abspath(command_path)
+        if os.access(command_path, os.X_OK):
+            return command_path
+    else:
+        # Try to find the executable on the default PATH
+        from shutil import which
+        return which(command)
+
+
+def _test():
+    import doctest
+    doctest.testmod()
+
+
+if __name__ == "__main__":
+    _test()
