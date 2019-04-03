@@ -167,7 +167,9 @@ def spc216(gmxcli):
                                                       '-o': structurefile,
                                                       }
                                         )
-    assert solvate.output.returncode.result() == 0
+    if solvate.output.returncode.result() != 0:
+        logging.debug(solvate.output.erroroutput.result())
+        raise RuntimeError('solvate failed in spc216 testing fixture.')
 
     mdp_input = [('integrator', 'md'),
                  ('cutoff-scheme', 'Verlet'),
