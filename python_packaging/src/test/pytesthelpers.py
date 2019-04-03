@@ -43,6 +43,7 @@ withmpi_only = None
 
 try:
     from mpi4py import MPI
+
     withmpi_only = \
         pytest.mark.skipif(not MPI.Is_initialized() or MPI.COMM_WORLD.Get_size() < 2,
                            reason="Test requires at least 2 MPI ranks," +

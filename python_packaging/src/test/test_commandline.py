@@ -43,6 +43,7 @@ from gmxapi import commandline
 
 class SimpleCliTestCase(unittest.TestCase):
     """Test creation and execution of the basic cli() command line wrapper."""
+
     def test_true(self):
         command = shutil.which('true')
         operation = commandline.cli(command=[command], shell=False)
@@ -83,6 +84,7 @@ class SimpleCliTestCase(unittest.TestCase):
 
 class CommandLineOperationSimpleTestCase(unittest.TestCase):
     """Test the command line wrapper operation factory."""
+
     def test_true(self):
         operation = commandline.commandline_operation(executable='true')
         # Note: 'stdout' and 'stderr' not mapped.

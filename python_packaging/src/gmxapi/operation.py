@@ -52,35 +52,22 @@ __all__ = ['computed_result',
 from gmxapi import exceptions
 
 
-# Result scenarios:
-#
-# In (rough) order of increasing complexity:
-#
-# * stateless and reproducible locally: calculate when needed
-# * stateful and reproducible locally: calculate as needed, but implementation
-#   needs to avoid resource contention, race conditions, reentrancy issues.
-# * deferred: need to allow resource manager to provide data as it becomes available.
-#
-# In the general case, then, the Result handle should
-#
-# 1. allow a consumer to register its interest in the result with its own resource
-#    manager and allow itself to be provided with the result when it is available.
-# 2. Allow the holder of the Result handle to request the data immediately,
-#    with the understanding that the surrounding code is blocked on the request.
-#
-# Note that in case (1), the holder of the handle may not use the facility,
-# especially if it will be using (2).
-# TODO: (FR5+) This class can be removed for tidiness
-#  when more sophisticated classes are avialable.
-# E.g. caching Results, ensemble-safe results.
 class ImmediateResult(object):
-    """Simple Result obtainable with local computation.
+    """Data handle for a simple result.
 
-    Operation and result are stateless and can be evaluated in any Context.
+    Instances of this class can be used to provide a gmxapi compatible data
+    handle for trivial operations. Operation and result are stateless and can be
+    evaluated in any Context.
+
+    Used internally to implement the computed_result factory. The interface for
+    this class will evolve as the gmxapi data model evolves. Generally, code
+    providing gmxapi data sources should use one of the factories or decorators
+    provided in the gmxapi.operation module rather than instantiating from this
+    class directly.
     """
 
     def __init__(self, implementation=None, input=None):
-        """Wrapper for simple data sources that do not need Future behavior.
+        """Wrap a callable for a simple data source that does not need Future behavior.
 
         Provides a gmxapi compatible interface for data sources.
 
@@ -193,6 +180,7 @@ def append_list(a: list = (), b: list = ()):
         list_b = list([b])
     return list_a + list_b
 
+
 def concatenate_lists(sublists: list = ()):
     """Combine data sources into a single list.
 
@@ -205,6 +193,7 @@ def concatenate_lists(sublists: list = ()):
     else:
         return append_list(sublists[0], concatenate_lists(sublists[1:]))
 
+
 @computed_result
 def make_constant(value):
     """Create a source of the provided value.
@@ -212,6 +201,7 @@ def make_constant(value):
     Accepts a value of any type. The object returned has a definite type.
     """
     return type(value)(value)
+
 
 # In the longer term, Contexts could provide metaclasses that allow transformation or dispatching
 # of the basic aspects of the operation protocols between Contexts or from a result handle into a
@@ -266,6 +256,7 @@ def function_wrapper(output=None):
     class Publisher(object):
         """Data descriptor for write access to a specific named data resource.
         """
+
         def __init__(self, name, dtype):
             # self._input = Input(input.args, input.kwargs, input.dependencies)
             # self._instance = instance
@@ -294,6 +285,7 @@ def function_wrapper(output=None):
         Acts as an owning handle to ``instance``, preventing the reference count
         of ``instance`` from going to zero for the lifetime of the proxy object.
         """
+
         def __init__(self, instance):
             self._instance = instance
 
@@ -312,6 +304,7 @@ def function_wrapper(output=None):
         Returns an object of the concrete type specified according to
         the operation that produces this Result.
         """
+
         def __init__(self, resource_manager, name, dtype):
             self.resource_manager = resource_manager
             self.name = name
@@ -344,7 +337,7 @@ def function_wrapper(output=None):
             # TODO: Strict definition of outputs and output types can let us validate this earlier.
             #  We need AssociativeArray and NDArray so that we can type the elements.
             #  Allowing a Future with None type is a hack.
-            result = lambda future=self, item=item : future.result()[item]
+            result = lambda future=self, item=item: future.result()[item]
             future = collections.namedtuple('Future', ('dtype', 'result'))(None, result)
             return future
 
@@ -353,6 +346,7 @@ def function_wrapper(output=None):
 
         Knows how to get a Future from the resource manager.
         """
+
         def __init__(self, name, dtype):
             self.name = name
             self.dtype = dtype
@@ -488,7 +482,7 @@ def function_wrapper(output=None):
                         with self.publishing_resources() as output:
                             self._runner(*input.args, output=output, **input.kwargs)
 
-        def future(self, name:str=None, dtype=None):
+        def future(self, name: str = None, dtype=None):
             """Retrieve a Future for a named output.
 
             TODO: (FR5+) Normalize this part of the interface between operation definitions and
@@ -526,7 +520,7 @@ def function_wrapper(output=None):
                 dependency()
 
             # TODO: (FR3+) be more rigorous.
-            #  This should probably also use a sort of Context-based pub-sub rather than
+            #  This should probably also use a sort of Context-based observer pattern rather than
             #  the result() method, which is explicitly for moving data across the API boundary.
             args = []
             try:
@@ -606,7 +600,6 @@ def function_wrapper(output=None):
                 assert hasattr(item, 'run')
                 yield item.run
 
-
     def decorator(function):
         @functools.wraps(function)
         def factory(**kwargs):
@@ -679,8 +672,8 @@ def function_wrapper(output=None):
                     # TODO: Check input types
 
                     self.__input = PyFuncInput(args=[],
-                                         kwargs=input_kwargs,
-                                         dependencies=input_dependencies)
+                                               kwargs=input_kwargs,
+                                               dependencies=input_dependencies)
                     ##
 
                     # TODO: (FR5+) Split the definition of the resource structure
