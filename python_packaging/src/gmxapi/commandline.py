@@ -34,16 +34,12 @@
 """
 Provide command line operation.
 """
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-from __future__ import unicode_literals
-
-__all__ = []
 
 from os import devnull
 import shutil
 import subprocess
+
+__all__ = []
 
 from gmxapi import exceptions
 from gmxapi import logging
@@ -51,7 +47,7 @@ from gmxapi.operation import function_wrapper, append_list, concatenate_lists, m
 
 # Module-level logger
 logger = logging.getLogger(__name__)
-logger.info('Importing gmxapi._commandline_operation')
+logger.info('Importing gmxapi.commandline_operation')
 
 
 # Create an Operation that consumes a list and a boolean to produce a string and an integer.
@@ -141,24 +137,27 @@ def cli(command: list = None, shell: bool = None, output=None):
     except Exception:
         raise exceptions.ValueError('command argument could not be resolved to an executable file path.')
 
-    # TODO: (FR9) can these be a responsibility of the code providing 'resources'?
-    stdin = open(devnull, 'r')
-    stdout = open(devnull, 'w')
-    stderr = open(devnull, 'w')
+    # TODO: (FR9) Can OS input/output filehandles be a responsibility of
+    #  the code providing 'resources'?
 
-    erroroutput = None
+    erroroutput = ''
     logger.debug('executing subprocess')
-    with stdin as null_in, stdout as null_out, stderr as null_err:
-        try:
-            returncode = subprocess.check_call(command,
-                                               shell=shell,
-                                               stdin=null_in,
-                                               stdout=null_out,
-                                               stderr=null_err)
-        except subprocess.CalledProcessError as e:
-            logger.info("commandline operation had non-zero return status when calling {}".format(e.cmd))
-            erroroutput = e.output
-            returncode = e.returncode
+    try:
+        # TODO: If Python >=3.5 is required, switch to subprocess.run()
+        command_output = subprocess.check_output(command,
+                                                 shell=shell,
+                                                 stdin=subprocess.DEVNULL,
+                                                 stderr=subprocess.STDOUT,
+                                                 )
+        returncode = 0
+        # TODO: Resource management code should manage a safe data object for `output`.
+        # WARNING: We have no reason to assume the output is utf-8 encoded text!!!
+        for line in command_output.decode('utf-8').split('\n'):
+            logger.debug(line)
+    except subprocess.CalledProcessError as e:
+        logger.info("commandline operation had non-zero return status when calling {}".format(e.cmd))
+        erroroutput = e.output.decode('utf-8')
+        returncode = e.returncode
     # resources.output.erroroutput.publish(erroroutput)
     # resources.output.returncode.publish(returncode)
     # `publish` is descriptive, but redundant. Access to the output data handler is
@@ -171,7 +170,7 @@ def cli(command: list = None, shell: bool = None, output=None):
     # output.file = None
 
 
-# TODO: make this a formal operation.
+# TODO: (FR4) Make this a formal operation to properly handle gmxapi data dependencies.
 #  The consumer of this operation has an NDArray input. filemap may contain gmxapi data flow
 #  aspects that we want the framework to handle for us.
 def filemap_to_flag_list(filemap=None):
@@ -194,7 +193,7 @@ def filemap_to_flag_list(filemap=None):
     if filemap is not None:
         for flag, value in filemap.items():
             flag_list.extend((flag, value))
-    # TODO: (FR4) Should be a NDArray(dtype=str)
+    # TODO: (FR4) Should be a NDArray(shape=(1,), dtype=str)
     return flag_list
 
 
@@ -225,6 +224,7 @@ def commandline_operation(executable=None,
         * `returncode`: return code of the subprocess.
 
     """
+
     # Implementation details: When used in a script, this function returns an
     # instance of an operation. However, because of the dynamic specification of
     # inputs and outputs, each invocation may have the overhead of defining new
@@ -239,7 +239,7 @@ def commandline_operation(executable=None,
     # will not be published until the rest of the operation has run (i.e. the cli() executable.)
 
     @function_wrapper(output={'erroroutput': str, 'returncode': int, 'file': dict})
-    def merged_ops(erroroutput:str=None, returncode:int=None, file:dict=None, output=None):
+    def merged_ops(erroroutput: str = None, returncode: int = None, file: dict = None, output=None):
         assert erroroutput is not None
         assert returncode is not None
         assert file is not None
@@ -255,6 +255,8 @@ def commandline_operation(executable=None,
         input_files = {}
     if output_files is None:
         output_files = {}
+    if isinstance(arguments, (str, bytes)):
+        arguments = [arguments]
     command = concatenate_lists([[executable],
                                  arguments,
                                  filemap_to_flag_list(input_files),

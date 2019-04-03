@@ -46,6 +46,7 @@ from gmxapi import commandline_operation
 
 class ImmediateResultTestCase(unittest.TestCase):
     """Test data model and data flow for basic operations."""
+
     def test_scalar(self):
         operation = gmx.operation.make_constant(42)
         assert isinstance(operation.dtype, type)
@@ -53,7 +54,7 @@ class ImmediateResultTestCase(unittest.TestCase):
         assert operation.result() == 42
 
     def test_list(self):
-        list_a = [1,2,3]
+        list_a = [1, 2, 3]
 
         # TODO: test input validation
         list_result = gmx.operation.concatenate_lists(sublists=[list_a])
@@ -80,6 +81,7 @@ class ImmediateResultTestCase(unittest.TestCase):
 
 class OperationPipelineTestCase(unittest.TestCase):
     """Test dependent sequence of operations."""
+
     def test_operation_dependence(self):
         """Confirm that dependent operations are only executed after their dependencies.
 
