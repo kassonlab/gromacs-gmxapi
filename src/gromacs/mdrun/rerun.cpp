@@ -204,11 +204,9 @@ void gmx::Integrator::do_rerun()
     rvec                    mu_tot;
     t_trxframe              rerun_fr;
     gmx_localtop_t          top;
-    gmx_enerdata_t         *enerd;
     PaddedVector<gmx::RVec> f {};
     gmx_global_stat_t       gstat;
     t_graph                *graph = nullptr;
-    gmx_groups_t           *groups;
     gmx_shellfc_t          *shellfc;
 
     double                  cycles;
@@ -292,7 +290,7 @@ void gmx::Integrator::do_rerun()
     const bool bNS           = true;
 
     ir->nstxout_compressed = 0;
-    groups                 = &top_global->groups;
+    SimulationGroups *groups                 = &top_global->groups;
     if (ir->eI == eiMimic)
     {
         top_global->intermolecularExclusionGroup = genQmmmIndices(*top_global);
@@ -303,11 +301,6 @@ void gmx::Integrator::do_rerun()
     gmx_mdoutf       *outf = init_mdoutf(fplog, nfile, fnm, mdrunOptions, cr, outputProvider, ir, top_global, oenv, wcycle);
     gmx::EnergyOutput energyOutput;
     energyOutput.prepare(mdoutf_get_fp_ene(outf), top_global, ir, mdoutf_get_fp_dhdl(outf), true);
-
-    /* Energy terms and groups */
-    snew(enerd, 1);
-    init_enerdata(top_global->groups.grps[egcENER].nr, ir->fepvals->n_lambda,
-                  enerd);
 
     /* Kinetic energy data */
     std::unique_ptr<gmx_ekindata_t> eKinData = std::make_unique<gmx_ekindata_t>();
@@ -324,7 +317,7 @@ void gmx::Integrator::do_rerun()
                                  ir->nstcalcenergy, DOMAINDECOMP(cr));
 
     {
-        double io = compute_io(ir, top_global->natoms, groups, energyOutput.numEnergyTerms(), 1);
+        double io = compute_io(ir, top_global->natoms, *groups, energyOutput.numEnergyTerms(), 1);
         if ((io > 2000) && MASTER(cr))
         {
             fprintf(stderr,
@@ -769,7 +762,4 @@ void gmx::Integrator::do_rerun()
     }
 
     walltime_accounting_set_nsteps_done(walltime_accounting, step_rel);
-
-    destroy_enerdata(enerd);
-    sfree(enerd);
 }

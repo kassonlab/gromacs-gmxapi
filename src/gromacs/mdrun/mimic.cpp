@@ -150,11 +150,9 @@ void gmx::Integrator::do_mimic()
     tensor                   force_vir, shake_vir, total_vir, pres;
     rvec                     mu_tot;
     gmx_localtop_t           top;
-    gmx_enerdata_t          *enerd;
     PaddedVector<gmx::RVec>  f {};
     gmx_global_stat_t        gstat;
     t_graph                 *graph = nullptr;
-    gmx_groups_t            *groups;
     gmx_shellfc_t           *shellfc;
 
     double                   cycles;
@@ -223,7 +221,7 @@ void gmx::Integrator::do_mimic()
     }
 
     ir->nstxout_compressed                   = 0;
-    groups                                   = &top_global->groups;
+    SimulationGroups *groups                        = &top_global->groups;
     top_global->intermolecularExclusionGroup = genQmmmIndices(*top_global);
 
     initialize_lambdas(fplog, *ir, MASTER(cr), &state_global->fep_state, state_global->lambda, lam0);
@@ -232,11 +230,6 @@ void gmx::Integrator::do_mimic()
     gmx_mdoutf       *outf = init_mdoutf(fplog, nfile, fnm, mdrunOptions, cr, outputProvider, ir, top_global, oenv, wcycle);
     gmx::EnergyOutput energyOutput;
     energyOutput.prepare(mdoutf_get_fp_ene(outf), top_global, ir, mdoutf_get_fp_dhdl(outf), true);
-
-    /* Energy terms and groups */
-    snew(enerd, 1);
-    init_enerdata(top_global->groups.grps[egcENER].nr, ir->fepvals->n_lambda,
-                  enerd);
 
     /* Kinetic energy data */
     std::unique_ptr<gmx_ekindata_t> eKinData = std::make_unique<gmx_ekindata_t>();
@@ -253,7 +246,7 @@ void gmx::Integrator::do_mimic()
                                  ir->nstcalcenergy, DOMAINDECOMP(cr));
 
     {
-        double io = compute_io(ir, top_global->natoms, groups, energyOutput.numEnergyTerms(), 1);
+        double io = compute_io(ir, top_global->natoms, *groups, energyOutput.numEnergyTerms(), 1);
         if ((io > 2000) && MASTER(cr))
         {
             fprintf(stderr,
@@ -643,7 +636,4 @@ void gmx::Integrator::do_mimic()
     }
 
     walltime_accounting_set_nsteps_done(walltime_accounting, step_rel);
-
-    destroy_enerdata(enerd);
-    sfree(enerd);
 }

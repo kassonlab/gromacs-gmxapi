@@ -169,11 +169,9 @@ void gmx::Integrator::do_md()
     matrix                  parrinellorahmanMu, M;
     gmx_repl_ex_t           repl_ex = nullptr;
     gmx_localtop_t          top;
-    gmx_enerdata_t         *enerd;
     PaddedVector<gmx::RVec> f {};
     gmx_global_stat_t       gstat;
     t_graph                *graph = nullptr;
-    gmx_groups_t           *groups;
     gmx_shellfc_t          *shellfc;
     gmx_bool                bSumEkinhOld, bDoReplEx, bExchanged, bNeedRepartition;
     gmx_bool                bTemp, bPres, bTrotter;
@@ -232,7 +230,7 @@ void gmx::Integrator::do_md()
     nstglobalcomm   = check_nstglobalcomm(mdlog, nstglobalcomm, ir, cr);
     bGStatEveryStep = (nstglobalcomm == 1);
 
-    groups = &top_global->groups;
+    SimulationGroups                  *groups = &top_global->groups;
 
     std::unique_ptr<EssentialDynamics> ed = nullptr;
     if (opt2bSet("-ei", nfile, fnm) || observablesHistory->edsamHistory != nullptr)
@@ -258,11 +256,6 @@ void gmx::Integrator::do_md()
     gmx::EnergyOutput energyOutput;
     energyOutput.prepare(mdoutf_get_fp_ene(outf), top_global, ir, mdoutf_get_fp_dhdl(outf));
 
-    /* Energy terms and groups */
-    snew(enerd, 1);
-    init_enerdata(top_global->groups.grps[egcENER].nr, ir->fepvals->n_lambda,
-                  enerd);
-
     /* Kinetic energy data */
     std::unique_ptr<gmx_ekindata_t> eKinData = std::make_unique<gmx_ekindata_t>();
     gmx_ekindata_t                 *ekind    = eKinData.get();
@@ -278,7 +271,7 @@ void gmx::Integrator::do_md()
                                  ir->nstcalcenergy, DOMAINDECOMP(cr));
 
     {
-        double io = compute_io(ir, top_global->natoms, groups, energyOutput.numEnergyTerms(), 1);
+        double io = compute_io(ir, top_global->natoms, *groups, energyOutput.numEnergyTerms(), 1);
         if ((io > 2000) && MASTER(cr))
         {
             fprintf(stderr,
@@ -1531,9 +1524,6 @@ void gmx::Integrator::do_md()
 
     walltime_accounting_set_nsteps_done(walltime_accounting, step_rel);
 
-    destroy_enerdata(enerd);
-
-    sfree(enerd);
     global_stat_destroy(gstat);
 
 }
