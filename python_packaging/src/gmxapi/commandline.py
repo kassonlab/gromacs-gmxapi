@@ -37,17 +37,17 @@ Provide command line operation.
 
 __all__ = ['commandline_operation']
 
-from os import devnull
 import shutil
 import subprocess
+from os import devnull
 
 from gmxapi import exceptions
-from gmxapi import logging
-from gmxapi.operation import function_wrapper, append_list, concatenate_lists, make_constant
+from gmxapi import logger as root_logger
+from gmxapi.operation import function_wrapper, concatenate_lists, make_constant
 
 # Module-level logger
-logger = logging.getLogger(__name__)
-logger.info('Importing gmxapi._commandline_operation')
+logger = root_logger.getChild(__name__)
+logger.info('Importing gmxapi.commandline_operation')
 
 
 # Create an Operation that consumes a list and a boolean to produce a string and an integer.

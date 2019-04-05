@@ -1,3 +1,4 @@
+#
 # This file is part of the GROMACS molecular simulation package.
 #
 # Copyright (c) 2019, by the GROMACS development team, led by
@@ -36,18 +37,18 @@
 Provide decorators and base classes to generate and validate gmxapi Operations.
 """
 
-import collections
-from contextlib import contextmanager
-import functools
-import inspect
-import weakref
-
 __all__ = ['computed_result',
            'append_list',
            'concatenate_lists',
            'function_wrapper',
            'make_constant',
            ]
+
+import collections
+import functools
+import inspect
+import weakref
+from contextlib import contextmanager
 
 from gmxapi import exceptions
 
@@ -176,6 +177,7 @@ def append_list(a: list = (), b: list = ()):
     except TypeError:
         list_b = list([b])
     return list_a + list_b
+
 
 def concatenate_lists(sublists: list = ()):
     """Combine data sources into a single list.
@@ -335,10 +337,13 @@ def function_wrapper(output=None):
 
         def __getitem__(self, item):
             """Get a more limited view on the Future."""
+
             # TODO: Strict definition of outputs and output types can let us validate this earlier.
             #  We need AssociativeArray and NDArray so that we can type the elements.
             #  Allowing a Future with None type is a hack.
-            result = lambda future=self, item=item: future.result()[item]
+            def result():
+                return self.result()[item]
+
             future = collections.namedtuple('Future', ('dtype', 'result'))(None, result)
             return future
 
@@ -489,7 +494,7 @@ def function_wrapper(output=None):
             TODO: (FR5+) Normalize this part of the interface between operation definitions and
              resource managers.
             """
-            if not isinstance(name, str) or not name in self._data:
+            if not isinstance(name, str) or name not in self._data:
                 raise exceptions.ValueError('"name" argument must name an output.')
             assert dtype is not None
             if dtype != self._data[name].dtype:
@@ -634,7 +639,7 @@ def function_wrapper(output=None):
                     dependencies that the framework promises to satisfy before the Operation
                     executes and produces output.
                     """
-                    ## Define the unique identity and data flow constraints of this work graph node.
+                    # Define the unique identity and data flow constraints of this work graph node.
                     # TODO: (FR4) generalize
                     input_dependencies = []
 
@@ -673,7 +678,6 @@ def function_wrapper(output=None):
                     self.__input = PyFuncInput(args=[],
                                                kwargs=input_kwargs,
                                                dependencies=input_dependencies)
-                    ##
 
                     # TODO: (FR5+) Split the definition of the resource structure
                     #  and the resource initialization.

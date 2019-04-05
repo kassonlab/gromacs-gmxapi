@@ -39,13 +39,13 @@ import shutil
 import stat
 import tempfile
 
-import pytest
-
 import gmxapi as gmx
+import pytest
 from gmxapi.version import has_feature
 
+
 @pytest.mark.skipif(not has_feature('fr3'),
-                   reason="Feature level not met.")
+                    reason="Feature level not met.")
 def test_fr3():
     """FR3: Output proxy can be used as input."""
     with tempfile.TemporaryDirectory() as directory:

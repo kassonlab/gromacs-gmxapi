@@ -32,30 +32,17 @@
 # To help us fund GROMACS development, we humbly ask that you cite
 # the research papers on the package. Check out http://www.gromacs.org.
 
-"""Test gmxapi functionality described in roadmap.rst."""
+"""Configure the Python logging facilities."""
 
-import gmxapi as gmx
-import pytest
-from gmxapi.version import has_feature
+__all__ = ['logger']
 
+# Import system facilities
+from logging import getLogger, DEBUG, NullHandler
 
-@pytest.mark.skipif(not has_feature('fr1'),
-                    reason="Feature level not met.")
-def test_fr1():
-    """FR1: Wrap importable Python code.
-
-    gmxapi compatible operations are implemented with simple machinery that allows
-    compartmentalized progress on functionality to be highly decoupled from
-    implementing user-facing tools. Tools are provided in `gmx.operation` and
-    demonstrated by implementing `gmx.commandline_operation`.
-    """
-    # commandline_operation helper creates a set of operations
-    # that includes the discovery and execution of the program
-    # named in `executable`.
-    operation = gmx.commandline_operation(executable='true')
-    operation.run()
-    assert operation.output.returncode.result() == 0
-
-    operation = gmx.commandline_operation(executable='false')
-    operation.run()
-    assert operation.output.returncode.result() == 1
+# Define `logger` attribute that is used by submodules to create sub-loggers.
+getLogger().addHandler(NullHandler(level=DEBUG))
+getLogger().setLevel(DEBUG)
+getLogger().info("Setting up logging for gmxapi package.")
+logger = getLogger(__name__)
+logger.setLevel(DEBUG)
+logger.info("Importing gmxapi.")
