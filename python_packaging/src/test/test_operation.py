@@ -34,11 +34,10 @@
 # the research papers on the package. Check out http://www.gromacs.org.
 
 import os
+import shutil
 import stat
 import tempfile
 import unittest
-
-import pytest
 
 import gmxapi as gmx
 from gmxapi import commandline_operation
@@ -110,7 +109,6 @@ class OperationPipelineTestCase(unittest.TestCase):
             assert lines[0] == line1
             assert lines[1] == line2
 
-    @pytest.mark.xfail
     def test_data_dependence(self):
         """Confirm that data dependencies correctly establish resolvable execution dependencies.
 
@@ -124,7 +122,7 @@ class OperationPipelineTestCase(unittest.TestCase):
             # Make a shell script that acts like the type of tool we are wrapping.
             scriptname = os.path.join(directory, 'clicommand.sh')
             with open(scriptname, 'w') as fh:
-                fh.write('\n'.join(['#!' + util.which('bash'),
+                fh.write('\n'.join(['#!' + shutil.which('bash'),
                                     '# Concatenate an input file and a string argument to an output file.',
                                     '# Mock a utility with the tested syntax.',
                                     '#     clicommand.sh "some words" -i inputfile -o outputfile',
