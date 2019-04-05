@@ -46,7 +46,7 @@ try:
 
     withmpi_only = \
         pytest.mark.skipif(not MPI.Is_initialized() or MPI.COMM_WORLD.Get_size() < 2,
-                           reason="Test requires at least 2 MPI ranks," +
-                                  "but MPI is not initialized or context is too small.")
+                           reason="Test requires at least 2 MPI ranks,"
+                                  + "but MPI is not initialized or context is too small.")
 except ImportError:
     withmpi_only = pytest.mark.skip(reason="Test requires at least 2 MPI ranks, but mpi4py is not available.")

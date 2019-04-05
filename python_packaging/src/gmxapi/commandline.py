@@ -35,18 +35,17 @@
 Provide command line operation.
 """
 
-from os import devnull
+__all__ = ['commandline_operation']
+
 import shutil
 import subprocess
 
-__all__ = []
-
 from gmxapi import exceptions
-from gmxapi import logging
-from gmxapi.operation import function_wrapper, append_list, concatenate_lists, make_constant
+from gmxapi import logger as root_logger
+from gmxapi.operation import function_wrapper, concatenate_lists, make_constant
 
 # Module-level logger
-logger = logging.getLogger(__name__)
+logger = root_logger.getChild(__name__)
 logger.info('Importing gmxapi.commandline_operation')
 
 
