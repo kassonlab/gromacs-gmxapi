@@ -69,7 +69,7 @@ set(_find_deps_options)
 if (Sphinx_FIND_QUIETLY)
     set(_find_deps_options QUIET)
 endif()
-execute_process(COMMAND "${PYTHON_EXECUTABLE}" "-c"
+execute_process(COMMAND "${Python3_EXECUTABLE}" "-c"
                 "import pygments"
                 RESULT_VARIABLE _pygments_status
                 ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE)

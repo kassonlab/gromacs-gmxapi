@@ -64,7 +64,27 @@ if (DEFINED PYTHON_EXECUTABLE)
     # Keep quiet on subsequent runs of cmake
     set(PythonInterp_FIND_QUIETLY ON)
 endif()
-find_package(PythonInterp 3.5)
+if(CMAKE_VERSION VERSION_LESS 3.12)
+    # Note: Though only documented as an output variable, PYTHON_EXECUTABLE is
+    # also effective as a CMake input variable to effectively hint the location
+    # of the Python interpreter. This may be helpful in environments with both
+    # Python 2 and Python 3 on the default PATH.
+    # Ref: https://cmake.org/cmake/help/latest/module/FindPythonInterp.html
+    set(Python_ADDITIONAL_VERSIONS 3.8 3.7 3.6 3.5)
+    find_package(PythonInterp 3.5 REQUIRED)
+    if(PYTHONINTERP_FOUND)
+        set(Python3_FOUND ON)
+        set(Python3_Interpreter_FOUND ON)
+        set(Python3_EXECUTABLE ${PYTHON_EXECUTABLE})
+    endif()
+else()
+    # Set some hints to encourage discovery of Python virtual environment.
+    # Ref: https://cmake.org/cmake/help/latest/module/FindPython3.html#hints
+    # Users may also set Python3_ROOT_DIR.
+    set(Python3_FIND_REGISTRY LAST) # e.g. in Windows
+    set(CMAKE_FIND_FRAMEWORK LAST) # e.g. with Apple Frameworks
+    find_package(Python3 COMPONENTS Interpreter REQUIRED)
+endif()
 find_package(Sphinx ${EXPECTED_SPHINX_VERSION} QUIET COMPONENTS pygments)
 
 # Even if we aren't going to make the full webpage, set up to put all
@@ -638,7 +658,7 @@ set(HTML_BUILD_NOT_POSSIBLE_REASON)
 set(HTML_BUILD_WARNINGS)
 
 # Next, turn it off if any of the preconditions are unsatisified
-if (NOT PYTHON_EXECUTABLE)
+if (NOT Python3_Interpreter_FOUND)
     set(HTML_BUILD_IS_POSSIBLE OFF)
     set(HTML_BUILD_NOT_POSSIBLE_REASON "Python is required")
 elseif (NOT SPHINX_FOUND)
