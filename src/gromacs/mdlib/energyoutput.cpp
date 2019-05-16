@@ -142,7 +142,6 @@ struct t_mdebin
     int                 nCrmsd;
     gmx_bool            bEner[F_NRE];
     gmx_bool            bEInd[egNR];
-    char              **print_grpnms;
 
     FILE               *fp_dhdl; /* the dhdl.xvg output file */
     double             *dE;      /* energy components for dhdl.xvg output */
@@ -450,7 +449,7 @@ t_mdebin *init_mdebin(ener_file_t       fp_ene,
             md->nEc++;
         }
     }
-    n       = groups->groups[SimulationAtomGroupType::EnergyOutput].nr;
+    n       = groups->groups[SimulationAtomGroupType::EnergyOutput].size();
     md->nEg = n;
     md->nE  = (n*(n+1))/2;
 
@@ -463,12 +462,12 @@ t_mdebin *init_mdebin(ener_file_t       fp_ene,
         {
             snew(gnm[k], STRLEN);
         }
-        for (i = 0; (i < groups->groups[SimulationAtomGroupType::EnergyOutput].nr); i++)
+        for (i = 0; (i < gmx::ssize(groups->groups[SimulationAtomGroupType::EnergyOutput])); i++)
         {
-            ni = groups->groups[SimulationAtomGroupType::EnergyOutput].nm_ind[i];
-            for (j = i; (j < groups->groups[SimulationAtomGroupType::EnergyOutput].nr); j++)
+            ni = groups->groups[SimulationAtomGroupType::EnergyOutput][i];
+            for (j = i; (j < gmx::ssize(groups->groups[SimulationAtomGroupType::EnergyOutput])); j++)
             {
-                nj = groups->groups[SimulationAtomGroupType::EnergyOutput].nm_ind[j];
+                nj = groups->groups[SimulationAtomGroupType::EnergyOutput][j];
                 for (k = kk = 0; (k < egNR); k++)
                 {
                     if (md->bEInd[k])
@@ -495,7 +494,7 @@ t_mdebin *init_mdebin(ener_file_t       fp_ene,
         }
     }
 
-    md->nTC  = isRerun ? 0 : groups->groups[SimulationAtomGroupType::TemperatureCoupling].nr;
+    md->nTC  = isRerun ? 0 : groups->groups[SimulationAtomGroupType::TemperatureCoupling].size();
     md->nNHC = ir->opts.nhchainlength; /* shorthand for number of NH chains */
     if (md->bMTTK)
     {
@@ -528,19 +527,25 @@ t_mdebin *init_mdebin(ener_file_t       fp_ene,
     }
 
     snew(md->tmp_r, md->mde_n);
-    snew(md->tmp_v, md->mde_n);
+
+    // TODO redo the group name memory management to make it more clear
     char **grpnms;
-    snew(grpnms, md->mde_n);
+    snew(grpnms, std::max(md->mde_n, md->mdeb_n)); // Just in case md->mdeb_n > md->mde_n
 
     for (i = 0; (i < md->nTC); i++)
     {
-        ni = groups->groups[SimulationAtomGroupType::TemperatureCoupling].nm_ind[i];
+        ni = groups->groups[SimulationAtomGroupType::TemperatureCoupling][i];
         sprintf(buf, "T-%s", *(groups->groupNames[ni]));
         grpnms[i] = gmx_strdup(buf);
     }
     md->itemp = get_ebin_space(md->ebin, md->nTC, grpnms,
                                unit_temp_K);
+    for (i = 0; i < md->nTC; i++)
+    {
+        sfree(grpnms[i]);
+    }
 
+    int allocated = 0;
     if (md->etc == etcNOSEHOOVER)
     {
         if (md->bPrintNHChains)
@@ -549,7 +554,7 @@ t_mdebin *init_mdebin(ener_file_t       fp_ene,
             {
                 for (i = 0; (i < md->nTC); i++)
                 {
-                    ni   = groups->groups[SimulationAtomGroupType::TemperatureCoupling].nm_ind[i];
+                    ni   = groups->groups[SimulationAtomGroupType::TemperatureCoupling][i];
                     bufi = *(groups->groupNames[ni]);
                     for (j = 0; (j < md->nNHC); j++)
                     {
@@ -561,6 +566,7 @@ t_mdebin *init_mdebin(ener_file_t       fp_ene,
                 }
                 md->itc = get_ebin_space(md->ebin, md->mde_n,
                                          grpnms, unit_invtime);
+                allocated = md->mde_n;
                 if (md->bMTTK)
                 {
                     for (i = 0; (i < md->nTCP); i++)
@@ -576,13 +582,14 @@ t_mdebin *init_mdebin(ener_file_t       fp_ene,
                     }
                     md->itcb = get_ebin_space(md->ebin, md->mdeb_n,
                                               grpnms, unit_invtime);
+                    allocated = md->mdeb_n;
                 }
             }
             else
             {
                 for (i = 0; (i < md->nTC); i++)
                 {
-                    ni   = groups->groups[SimulationAtomGroupType::TemperatureCoupling].nm_ind[i];
+                    ni   = groups->groups[SimulationAtomGroupType::TemperatureCoupling][i];
                     bufi = *(groups->groupNames[ni]);
                     sprintf(buf, "Xi-%s", bufi);
                     grpnms[2*i] = gmx_strdup(buf);
@@ -591,6 +598,7 @@ t_mdebin *init_mdebin(ener_file_t       fp_ene,
                 }
                 md->itc = get_ebin_space(md->ebin, md->mde_n,
                                          grpnms, unit_invtime);
+                allocated = md->mde_n;
             }
         }
     }
@@ -599,26 +607,28 @@ t_mdebin *init_mdebin(ener_file_t       fp_ene,
     {
         for (i = 0; (i < md->nTC); i++)
         {
-            ni = groups->groups[SimulationAtomGroupType::TemperatureCoupling].nm_ind[i];
+            ni = groups->groups[SimulationAtomGroupType::TemperatureCoupling][i];
             sprintf(buf, "Lamb-%s", *(groups->groupNames[ni]));
             grpnms[i] = gmx_strdup(buf);
         }
-        md->itc = get_ebin_space(md->ebin, md->mde_n, grpnms, "");
+        md->itc   = get_ebin_space(md->ebin, md->mde_n, grpnms, "");
+        allocated = md->mde_n;
     }
 
-    for (i = 0; i < md->mde_n; i++)
+    for (i = 0; i < allocated; i++)
     {
         sfree(grpnms[i]);
     }
     sfree(grpnms);
 
-    md->nU = groups->groups[SimulationAtomGroupType::Acceleration].nr;
+    md->nU = groups->groups[SimulationAtomGroupType::Acceleration].size();
+    snew(md->tmp_v, md->nU);
     if (md->nU > 1)
     {
         snew(grpnms, 3*md->nU);
         for (i = 0; (i < md->nU); i++)
         {
-            ni = groups->groups[SimulationAtomGroupType::Acceleration].nm_ind[i];
+            ni = groups->groups[SimulationAtomGroupType::Acceleration][i];
             sprintf(buf, "Ux-%s", *(groups->groupNames[ni]));
             grpnms[3*i+XX] = gmx_strdup(buf);
             sprintf(buf, "Uy-%s", *(groups->groupNames[ni]));
@@ -627,6 +637,10 @@ t_mdebin *init_mdebin(ener_file_t       fp_ene,
             grpnms[3*i+ZZ] = gmx_strdup(buf);
         }
         md->iu = get_ebin_space(md->ebin, 3*md->nU, grpnms, unit_vel);
+        for (i = 0; i < 3*md->nU; i++)
+        {
+            sfree(grpnms[i]);
+        }
         sfree(grpnms);
     }
 
@@ -634,8 +648,6 @@ t_mdebin *init_mdebin(ener_file_t       fp_ene,
     {
         do_enxnms(fp_ene, &md->ebin->nener, &md->ebin->enm);
     }
-
-    md->print_grpnms = nullptr;
 
     /* check whether we're going to write dh histograms */
     md->dhc = nullptr;
@@ -973,7 +985,7 @@ void upd_mdebin(t_mdebin               *md,
                 rvec                    mu_tot,
                 const gmx::Constraints *constr)
 {
-    int    i, j, k, kk, n, gid;
+    int    j, k, kk, n, gid;
     real   crmsd[2], tmp6[6];
     real   bs[NTRICLBOXS], vol, dens, pv, enthalpy;
     real   eee[egNR];
@@ -1067,7 +1079,7 @@ void upd_mdebin(t_mdebin               *md,
     if (md->nE > 1)
     {
         n = 0;
-        for (i = 0; (i < md->nEg); i++)
+        for (int i = 0; (i < md->nEg); i++)
         {
             for (j = i; (j < md->nEg); j++)
             {
@@ -1087,7 +1099,7 @@ void upd_mdebin(t_mdebin               *md,
 
     if (ekind)
     {
-        for (i = 0; (i < md->nTC); i++)
+        for (int i = 0; (i < md->nTC); i++)
         {
             md->tmp_r[i] = ekind->tcstat[i].T;
         }
@@ -1100,7 +1112,7 @@ void upd_mdebin(t_mdebin               *md,
             {
                 if (md->bNHC_trotter)
                 {
-                    for (i = 0; (i < md->nTC); i++)
+                    for (int i = 0; (i < md->nTC); i++)
                     {
                         for (j = 0; j < md->nNHC; j++)
                         {
@@ -1113,7 +1125,7 @@ void upd_mdebin(t_mdebin               *md,
 
                     if (md->bMTTK)
                     {
-                        for (i = 0; (i < md->nTCP); i++)
+                        for (int i = 0; (i < md->nTCP); i++)
                         {
                             for (j = 0; j < md->nNHC; j++)
                             {
@@ -1127,7 +1139,7 @@ void upd_mdebin(t_mdebin               *md,
                 }
                 else
                 {
-                    for (i = 0; (i < md->nTC); i++)
+                    for (int i = 0; (i < md->nTC); i++)
                     {
                         md->tmp_r[2*i]   = state->nosehoover_xi[i];
                         md->tmp_r[2*i+1] = state->nosehoover_vxi[i];
@@ -1139,7 +1151,7 @@ void upd_mdebin(t_mdebin               *md,
         else if (md->etc == etcBERENDSEN || md->etc == etcYES ||
                  md->etc == etcVRESCALE)
         {
-            for (i = 0; (i < md->nTC); i++)
+            for (int i = 0; (i < md->nTC); i++)
             {
                 md->tmp_r[i] = ekind->tcstat[i].lambda;
             }
@@ -1149,7 +1161,7 @@ void upd_mdebin(t_mdebin               *md,
 
     if (ekind && md->nU > 1)
     {
-        for (i = 0; (i < md->nU); i++)
+        for (int i = 0; (i < md->nU); i++)
         {
             copy_rvec(ekind->grpstat[i].u, md->tmp_v[i]);
         }
@@ -1161,7 +1173,7 @@ void upd_mdebin(t_mdebin               *md,
     /* BAR + thermodynamic integration values */
     if ((md->fp_dhdl || md->dhc) && bDoDHDL)
     {
-        for (i = 0; i < enerd->n_lambda-1; i++)
+        for (gmx::index i = 0; i < static_cast<gmx::index>(enerd->enerpart_lambda.size()) - 1; i++)
         {
             /* zero for simulated tempering */
             md->dE[i] = enerd->enerpart_lambda[i+1]-enerd->enerpart_lambda[0];
@@ -1204,7 +1216,7 @@ void upd_mdebin(t_mdebin               *md,
 
             if (fep->dhdl_derivatives == edhdlderivativesYES)
             {
-                for (i = 0; i < efptNR; i++)
+                for (int i = 0; i < efptNR; i++)
                 {
                     if (fep->separate_dvdl[i])
                     {
@@ -1213,14 +1225,14 @@ void upd_mdebin(t_mdebin               *md,
                     }
                 }
             }
-            for (i = fep->lambda_start_n; i < fep->lambda_stop_n; i++)
+            for (int i = fep->lambda_start_n; i < fep->lambda_stop_n; i++)
             {
                 fprintf(md->fp_dhdl, " %#.8g", md->dE[i]);
             }
             if (md->bDynBox &&
                 md->bDiagPres &&
                 (md->epc != epcNO) &&
-                (enerd->n_lambda > 0) &&
+                !enerd->enerpart_lambda.empty() &&
                 (fep->init_lambda < 0))
             {
                 fprintf(md->fp_dhdl, " %#.8g", pv);  /* PV term only needed when
@@ -1234,7 +1246,7 @@ void upd_mdebin(t_mdebin               *md,
         if (md->dhc && bDoDHDL)
         {
             int idhdl = 0;
-            for (i = 0; i < efptNR; i++)
+            for (int i = 0; i < efptNR; i++)
             {
                 if (fep->separate_dvdl[i])
                 {
@@ -1311,9 +1323,322 @@ void print_ebin_header(FILE *log, int64_t steps, double time)
 namespace
 {
 
-// TODO It is too many responsibilities for this function to handle
-// both .edr and .log output for both per-time and time-average data.
-//! Legacy ebin output function
+/*! \brief Print current values of thermodynamic parameters
+ *
+ * This function only does something useful when bEne || bDR || bOR || log.
+ *
+ * \param[in] fp_ene   Energy file for the output.
+ * \param[in] bEne     If it is a step for energy output or last step.
+ * \param[in] bDR      If it is a step of writing distance restraints.
+ * \param[in] bOR      If it is a step of writing orientation restraints.
+ * \param[in] log      Pointer to the log file.
+ * \param[in] step     Current step.
+ * \param[in] time     Current simulation time.
+ * \param[in] md       Accumulated data for the system.
+ * \param[in] fcd      Bonded force computation data,
+ *                     including orientation and distance restraints.
+ * \param[in] awh      AWH data.
+ */
+void printCurrentValues(ener_file_t fp_ene, gmx_bool bEne, gmx_bool bDR, gmx_bool bOR,
+                        FILE *log,
+                        int64_t step, double time,
+                        t_mdebin *md, t_fcdata *fcd,
+                        gmx::Awh *awh)
+{
+    t_enxframe   fr;
+    init_enxframe(&fr);
+    fr.t            = time;
+    fr.step         = step;
+    fr.nsteps       = md->ebin->nsteps;
+    fr.dt           = md->delta_t;
+    fr.nsum         = md->ebin->nsum;
+    fr.nre          = (bEne) ? md->ebin->nener : 0;
+    fr.ener         = md->ebin->e;
+    int ndisre          = bDR ? fcd->disres.npair : 0;
+    /* these are for the old-style blocks (1 subblock, only reals), because
+       there can be only one per ID for these */
+    int          nr[enxNR];
+    int          id[enxNR];
+    real        *block[enxNR];
+    /* Optional additional old-style (real-only) blocks. */
+    for (int i = 0; i < enxNR; i++)
+    {
+        nr[i] = 0;
+    }
+
+    if (bOR && fcd->orires.nr > 0)
+    {
+        diagonalize_orires_tensors(&(fcd->orires));
+        nr[enxOR]     = fcd->orires.nr;
+        block[enxOR]  = fcd->orires.otav;
+        id[enxOR]     = enxOR;
+        nr[enxORI]    = (fcd->orires.oinsl != fcd->orires.otav) ?
+            fcd->orires.nr : 0;
+        block[enxORI] = fcd->orires.oinsl;
+        id[enxORI]    = enxORI;
+        nr[enxORT]    = fcd->orires.nex*12;
+        block[enxORT] = fcd->orires.eig;
+        id[enxORT]    = enxORT;
+    }
+
+    /* whether we are going to write anything out: */
+    if (fr.nre || ndisre || nr[enxOR] || nr[enxORI])
+    {
+        /* the old-style blocks go first */
+        fr.nblock = 0;
+        for (int i = 0; i < enxNR; i++)
+        {
+            if (nr[i] > 0)
+            {
+                fr.nblock = i + 1;
+            }
+        }
+        add_blocks_enxframe(&fr, fr.nblock);
+        for (int b = 0; b < fr.nblock; b++)
+        {
+            add_subblocks_enxblock(&(fr.block[b]), 1);
+            fr.block[b].id        = id[b];
+            fr.block[b].sub[0].nr = nr[b];
+#if !GMX_DOUBLE
+            fr.block[b].sub[0].type = xdr_datatype_float;
+            fr.block[b].sub[0].fval = block[b];
+#else
+            fr.block[b].sub[0].type = xdr_datatype_double;
+            fr.block[b].sub[0].dval = block[b];
+#endif
+        }
+
+        /* check for disre block & fill it. */
+        if (ndisre > 0)
+        {
+            int db = fr.nblock;
+            fr.nblock += 1;
+            add_blocks_enxframe(&fr, fr.nblock);
+
+            add_subblocks_enxblock(&(fr.block[db]), 2);
+            fr.block[db].id        = enxDISRE;
+            fr.block[db].sub[0].nr = ndisre;
+            fr.block[db].sub[1].nr = ndisre;
+#if !GMX_DOUBLE
+            fr.block[db].sub[0].type = xdr_datatype_float;
+            fr.block[db].sub[1].type = xdr_datatype_float;
+            fr.block[db].sub[0].fval = fcd->disres.rt;
+            fr.block[db].sub[1].fval = fcd->disres.rm3tav;
+#else
+            fr.block[db].sub[0].type = xdr_datatype_double;
+            fr.block[db].sub[1].type = xdr_datatype_double;
+            fr.block[db].sub[0].dval = fcd->disres.rt;
+            fr.block[db].sub[1].dval = fcd->disres.rm3tav;
+#endif
+        }
+        /* here we can put new-style blocks */
+
+        /* Free energy perturbation blocks */
+        if (md->dhc)
+        {
+            mde_delta_h_coll_handle_block(md->dhc, &fr, fr.nblock);
+        }
+
+        /* we can now free & reset the data in the blocks */
+        if (md->dhc)
+        {
+            mde_delta_h_coll_reset(md->dhc);
+        }
+
+        /* AWH bias blocks. */
+        if (awh != nullptr)  // TODO: add boolean in t_mdebin. See in mdebin.h.
+        {
+            awh->writeToEnergyFrame(step, &fr);
+        }
+
+        /* do the actual I/O */
+        do_enx(fp_ene, &fr);
+        if (fr.nre)
+        {
+            /* We have stored the sums, so reset the sum history */
+            reset_ebin_sums(md->ebin);
+        }
+    }
+    free_enxframe(&fr);
+    if (log)
+    {
+        if (bOR && fcd->orires.nr > 0)
+        {
+            print_orires_log(log, &(fcd->orires));
+        }
+
+        fprintf(log, "   Energies (%s)\n", unit_energy);
+        pr_ebin(log, md->ebin, md->ie, md->f_nre+md->nCrmsd, 5, eprNORMAL, TRUE);
+        fprintf(log, "\n");
+    }
+}
+
+/*! \brief Print reference temperatures for annealing groups.
+ *
+ * This does something only when log is not nullptr.
+ *
+ * \param[in] log     Log file to print to.
+ * \param[in] groups  Information on atom groups.
+ * \param[in] opts    Atom temperature coupling groups options
+ *                    (annealing is done by groups).
+ *
+ */
+void printAnnealingReferenceTemperatures(FILE *log, SimulationGroups *groups, t_grpopts *opts)
+{
+    if (log)
+    {
+        if (opts)
+        {
+            for (int i = 0; i < opts->ngtc; i++)
+            {
+                if (opts->annealing[i] != eannNO)
+                {
+                    fprintf(log, "Current ref_t for group %s: %8.1f\n",
+                            *(groups->groupNames[groups->groups[SimulationAtomGroupType::TemperatureCoupling][i]]),
+                            opts->ref_t[i]);
+                }
+            }
+            fprintf(log, "\n");
+        }
+    }
+}
+
+/*! \brief Prints average values
+ *
+ * This is called at the end of the simulation run to print accumulated average values.
+ *
+ * \param[in]   log      Where to print.
+ * \param[in]   md       Accumulated data for the system.
+ * \param[in]   groups   Atom groups.
+ */
+void printAverageValues(FILE             *log,
+                        t_mdebin         *md,
+                        SimulationGroups *groups)
+{
+    if (md->ebin->nsum_sim <= 0)
+    {
+        if (log)
+        {
+            fprintf(log, "Not enough data recorded to report energy averages\n");
+        }
+        return;
+    }
+    if (log)
+    {
+        pprint(log, "A V E R A G E S", md);
+
+        fprintf(log, "   Energies (%s)\n", unit_energy);
+        pr_ebin(log, md->ebin, md->ie, md->f_nre+md->nCrmsd, 5, eprAVER, TRUE);
+        fprintf(log, "\n");
+
+        if (md->bDynBox)
+        {
+            pr_ebin(log, md->ebin, md->ib, md->bTricl ? NTRICLBOXS : NBOXS, 5,
+                    eprAVER, TRUE);
+            fprintf(log, "\n");
+        }
+        if (md->bConstrVir)
+        {
+            fprintf(log, "   Constraint Virial (%s)\n", unit_energy);
+            pr_ebin(log, md->ebin, md->isvir, 9, 3, eprAVER, FALSE);
+            fprintf(log, "\n");
+            fprintf(log, "   Force Virial (%s)\n", unit_energy);
+            pr_ebin(log, md->ebin, md->ifvir, 9, 3, eprAVER, FALSE);
+            fprintf(log, "\n");
+        }
+        if (md->bPres)
+        {
+            fprintf(log, "   Total Virial (%s)\n", unit_energy);
+            pr_ebin(log, md->ebin, md->ivir, 9, 3, eprAVER, FALSE);
+            fprintf(log, "\n");
+            fprintf(log, "   Pressure (%s)\n", unit_pres_bar);
+            pr_ebin(log, md->ebin, md->ipres, 9, 3, eprAVER, FALSE);
+            fprintf(log, "\n");
+        }
+        if (md->bMu)
+        {
+            fprintf(log, "   Total Dipole (%s)\n", unit_dipole_D);
+            pr_ebin(log, md->ebin, md->imu, 3, 3, eprAVER, FALSE);
+            fprintf(log, "\n");
+        }
+
+        if (md->nE > 1)
+        {
+            int padding = 8 - strlen(unit_energy);
+            fprintf(log, "%*sEpot (%s)   ", padding, "", unit_energy);
+            for (int i = 0; (i < egNR); i++)
+            {
+                if (md->bEInd[i])
+                {
+                    fprintf(log, "%12s   ", egrp_nm[i]);
+                }
+            }
+            fprintf(log, "\n");
+
+            int n = 0;
+            for (int i = 0; (i < md->nEg); i++)
+            {
+                int ni = groups->groups[SimulationAtomGroupType::EnergyOutput][i];
+                for (int j = i; (j < md->nEg); j++)
+                {
+                    int nj      = groups->groups[SimulationAtomGroupType::EnergyOutput][j];
+                    int padding = 14 - (strlen(*(groups->groupNames[ni])) +
+                                        strlen(*(groups->groupNames[nj])));
+                    fprintf(log, "%*s%s-%s", padding, "",
+                            *(groups->groupNames[ni]),
+                            *(groups->groupNames[nj]));
+                    pr_ebin(log, md->ebin, md->igrp[n], md->nEc, md->nEc, eprAVER,
+                            FALSE);
+                    n++;
+                }
+            }
+            fprintf(log, "\n");
+        }
+        if (md->nTC > 1)
+        {
+            pr_ebin(log, md->ebin, md->itemp, md->nTC, 4, eprAVER, TRUE);
+            fprintf(log, "\n");
+        }
+        if (md->nU > 1)
+        {
+            fprintf(log, "%15s   %12s   %12s   %12s\n",
+                    "Group", "Ux", "Uy", "Uz");
+            for (int i = 0; (i < md->nU); i++)
+            {
+                int ni = groups->groups[SimulationAtomGroupType::Acceleration][i];
+                fprintf(log, "%15s", *groups->groupNames[ni]);
+                pr_ebin(log, md->ebin, md->iu+3*i, 3, 3, eprAVER, FALSE);
+            }
+            fprintf(log, "\n");
+        }
+    }
+}
+
+/*! \brief Legacy ebin output function.
+ *
+ * The function dispatches the printing according to what is to be printed
+ *
+ * TODO It is too many responsibilities for this function to handle
+ *      both .edr and .log output for both per-time and time-average data.
+ * TODO The split between average and current outputs is to be done into two separate
+ *      methods of the EnergyOutput class. This function will then be removed.
+ *
+ * \param[in] fp_ene   Energy file for the output.
+ * \param[in] bEne     If it is a step for energy output or last step.
+ * \param[in] bDR      If it is a step of writing distance restraints.
+ * \param[in] bOR      If it is a step of writing orientation restraints.
+ * \param[in] log      Pointer to the log file.
+ * \param[in] step     Current step.
+ * \param[in] time     Current simulation time.
+ * \param[in] mode     eprNORMAL to output current values,
+ *                     eprAVER to output collected averages.
+ * \param[in] md       Accumulated data for the system.
+ * \param[in] fcd      Bonded force computation data,
+ *                     including orientation and distance restraints.
+ * \param[in] groups   Information on atom groups.
+ * \param[in] opts     Atom groups.
+ * \param[in] awh      AWH data.
+ */
 void print_ebin(ener_file_t fp_ene, gmx_bool bEne, gmx_bool bDR, gmx_bool bOR,
                 FILE *log,
                 int64_t step, double time,
@@ -1322,266 +1647,22 @@ void print_ebin(ener_file_t fp_ene, gmx_bool bEne, gmx_bool bDR, gmx_bool bOR,
                 SimulationGroups *groups, t_grpopts *opts,
                 gmx::Awh *awh)
 {
-    /*static char **grpnms=NULL;*/
-    char         buf[246];
-    int          i, j, n, ni, nj, b;
-    int          ndisre = 0;
+    printAnnealingReferenceTemperatures(log, groups, opts);
 
-    /* these are for the old-style blocks (1 subblock, only reals), because
-       there can be only one per ID for these */
-    int          nr[enxNR];
-    int          id[enxNR];
-    real        *block[enxNR];
-
-    t_enxframe   fr;
-
-    if (mode == eprAVER && md->ebin->nsum_sim <= 0)
+    if (mode == eprNORMAL)
     {
-        if (log)
-        {
-            fprintf(log, "Not enough data recorded to report energy averages\n");
-        }
-        return;
+        printCurrentValues(fp_ene, bEne, bDR, bOR,
+                           log,
+                           step, time,
+                           md,   fcd,
+                           awh);
     }
 
-    switch (mode)
+    if (mode == eprAVER)
     {
-        case eprNORMAL:
-            init_enxframe(&fr);
-            fr.t            = time;
-            fr.step         = step;
-            fr.nsteps       = md->ebin->nsteps;
-            fr.dt           = md->delta_t;
-            fr.nsum         = md->ebin->nsum;
-            fr.nre          = (bEne) ? md->ebin->nener : 0;
-            fr.ener         = md->ebin->e;
-            ndisre          = bDR ? fcd->disres.npair : 0;
-            /* Optional additional old-style (real-only) blocks. */
-            for (i = 0; i < enxNR; i++)
-            {
-                nr[i] = 0;
-            }
-            if (bOR && fcd->orires.nr > 0)
-            {
-                diagonalize_orires_tensors(&(fcd->orires));
-                nr[enxOR]     = fcd->orires.nr;
-                block[enxOR]  = fcd->orires.otav;
-                id[enxOR]     = enxOR;
-                nr[enxORI]    = (fcd->orires.oinsl != fcd->orires.otav) ?
-                    fcd->orires.nr : 0;
-                block[enxORI] = fcd->orires.oinsl;
-                id[enxORI]    = enxORI;
-                nr[enxORT]    = fcd->orires.nex*12;
-                block[enxORT] = fcd->orires.eig;
-                id[enxORT]    = enxORT;
-            }
-
-            /* whether we are going to wrte anything out: */
-            if (fr.nre || ndisre || nr[enxOR] || nr[enxORI])
-            {
-
-                /* the old-style blocks go first */
-                fr.nblock = 0;
-                for (i = 0; i < enxNR; i++)
-                {
-                    if (nr[i] > 0)
-                    {
-                        fr.nblock = i + 1;
-                    }
-                }
-                add_blocks_enxframe(&fr, fr.nblock);
-                for (b = 0; b < fr.nblock; b++)
-                {
-                    add_subblocks_enxblock(&(fr.block[b]), 1);
-                    fr.block[b].id        = id[b];
-                    fr.block[b].sub[0].nr = nr[b];
-#if !GMX_DOUBLE
-                    fr.block[b].sub[0].type = xdr_datatype_float;
-                    fr.block[b].sub[0].fval = block[b];
-#else
-                    fr.block[b].sub[0].type = xdr_datatype_double;
-                    fr.block[b].sub[0].dval = block[b];
-#endif
-                }
-
-                /* check for disre block & fill it. */
-                if (ndisre > 0)
-                {
-                    int db = fr.nblock;
-                    fr.nblock += 1;
-                    add_blocks_enxframe(&fr, fr.nblock);
-
-                    add_subblocks_enxblock(&(fr.block[db]), 2);
-                    fr.block[db].id        = enxDISRE;
-                    fr.block[db].sub[0].nr = ndisre;
-                    fr.block[db].sub[1].nr = ndisre;
-#if !GMX_DOUBLE
-                    fr.block[db].sub[0].type = xdr_datatype_float;
-                    fr.block[db].sub[1].type = xdr_datatype_float;
-                    fr.block[db].sub[0].fval = fcd->disres.rt;
-                    fr.block[db].sub[1].fval = fcd->disres.rm3tav;
-#else
-                    fr.block[db].sub[0].type = xdr_datatype_double;
-                    fr.block[db].sub[1].type = xdr_datatype_double;
-                    fr.block[db].sub[0].dval = fcd->disres.rt;
-                    fr.block[db].sub[1].dval = fcd->disres.rm3tav;
-#endif
-                }
-                /* here we can put new-style blocks */
-
-                /* Free energy perturbation blocks */
-                if (md->dhc)
-                {
-                    mde_delta_h_coll_handle_block(md->dhc, &fr, fr.nblock);
-                }
-
-                /* we can now free & reset the data in the blocks */
-                if (md->dhc)
-                {
-                    mde_delta_h_coll_reset(md->dhc);
-                }
-
-                /* AWH bias blocks. */
-                if (awh != nullptr)  // TODO: add boolean in t_mdebin. See in mdebin.h.
-                {
-                    awh->writeToEnergyFrame(step, &fr);
-                }
-
-                /* do the actual I/O */
-                do_enx(fp_ene, &fr);
-                if (fr.nre)
-                {
-                    /* We have stored the sums, so reset the sum history */
-                    reset_ebin_sums(md->ebin);
-                }
-            }
-            free_enxframe(&fr);
-            break;
-        case eprAVER:
-            if (log)
-            {
-                pprint(log, "A V E R A G E S", md);
-            }
-            break;
-        case eprRMS:
-            if (log)
-            {
-                pprint(log, "R M S - F L U C T U A T I O N S", md);
-            }
-            break;
-        default:
-            gmx_fatal(FARGS, "Invalid print mode (%d)", mode);
-    }
-
-    if (log)
-    {
-        if (opts)
-        {
-            for (i = 0; i < opts->ngtc; i++)
-            {
-                if (opts->annealing[i] != eannNO)
-                {
-                    fprintf(log, "Current ref_t for group %s: %8.1f\n",
-                            *(groups->groupNames[groups->groups[SimulationAtomGroupType::TemperatureCoupling].nm_ind[i]]),
-                            opts->ref_t[i]);
-                }
-            }
-        }
-        if (mode == eprNORMAL && bOR && fcd->orires.nr > 0)
-        {
-            print_orires_log(log, &(fcd->orires));
-        }
-        fprintf(log, "   Energies (%s)\n", unit_energy);
-        pr_ebin(log, md->ebin, md->ie, md->f_nre+md->nCrmsd, 5, mode, TRUE);
-        fprintf(log, "\n");
-
-        if (mode == eprAVER)
-        {
-            if (md->bDynBox)
-            {
-                pr_ebin(log, md->ebin, md->ib, md->bTricl ? NTRICLBOXS : NBOXS, 5,
-                        mode, TRUE);
-                fprintf(log, "\n");
-            }
-            if (md->bConstrVir)
-            {
-                fprintf(log, "   Constraint Virial (%s)\n", unit_energy);
-                pr_ebin(log, md->ebin, md->isvir, 9, 3, mode, FALSE);
-                fprintf(log, "\n");
-                fprintf(log, "   Force Virial (%s)\n", unit_energy);
-                pr_ebin(log, md->ebin, md->ifvir, 9, 3, mode, FALSE);
-                fprintf(log, "\n");
-            }
-            if (md->bPres)
-            {
-                fprintf(log, "   Total Virial (%s)\n", unit_energy);
-                pr_ebin(log, md->ebin, md->ivir, 9, 3, mode, FALSE);
-                fprintf(log, "\n");
-                fprintf(log, "   Pressure (%s)\n", unit_pres_bar);
-                pr_ebin(log, md->ebin, md->ipres, 9, 3, mode, FALSE);
-                fprintf(log, "\n");
-            }
-            if (md->bMu)
-            {
-                fprintf(log, "   Total Dipole (%s)\n", unit_dipole_D);
-                pr_ebin(log, md->ebin, md->imu, 3, 3, mode, FALSE);
-                fprintf(log, "\n");
-            }
-
-            if (md->nE > 1)
-            {
-                if (md->print_grpnms == nullptr)
-                {
-                    snew(md->print_grpnms, md->nE);
-                    n = 0;
-                    for (i = 0; (i < md->nEg); i++)
-                    {
-                        ni = groups->groups[SimulationAtomGroupType::EnergyOutput].nm_ind[i];
-                        for (j = i; (j < md->nEg); j++)
-                        {
-                            nj = groups->groups[SimulationAtomGroupType::EnergyOutput].nm_ind[j];
-                            sprintf(buf, "%s-%s", *(groups->groupNames[ni]),
-                                    *(groups->groupNames[nj]));
-                            md->print_grpnms[n++] = gmx_strdup(buf);
-                        }
-                    }
-                }
-                sprintf(buf, "Epot (%s)", unit_energy);
-                fprintf(log, "%15s   ", buf);
-                for (i = 0; (i < egNR); i++)
-                {
-                    if (md->bEInd[i])
-                    {
-                        fprintf(log, "%12s   ", egrp_nm[i]);
-                    }
-                }
-                fprintf(log, "\n");
-                for (i = 0; (i < md->nE); i++)
-                {
-                    fprintf(log, "%15s", md->print_grpnms[i]);
-                    pr_ebin(log, md->ebin, md->igrp[i], md->nEc, md->nEc, mode,
-                            FALSE);
-                }
-                fprintf(log, "\n");
-            }
-            if (md->nTC > 1)
-            {
-                pr_ebin(log, md->ebin, md->itemp, md->nTC, 4, mode, TRUE);
-                fprintf(log, "\n");
-            }
-            if (md->nU > 1)
-            {
-                fprintf(log, "%15s   %12s   %12s   %12s\n",
-                        "Group", "Ux", "Uy", "Uz");
-                for (i = 0; (i < md->nU); i++)
-                {
-                    ni = groups->groups[SimulationAtomGroupType::Acceleration].nm_ind[i];
-                    fprintf(log, "%15s", *groups->groupNames[ni]);
-                    pr_ebin(log, md->ebin, md->iu+3*i, 3, 3, mode, FALSE);
-                }
-                fprintf(log, "\n");
-            }
-        }
+        printAverageValues(log,
+                           md,
+                           groups);
     }
 
 }

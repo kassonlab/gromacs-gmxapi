@@ -33,7 +33,14 @@
 # To help us fund GROMACS development, we humbly ask that you cite
 # the research papers on the package. Check out http://www.gromacs.org.
 
-"""Unit tests for the gmxapi.commandline module."""
+"""Tests for dynamically defined operations.
+
+Test the command-line wrapping functionality in gmxapi.commandline. These
+operation factories are written with user-facing tools and exercise a lot of
+the high-level machinery of the package, effectively serving as integration
+tests of the operation-building utilities in the modules depended on by
+commandline.py.
+"""
 
 import shutil
 import unittest
@@ -45,6 +52,7 @@ class SimpleCliTestCase(unittest.TestCase):
     """Test creation and execution of the basic cli() command line wrapper."""
 
     def test_true(self):
+        """Test a command known to produce a return code of 0."""
         command = shutil.which('true')
         operation = commandline.cli(command=[command], shell=False)
 
@@ -64,6 +72,7 @@ class SimpleCliTestCase(unittest.TestCase):
         assert operation.output.returncode.result() == 0
 
     def test_false_explicit(self):
+        """Test a command known to produce a return code of 1."""
         command = shutil.which('false')
         operation = commandline.cli(command=[command], shell=False)
         # Explicitly run the operation.
@@ -76,7 +85,8 @@ class SimpleCliTestCase(unittest.TestCase):
         # Allow the operation to be executed implicitly to satisfy data constraint.
         assert operation.output.returncode.result() == 1
 
-    def test_echo(self):
+    def test_command_with_arguments(self):
+        """Test that cli() can wrap a command with arguments."""
         # TODO: (FR5+) do we want to pipeline or checkpoint stdout somehow?
         operation = commandline.cli(command=[shutil.which('echo'), 'hi', 'there'])
         assert operation.output.returncode.result() == 0

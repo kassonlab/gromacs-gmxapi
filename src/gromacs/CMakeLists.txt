@@ -136,6 +136,7 @@ if (NOT GMX_BUILD_MDRUN_ONLY)
     add_subdirectory(correlationfunctions)
     add_subdirectory(statistics)
     add_subdirectory(analysisdata)
+    add_subdirectory(coordinateio)
     add_subdirectory(selection)
     add_subdirectory(trajectoryanalysis)
     add_subdirectory(energyanalysis)
@@ -332,7 +333,10 @@ set_target_properties(libgromacs PROPERTIES
 gmx_manage_lmfit()
 target_link_libraries(libgromacs PRIVATE lmfit)
 
-if (CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND CMAKE_CXX_COMPILER_VERSION MATCHES "^6\.0")
+# Fix everything found by the latest version of clang that we use in
+# Jenkins testing. This should be updated when we update the latest
+# tested version of clang.
+if (CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND CMAKE_CXX_COMPILER_VERSION MATCHES "^7\.0")
    target_compile_options(libgromacs PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-Weverything ${IGNORED_CLANG_ALL_WARNINGS}>)
 endif()
 if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")

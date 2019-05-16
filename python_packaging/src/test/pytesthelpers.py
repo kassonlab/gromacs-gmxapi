@@ -39,14 +39,20 @@ Define the ``withmpi_only`` test decorator.
 
 import pytest
 
-withmpi_only = None
-
+mpi_requirement = 'Test requires mpi4py managing 2 MPI ranks.'
 try:
     from mpi4py import MPI
 
-    withmpi_only = \
-        pytest.mark.skipif(not MPI.Is_initialized() or MPI.COMM_WORLD.Get_size() < 2,
-                           reason="Test requires at least 2 MPI ranks," +
-                                  "but MPI is not initialized or context is too small.")
+    if not MPI.Is_initialized():
+        skip_mpi = True
+        reason = mpi_requirement + ' MPI is not initialized'
+    elif MPI.COMM_WORLD.Get_size() < 2:
+        skip_mpi = True
+        reason = mpi_requirement + ' MPI context is too small.'
+    else:
+        skip_mpi = False
+        reason = ''
+    withmpi_only = pytest.mark.skipif(skip_mpi, reason=reason)
 except ImportError:
-    withmpi_only = pytest.mark.skip(reason="Test requires at least 2 MPI ranks, but mpi4py is not available.")
+    withmpi_only = pytest.mark.skip(
+        reason=mpi_requirement + ' mpi4py is not available.')

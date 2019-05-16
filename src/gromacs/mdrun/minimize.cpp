@@ -739,13 +739,10 @@ namespace
  * updated, then the member will be value initialized, which will
  * typically mean initialization to zero.
  *
- * We only want to construct one of these with an initializer list, so
- * we explicitly delete the default constructor. */
+ * Use a braced initializer list to construct one of these. */
 class EnergyEvaluator
 {
     public:
-        //! We only intend to construct such objects with an initializer list.
-        EnergyEvaluator() = delete;
         /*! \brief Evaluates an energy on the state in \c ems.
          *
          * \todo In practice, the same objects mu_tot, vir, and pres
@@ -807,7 +804,7 @@ EnergyEvaluator::run(em_state_t *ems, rvec mu_tot,
     real     t;
     gmx_bool bNS;
     tensor   force_vir, shake_vir, ekin;
-    real     dvdl_constr, prescorr, enercorr, dvdlcorr;
+    real     dvdl_constr;
     real     terminate = 0;
 
     /* Set the time to the initial time, the time does not change during EM */
@@ -878,13 +875,21 @@ EnergyEvaluator::run(em_state_t *ems, rvec mu_tot,
         wallcycle_stop(wcycle, ewcMoveE);
     }
 
-    /* Calculate long range corrections to pressure and energy */
-    calc_dispcorr(inputrec, fr, ems->s.box, ems->s.lambda[efptVDW],
-                  pres, force_vir, &prescorr, &enercorr, &dvdlcorr);
-    enerd->term[F_DISPCORR] = enercorr;
-    enerd->term[F_EPOT]    += enercorr;
-    enerd->term[F_PRES]    += prescorr;
-    enerd->term[F_DVDL]    += dvdlcorr;
+    if (fr->dispersionCorrection)
+    {
+        /* Calculate long range corrections to pressure and energy */
+        const DispersionCorrection::Correction correction =
+            fr->dispersionCorrection->calculate(ems->s.box, ems->s.lambda[efptVDW]);
+
+        enerd->term[F_DISPCORR] = correction.energy;
+        enerd->term[F_EPOT]    += correction.energy;
+        enerd->term[F_PRES]    += correction.pressure;
+        enerd->term[F_DVDL]    += correction.dvdl;
+    }
+    else
+    {
+        enerd->term[F_DISPCORR] = 0;
+    }
 
     ems->epot = enerd->term[F_EPOT];
 

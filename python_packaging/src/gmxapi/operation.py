@@ -35,6 +35,18 @@
 """Define gmxapi-compliant Operations
 
 Provide decorators and base classes to generate and validate gmxapi Operations.
+
+Nodes in a work graph are created as instances of Operations. An Operation factory
+accepts well-defined inputs as key word arguments. The object returned by such
+a factory is a handle to the node in the work graph. It's ``output`` attribute
+is a collection of the Operation's results.
+
+function_wrapper(...) produces a wrapper that converts a function to an Operation
+factory. The Operation is defined when the wrapper is called. The Operation is
+instantiated when the factory is called. The function is executed when the Operation
+instance is run.
+
+The framework ensures that an Operation instance is executed no more than once.
 """
 
 __all__ = ['computed_result',
@@ -259,11 +271,24 @@ def function_wrapper(output=None):
 
     class Publisher(object):
         """Data descriptor for write access to a specific named data resource.
-        """
 
+        For a wrapped function receiving an ``output`` argument, provides the
+        accessors for an attribute on the object passed as ``output``. Maps
+        read and write access by the wrapped function to appropriate details of
+        the resource manager.
+
+        Used internally to implement settable attributes on PublishingDataProxy.
+        Allows PublishingDataProxy to be dynamically defined in the scope of the
+        operation.function_wrapper closure. Each named output is represented by
+        an instance of Publisher in the PublishingDataProxy class definition for
+        the operation.
+
+        Ref: https://docs.python.org/3/reference/datamodel.html#implementing-descriptors
+
+        Collaborations:
+        Relies on implementation details of ResourceManager.
+        """
         def __init__(self, name, dtype):
-            # self._input = Input(input.args, input.kwargs, input.dependencies)
-            # self._instance = instance
             self.name = name
             self.dtype = dtype
 
@@ -277,6 +302,9 @@ def function_wrapper(output=None):
         def __set__(self, instance, value):
             resource_manager = instance._instance
             resource_manager.set_result(self.name, value)
+
+        def __repr__(self):
+            return 'Publisher(name={}, dtype={})'.format(self.name, self.dtype.__qualname__)
 
     class DataProxyBase(object):
         """Limited interface to managed resources.
@@ -383,15 +411,35 @@ def function_wrapper(output=None):
     class ResourceManager(object):
         """Provides data publication and subscription services.
 
-        Owns data published by operation implementation or served to consumers.
+        Owns the data published by the operation implementation or served to consumers.
         Mediates read and write access to the managed data streams.
 
-        The `publisher` attribute is an object that can have pre-declared resources
-        assigned to as attributes by an operation publishing its results.
+        This ResourceManager implementation is defined in conjunction with a
+        run-time definition of an Operation that wraps a Python callable (function).
+        ResourceManager is instantiated with a reference to the callable.
 
-        The `data` attribute is an object with pre-declared resources available through
-        attribute access. Reading an attribute produces a new Result proxy object for
-        pre-declared data or raises an AttributeError.
+        When the Operation is run, the resource manager prepares resources for the wrapped
+        function. Inputs provided to the Operation factory are provided to the
+        function as keyword arguments. The wrapped function publishes its output
+        through the (additional) ``output`` key word argument. This argument is
+        a short-lived resource, prepared by the ResourceManager, with writable
+        attributes named in the call to function_wrapper().
+
+        After the Operation has run and the outputs published, the data managed
+        by the ResourceManager is marked "done."
+
+        Protocols:
+
+        The data() method produces a read-only collection of outputs named for
+        the Operation when the Operation's ``output`` attribute is accessed.
+
+        publishing_resources() can be called once during the ResourceManager lifetime
+        to provide the ``output`` object for the wrapped function. (Used by update_output().)
+
+        update_output() brings the managed output data up-to-date with the input
+        when the Operation results are needed. If the Operation has not run, an
+        execution session is prepared with input and output arguments for the
+        wrapped Python callable. Output is publishable only during this session.
 
         TODO: This functionality should evolve to be a facet of Context implementations.
          There should be no more than one ResourceManager instance per work graph
@@ -405,18 +453,29 @@ def function_wrapper(output=None):
         def __publishing_context(self):
             """Get a context manager for resolving the data dependencies of this node.
 
-            Use the returned object as a Python context manager.
+            The returned object is a Python context manager (used to open a `with` block)
+            to define the scope in which the operation's output can be published.
             'output' type resources can be published exactly once, and only while the
-            publishing context is active. Outputs are marked 'done' when exiting
-            the context manager.
+            publishing context is active. (See operation.function_wrapper())
+
+            Used internally to implement ResourceManager.publishing_resources()
+
+            Responsibilities of the context manager are to:
+                * (TODO) Make sure dependencies are resolved.
+                * Make sure outputs are marked 'done' when leaving the context.
+
             """
 
             # TODO:
             # if self._data.done():
             #     raise exceptions.ProtocolError('Resources have already been published.')
             resource = PublishingDataProxy(weakref.proxy(self))
+            # ref: https://docs.python.org/3/library/contextlib.html#contextlib.contextmanager
             try:
                 yield resource
+            except Exception as e:
+                message = 'Uncaught exception while providing output-publishing resources for {}.'.format(self._runner)
+                raise exceptions.ApiError(message) from e
             finally:
                 self.done = True
 
@@ -639,7 +698,9 @@ def function_wrapper(output=None):
                     dependencies that the framework promises to satisfy before the Operation
                     executes and produces output.
                     """
+                    #
                     # Define the unique identity and data flow constraints of this work graph node.
+                    #
                     # TODO: (FR4) generalize
                     input_dependencies = []
 
