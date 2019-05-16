@@ -111,29 +111,5 @@
 #    3. `pip install <the_sdist_archive_file>` into the venv
 #    4. run `pytest copy_of_src/test`
 
-# Remove some cache in case Python 2 was previously found in the CMake configuration.
-# TODO: Remove when GROMACS requires Python3 with resolution of issue #2615
-#  Reference https://redmine.gromacs.org/issues/2615
-unset(PYTHONINTERP_FOUND)
-unset(PYTHONLIBS_FOUND)
-
-if(CMAKE_VERSION VERSION_LESS 3.12)
-    # Note: Though only documented as an output variable, PYTHON_EXECUTABLE is
-    # also effective as a CMake input variable to effectively hint the location
-    # of the Python interpreter. This may be helpful in environments with both
-    # Python 2 and Python 3 on the default PATH.
-    # Ref: https://cmake.org/cmake/help/latest/module/FindPythonInterp.html
-    set(Python_ADDITIONAL_VERSIONS 3.8 3.7 3.6 3.5)
-    find_package(PythonInterp 3 REQUIRED)
-else()
-    # Set some hints to encourage discovery of Python virtual environment.
-    # Ref: https://cmake.org/cmake/help/latest/module/FindPython3.html#hints
-    # Users may also set Python3_ROOT_DIR.
-    set(Python3_FIND_REGISTRY LAST) # e.g. in Windows
-    set(CMAKE_FIND_FRAMEWORK LAST) # e.g. with Apple Frameworks
-    find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
-    # Provide hint for downstream CMake configurations that are not updated for 3.12
-    set(PYTHON_EXECUTABLE ${Python3_EXECUTABLE})
-endif()
 set(PYBIND11_PYTHON_VERSION "3")
 add_subdirectory(src)
