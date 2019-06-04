@@ -81,5 +81,20 @@ class UsageError(Error):
     """
 
 
+class TypeError(Error):
+    """Incompatible type for gmxapi data.
+
+    Reference datamodel.rst for more on gmxapi data typing.
+    """
+
+
 class ValueError(Error):
     """A user-provided value cannot be interpreted or doesn't make sense."""
+
+
+class DataShapeError(Error):
+    """An object has an incompatible shape.
+
+    This exception does not imply that the Type or any other aspect of the data
+    has been checked.
+    """
