@@ -3,7 +3,7 @@
  *
  * Copyright (c) 1991-2000, University of Groningen, The Netherlands.
  * Copyright (c) 2001-2004, The GROMACS development team.
- * Copyright (c) 2013,2014,2015,2017,2018, by the GROMACS development team, led by
+ * Copyright (c) 2013,2014,2015,2017,2018,2019, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -108,6 +108,17 @@ shakedata *shake_init()
     return d;
 }
 
+void done_shake(shakedata *d)
+{
+    sfree(d->rij);
+    sfree(d->half_of_reduced_mass);
+    sfree(d->distance_squared_tolerance);
+    sfree(d->constraint_distance_squared);
+    sfree(d->sblock);
+    sfree(d->scaled_lagrange_multiplier);
+    sfree(d);
+}
+
 typedef struct {
     int iatom[3];
     int blocknr;
@@ -184,6 +195,7 @@ make_shake_sblock_serial(shakedata *shaked,
     ncons = idef->il[F_CONSTR].nr/3;
 
     init_blocka(&sblocks);
+    sfree(sblocks.index); // To solve memory leak
     gen_sblocks(nullptr, 0, md.homenr, idef, &sblocks, FALSE);
 
     /*
@@ -276,9 +288,10 @@ make_shake_sblock_serial(shakedata *shaked,
     resizeLagrangianData(shaked, ncons);
 }
 
+// TODO: Check if this code is useful. It might never be called.
 void
-make_shake_sblock_dd(shakedata *shaked,
-                     const t_ilist *ilcon, const t_block *cgs,
+make_shake_sblock_dd(shakedata          *shaked,
+                     const t_ilist      *ilcon,
                      const gmx_domdec_t *dd)
 {
     int      ncons, c, cg;
@@ -296,10 +309,10 @@ make_shake_sblock_dd(shakedata *shaked,
     cg              = 0;
     for (c = 0; c < ncons; c++)
     {
-        if (c == 0 || iatom[1] >= cgs->index[cg+1])
+        if (c == 0 || iatom[1] >= cg + 1)
         {
             shaked->sblock[shaked->nblocks++] = 3*c;
-            while (iatom[1] >= cgs->index[cg+1])
+            while (iatom[1] >= cg + 1)
             {
                 cg++;
             }

@@ -1,7 +1,8 @@
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
- * Copyright (c) 2005,2006,2007,2008,2009,2010,2012,2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
+ * Copyright (c) 2005 - 2014, The GROMACS development team.
+ * Copyright (c) 2015,2016,2017,2018,2019, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -72,7 +73,6 @@ struct gmx_domdec_zones_t;
 struct gmx_localtop_t;
 struct gmx_mtop_t;
 struct gmx_vsite_t;
-struct MdrunOptions;
 struct t_block;
 struct t_blocka;
 struct t_commrec;
@@ -87,6 +87,9 @@ namespace gmx
 {
 class MDLogger;
 class LocalAtomSetManager;
+class RangePartitioning;
+struct DomdecOptions;
+struct MdrunOptions;
 } // namespace
 
 /*! \brief Returns the global topology atom number belonging to local atom index i.
@@ -99,6 +102,9 @@ int ddglatnr(const gmx_domdec_t *dd, int i);
 
 /*! \brief Return a block struct for the charge groups of the whole system */
 t_block *dd_charge_groups_global(struct gmx_domdec_t *dd);
+
+/*! \brief Returns a list of update group partitioning for each molecule type or empty when update groups are not used */
+gmx::ArrayRef<const gmx::RangePartitioning> getUpdateGroupingPerMoleculetype(const gmx_domdec_t &dd);
 
 /*! \brief Store the global cg indices of the home cgs in state,
  *
@@ -145,64 +151,12 @@ int dd_pme_maxshift_x(const gmx_domdec_t *dd);
 /*! \brief Returns the maximum shift for coordinate communication in PME, dim y */
 int dd_pme_maxshift_y(const gmx_domdec_t *dd);
 
-/*! \brief The options for the domain decomposition MPI task ordering. */
-enum class DdRankOrder
-{
-    select,     //!< First value (needed to cope with command-line parsing)
-    interleave, //!< Interleave the PP and PME ranks
-    pp_pme,     //!< First all PP ranks, all PME rank at the end
-    cartesian,  //!< Use Cartesian communicators for PP, PME and PP-PME
-    nr          //!< The number of options
-};
-
-/*! \brief The options for the dynamic load balancing. */
-enum class DlbOption
-{
-    select,           //!< First value (needed to cope with command-line parsing)
-    turnOnWhenUseful, //!< Turn on DLB when we think it would improve performance
-    no,               //!< Never turn on DLB
-    yes,              //!< Turn on DLB from the start and keep it on
-    nr                //!< The number of options
-};
-
-/*! \libinternal \brief Structure containing all (command line) options for the domain decomposition */
-struct DomdecOptions
-{
-    //! If true, check that all bonded interactions have been assigned to exactly one domain/rank.
-    gmx_bool          checkBondedInteractions = TRUE;
-    //! If true, don't communicate all atoms between the non-bonded cut-off and the larger bonded cut-off, but only those that have non-local bonded interactions. This significantly reduces the communication volume.
-    gmx_bool          useBondedCommunication = TRUE;
-    //! The domain decomposition grid cell count, 0 means let domdec choose based on the number of ranks.
-    ivec              numCells = {0};
-    //! The number of separate PME ranks requested, -1 = auto.
-    int               numPmeRanks = -1;
-    //! Ordering of the PP and PME ranks, values from enum above.
-    DdRankOrder       rankOrder = DdRankOrder::interleave;
-    //! The minimum communication range, used for extended the communication range for bonded interactions (nm).
-    real              minimumCommunicationRange = 0;
-    //! Communication range for atom involved in constraints (P-LINCS) (nm).
-    real              constraintCommunicationRange = 0;
-    //! Dynamic load balancing option, values from enum above.
-    DlbOption         dlbOption = DlbOption::turnOnWhenUseful;
-    /*! \brief Fraction in (0,1) by whose reciprocal the initial
-     * DD cell size will be increased in order to provide a margin
-     * in which dynamic load balancing can act, while preserving
-     * the minimum cell size. */
-    real              dlbScaling = 0.8;
-    //! String containing a vector of the relative sizes in the x direction of the corresponding DD cells.
-    const char       *cellSizeX = nullptr;
-    //! String containing a vector of the relative sizes in the y direction of the corresponding DD cells.
-    const char       *cellSizeY = nullptr;
-    //! String containing a vector of the relative sizes in the z direction of the corresponding DD cells.
-    const char       *cellSizeZ = nullptr;
-};
-
 /*! \brief Initialized the domain decomposition, chooses the DD grid and PME ranks, return the DD struct */
 gmx_domdec_t *
 init_domain_decomposition(const gmx::MDLogger            &mdlog,
                           t_commrec                      *cr,
-                          const DomdecOptions            &options,
-                          const MdrunOptions             &mdrunOptions,
+                          const gmx::DomdecOptions       &options,
+                          const gmx::MdrunOptions        &mdrunOptions,
                           const gmx_mtop_t               *mtop,
                           const t_inputrec               *ir,
                           const matrix                    box,
@@ -319,24 +273,29 @@ void dd_make_reverse_top(FILE *fplog,
                          const gmx_vsite_t *vsite,
                          const t_inputrec *ir, gmx_bool bBCheck);
 
-/*! \brief Store the local charge group index in \p lcgs */
-void dd_make_local_cgs(struct gmx_domdec_t *dd, t_block *lcgs);
-
 /*! \brief Generate the local topology and virtual site data */
-void dd_make_local_top(struct gmx_domdec_t *dd, struct gmx_domdec_zones_t *zones,
-                       int npbcdim, matrix box,
-                       rvec cellsize_min, const ivec npulse,
-                       t_forcerec *fr,
-                       rvec *cgcm_or_x,
-                       gmx_vsite_t *vsite,
-                       const gmx_mtop_t *top, gmx_localtop_t *ltop);
+void dd_make_local_top(struct gmx_domdec_t       *dd,
+                       struct gmx_domdec_zones_t *zones,
+                       int                        npbcdim,
+                       matrix                     box,
+                       rvec                       cellsize_min,
+                       const ivec                 npulse,
+                       t_forcerec                *fr,
+                       rvec                      *cgcm_or_x,
+                       const gmx_mtop_t          &top,
+                       gmx_localtop_t            *ltop);
 
 /*! \brief Sort ltop->ilist when we are doing free energy. */
 void dd_sort_local_top(gmx_domdec_t *dd, const t_mdatoms *mdatoms,
                        gmx_localtop_t *ltop);
 
-/*! \brief Construct local topology */
-gmx_localtop_t *dd_init_local_top(const gmx_mtop_t *top_global);
+/*! \brief Initialize local topology
+ *
+ * \param[in] top_global Reference to global topology.
+ * \param[in,out] top Pointer to new local topology
+ */
+void dd_init_local_top(const gmx_mtop_t &top_global,
+                       gmx_localtop_t   *top);
 
 /*! \brief Construct local state */
 void dd_init_local_state(struct gmx_domdec_t *dd,

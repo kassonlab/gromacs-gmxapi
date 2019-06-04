@@ -1,7 +1,7 @@
 #
 # This file is part of the GROMACS molecular simulation package.
 #
-# Copyright (c) 2009,2010,2011,2012,2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
+# Copyright (c) 2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019, by the GROMACS development team, led by
 # Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
 # and including many others, as listed in the AUTHORS file in the
 # top-level source directory and at http://www.gromacs.org.
@@ -32,7 +32,10 @@
 # To help us fund GROMACS development, we humbly ask that you cite
 # the research papers on the package. Check out http://www.gromacs.org.
 
-cmake_minimum_required(VERSION 3.4.3)
+cmake_minimum_required(VERSION 3.9.6)
+if(POLICY CMP0074) #3.12
+    cmake_policy(SET CMP0074 NEW)
+endif()
 
 # CMake modules/macros are in a subdirectory to keep this file cleaner
 # This needs to be set before project() in order to pick up toolchain files
@@ -40,11 +43,17 @@ list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake ${CMAKE_CURRENT_
 
 project(Gromacs)
 
+set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
 include(gmxManageCcache)
 
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+
+find_package(LibStdCpp)
 
 # Set up common version variables, as well as general information about
 # the build tree (whether the build is from a source package or from a git
@@ -139,40 +148,6 @@ endif()
 include(gmxDetectTargetArchitecture)
 gmx_detect_target_architecture()
 
-# Permit the user to specify a particular standard library, e.g. compiling
-# with "-stdlib=libc++" and linking with "-lc++abi -lc++" to get clang's libcxx.
-set(GMX_STDLIB_CXX_FLAGS "" CACHE STRING "Compiler flag for a C++ standard library flavour")
-set(GMX_STDLIB_LIBRARIES "" CACHE STRING "Linker libraries for a particular C++ standard library")
-mark_as_advanced(GMX_STDLIB_CXX_FLAGS)
-mark_as_advanced(GMX_STDLIB_LIBRARIES)
-
-########################################################################
-# Detect CXX11 support and flags
-########################################################################
-# The cmake/Check{C,CXX}CompilerFlag.cmake files in the GROMACS distribution
-# are used with permission from CMake v3.0.0 so that GROMACS can detect
-# invalid options with the Intel Compilers, and we have added a line
-# to detect warnings with the Fujitsu compilers on K computer and ICC.
-# CMake-3.0 also has a bug where the FAIL_REGEX pattern for AIX contains
-# a semicolon. Since this is also used as a separator in lists inside CMake,
-# that string ends up being split into two separate patterns, and the last
-# part is just a single word that also matches other messages. We solved this
-# by replacing the semicolon with a period that matches any character.
-#
-# These files should be removed from the source tree when a CMake version that
-# includes the features in question becomes required for building GROMACS.
-include(CheckCCompilerFlag)
-include(CheckCXXCompilerFlag)
-
-# This must come early, since some of our configuration flag tests
-# depend on being able to compile C++11 source files.
-include(gmxTestCXX11)
-gmx_test_cxx11(GMX_CXX11_FLAGS GMX_STDLIB_CXX_FLAGS GMX_STDLIB_LIBRARIES)
-
-# Make sure all C++ code will be compiled in C++11 mode, with the
-# expected standard library.
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${GMX_CXX11_FLAGS} ${GMX_STDLIB_CXX_FLAGS}")
-
 ########################################################################
 # User input options                                                   #
 ########################################################################
@@ -206,14 +181,8 @@ gmx_add_cache_dependency(GMX_COOL_QUOTES BOOL "NOT GMX_FAHCORE" OFF)
 
 option(GMX_USE_OPENCL "Enable OpenCL acceleration" OFF)
 
-# Decide on GPU settings based on user-settings and GPU/CUDA
-# detection. VS2017 requires CUDA 9.0, for the other arch/compilers
-# rest we require CUDA 7.0 or later (including for clang-CUDA).
-if(MSVC)
-    set(REQUIRED_CUDA_VERSION 9.0)
-else()
-    set(REQUIRED_CUDA_VERSION 7.0)
-endif()
+# The earliest version of the CUDA toolkit that supports c++14 is 9.0
+set(REQUIRED_CUDA_VERSION 9.0)
 set(REQUIRED_CUDA_COMPUTE_CAPABILITY 3.0)
 
 # OpenCL required version: 1.2 or newer
@@ -372,9 +341,9 @@ endif()
 add_definitions(-DGMX_DOUBLE=${GMX_DOUBLE_VALUE})
 list(APPEND INSTALLED_HEADER_DEFINITIONS "-DGMX_DOUBLE=${GMX_DOUBLE_VALUE}")
 
-if(WIN32)
+option(GMX_IMD "Enable Interactive Molecular Dynamics (IMD) sessions, e.g. with VMD" ON)
+if(GMX_IMD AND WIN32)
     list(APPEND GMX_EXTRA_LIBRARIES "wsock32")
-    add_definitions(-DGMX_HAVE_WINSOCK)
 endif()
 
 
@@ -391,10 +360,6 @@ check_include_files(time.h       HAVE_TIME_H)
 check_include_files(sys/time.h   HAVE_SYS_TIME_H)
 check_include_files(io.h         HAVE_IO_H)
 check_include_files(sched.h      HAVE_SCHED_H)
-
-check_include_files(regex.h      HAVE_POSIX_REGEX)
-# TODO: It could be nice to inform the user if no regex support is found,
-# as selections won't be fully functional.
 
 include(CheckCXXSymbolExists)
 check_cxx_symbol_exists(gettimeofday      sys/time.h   HAVE_GETTIMEOFDAY)
@@ -690,8 +655,6 @@ gmx_test_sigusr1(HAVE_SIGUSR1)
 include(gmxTestPipes)
 gmx_test_pipes(HAVE_PIPES)
 
-check_include_file_cxx(regex     HAVE_CXX11_REGEX)
-
 include(gmxTestXDR)
 gmx_test_xdr(GMX_SYSTEM_XDR)
 # Darwin has system XDR, but it uses a three-argument flavour of
@@ -814,17 +777,6 @@ else()
     message("CMAKE_SHARED_LINKER_FLAGS: ${FFT_LINKER_FLAGS} ${MPI_LINKER_FLAGS}")
 endif()
 
-if(NOT GMX_OPENMP)
-    #Unset all OpenMP flags in case OpenMP was disabled either by the user
-    #or because it was only partially detected (e.g. only for C but not C++ compiler)
-    unset(OpenMP_C_FLAGS CACHE)
-    unset(OpenMP_CXX_FLAGS CACHE)
-else()
-    set(GMX_EXE_LINKER_FLAGS ${GMX_EXE_LINKER_FLAGS} ${OpenMP_LINKER_FLAGS})
-    set(GMX_SHARED_LINKER_FLAGS ${GMX_SHARED_LINKER_FLAGS} ${OpenMP_SHARED_LINKER_FLAGS})
-endif()
-
-
 ########################################################################
 # Specify install locations
 ########################################################################
@@ -899,7 +851,57 @@ if (BUILD_TESTING)
     include(tests/CheckTarget.cmake)
 endif()
 
+# TODO: Determine control flow and defaults for package installation and testing use cases.
+# Ref: http://redmine.gromacs.org/issues/2896
+option(GMX_PYTHON_PACKAGE "Configure gmxapi Python package" OFF)
+mark_as_advanced(GMX_PYTHON_PACKAGE)
+
 if (NOT GMX_BUILD_MDRUN_ONLY)
+    if(CMAKE_VERSION VERSION_LESS 3.12)
+        # Note: Though only documented as an output variable, PYTHON_EXECUTABLE is
+        # also effective as a CMake input variable to effectively hint the location
+        # of the Python interpreter. This may be helpful in environments with both
+        # Python 2 and Python 3 on the default PATH.
+        # Ref: https://cmake.org/cmake/help/latest/module/FindPythonInterp.html
+        if(DEFINED Python3_EXECUTABLE)
+            set(PYTHON_EXECUTABLE ${Python3_EXECUTABLE})
+        endif()
+        if (DEFINED PYTHON_EXECUTABLE)
+            # Keep quiet on subsequent runs of cmake
+            set(PythonInterp_FIND_QUIETLY ON)
+        endif()
+        set(Python_ADDITIONAL_VERSIONS 3.8 3.7 3.6 3.5)
+        if(GMX_PYTHON_PACKAGE)
+            find_package(PythonInterp 3.5 REQUIRED)
+            # Note: PythonLibs will be found later by pybind11.
+        else()
+            find_package(PythonInterp 3.5)
+        endif()
+        if(PYTHONINTERP_FOUND)
+            set(Python3_FOUND ON)
+            set(Python3_Interpreter_FOUND ON)
+            set(Python3_EXECUTABLE ${PYTHON_EXECUTABLE})
+        endif()
+    else()
+        # Set some hints to encourage discovery of Python virtual environment.
+        # Ref: https://cmake.org/cmake/help/latest/module/FindPython3.html#hints
+        # Users may also set Python3_ROOT_DIR as a more canonical hint than Python3_EXECUTABLE.
+        if (DEFINED Python3_EXECUTABLE)
+            # Keep quiet on subsequent runs of cmake
+            set(Python3_FIND_QUIETLY ON)
+        endif()
+        set(Python3_FIND_REGISTRY LAST) # e.g. in Windows
+        set(CMAKE_FIND_FRAMEWORK LAST) # e.g. with Apple Frameworks
+        if(GMX_PYTHON_PACKAGE)
+            find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
+        else()
+            find_package(Python3 COMPONENTS Interpreter)
+        endif()
+        if(Python3_Interpreter_FOUND)
+            # Provide a convenience variable for CMake consumers that have not yet been updated.
+            set(PYTHON_EXECUTABLE ${Python3_EXECUTABLE})
+        endif()
+    endif()
     find_package(ImageMagick QUIET COMPONENTS convert)
     include(gmxTestImageMagick)
     GMX_TEST_IMAGEMAGICK(IMAGE_CONVERT_POSSIBLE)
@@ -911,6 +913,10 @@ add_subdirectory(src)
 
 if (BUILD_TESTING)
     add_subdirectory(tests)
+endif()
+
+if(GMX_PYTHON_PACKAGE AND NOT GMX_BUILD_MDRUN_ONLY)
+    add_subdirectory(python_packaging)
 endif()
 
 gmx_cpack_write_config()

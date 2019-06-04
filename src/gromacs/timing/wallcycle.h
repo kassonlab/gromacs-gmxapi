@@ -3,7 +3,7 @@
  *
  * Copyright (c) 1991-2000, University of Groningen, The Netherlands.
  * Copyright (c) 2001-2008, The GROMACS development team.
- * Copyright (c) 2013,2014,2015,2017,2018, by the GROMACS development team, led by
+ * Copyright (c) 2013,2014,2015,2017,2018,2019, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -79,6 +79,8 @@ enum {
     ewcsEWALD_CORRECTION,
     ewcsNB_X_BUF_OPS,
     ewcsNB_F_BUF_OPS,
+    ewcsCLEAR_FORCE_BUFFER,
+    ewcsTEST,
     ewcsNR
 };
 
@@ -89,6 +91,9 @@ gmx_wallcycle_t wallcycle_init(FILE *fplog, int resetstep, struct t_commrec *cr)
 /* Returns the wall cycle structure.
  * Returns NULL when cycle counting is not supported.
  */
+
+/* cleans up wallcycle structure */
+void wallcycle_destroy(gmx_wallcycle_t wc);
 
 void wallcycle_start(gmx_wallcycle_t wc, int ewc);
 /* Starts the cycle counter (and increases the call count) */

@@ -1,7 +1,7 @@
 #
 # This file is part of the GROMACS molecular simulation package.
 #
-# Copyright (c) 2012,2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
+# Copyright (c) 2012,2013,2014,2015,2016,2017,2018,2019, by the GROMACS development team, led by
 # Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
 # and including many others, as listed in the AUTHORS file in the
 # top-level source directory and at http://www.gromacs.org.
@@ -57,7 +57,7 @@ gmx_dependent_option(
 mark_as_advanced(GMX_COMPACT_DOXYGEN)
 
 set(USE_PYTHON_SCRIPTS OFF)
-if (PYTHONINTERP_FOUND AND NOT PYTHON_VERSION_STRING VERSION_LESS "2.6" AND NOT ${PYTHON_VERSION_MAJOR} EQUAL 3)
+if (Python3_Interpreter_FOUND)
     set(USE_PYTHON_SCRIPTS ON)
 endif()
 
@@ -71,14 +71,6 @@ set(INSTALLED_HEADERS_FILE ${PROJECT_BINARY_DIR}/src/gromacs/installed-headers.t
 #
 if (DOXYGEN_FOUND)
     # Generate Doxygen input configuration files
-    file(GLOB NB_KERNEL_DIRS
-         ${CMAKE_SOURCE_DIR}/src/gromacs/gmxlib/nonbonded/nb_kernel_*/)
-    list(REMOVE_ITEM NB_KERNEL_DIRS
-         ${CMAKE_SOURCE_DIR}/src/gromacs/gmxlib/nonbonded/nb_kernel_c)
-    foreach (dir ${NB_KERNEL_DIRS})
-        SET(NB_KERNEL_DIRS_TO_IGNORE_IN_DOXYGEN
-            "${NB_KERNEL_DIRS_TO_IGNORE_IN_DOXYGEN} \\\n                         ${dir}")
-    endforeach()
     set(DEPGRAPH_DIR ${CMAKE_CURRENT_BINARY_DIR}/depgraphs)
     set(DOXYGEN_SECTIONS "")
     set(DOXYGEN_EXTRA_SETTINGS "")
@@ -172,7 +164,7 @@ if (DOXYGEN_FOUND)
         # dependency on doxygen-xml takes care of that transitively.
         gmx_add_custom_output_target(dep-graphs-dot ADD_FAST_TARGET
             OUTPUT STAMP
-            COMMAND ${PYTHON_EXECUTABLE}
+            COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_CURRENT_SOURCE_DIR}/graphbuilder.py
                 -S ${CMAKE_SOURCE_DIR} -B ${CMAKE_BINARY_DIR}
                 --ignore-cycles ${CMAKE_CURRENT_SOURCE_DIR}/cycle-suppressions.txt
@@ -219,7 +211,7 @@ if (DOXYGEN_FOUND)
         # The output .log file currently needs to be here, since Jenkins
         # expects that.
         set(check_source_command
-            ${PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/check-source.py
+            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/check-source.py
             -S ${CMAKE_SOURCE_DIR} -B ${CMAKE_BINARY_DIR}
             -l ${CMAKE_CURRENT_BINARY_DIR}/check-source.log
             --ignore ${CMAKE_CURRENT_SOURCE_DIR}/suppressions.txt

@@ -3,7 +3,7 @@
  *
  * Copyright (c) 1991-2000, University of Groningen, The Netherlands.
  * Copyright (c) 2001-2004, The GROMACS development team.
- * Copyright (c) 2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
+ * Copyright (c) 2013,2014,2015,2016,2017,2018,2019, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -41,16 +41,16 @@
 
 #include <cstring>
 
-#include "gromacs/compat/make_unique.h"
+#include <memory>
+
 #include "gromacs/gmxlib/network.h"
 #include "gromacs/math/vec.h"
-#include "gromacs/mdlib/mdrun.h"
 #include "gromacs/mdlib/tgroup.h"
-#include "gromacs/mdtypes/awh-params.h"
+#include "gromacs/mdtypes/awh_params.h"
 #include "gromacs/mdtypes/commrec.h"
 #include "gromacs/mdtypes/inputrec.h"
 #include "gromacs/mdtypes/md_enums.h"
-#include "gromacs/mdtypes/pull-params.h"
+#include "gromacs/mdtypes/pull_params.h"
 #include "gromacs/mdtypes/state.h"
 #include "gromacs/topology/mtop_util.h"
 #include "gromacs/topology/symtab.h"
@@ -127,6 +127,32 @@ static void bc_strings(const t_commrec *cr, t_symtab *symtab, int nr, char ****n
     sfree(handle);
 }
 
+static void bc_strings_container(const t_commrec      *cr,
+                                 t_symtab             *symtab,
+                                 int                   nr,
+                                 std::vector<char **> *nm)
+{
+    std::vector<int> handle;
+    if (MASTER(cr))
+    {
+        for (int i = 0; (i < nr); i++)
+        {
+            handle.emplace_back(lookup_symtab(symtab, (*nm)[i]));
+        }
+    }
+    block_bc(cr, nr);
+    nblock_abc(cr, nr, &handle);
+
+    if (!MASTER(cr))
+    {
+        nm->resize(nr);
+        for (int i = 0; (i < nr); i++)
+        {
+            (*nm)[i] = get_symtab_handle(symtab, handle[i]);
+        }
+    }
+}
+
 static void bc_strings_resinfo(const t_commrec *cr, t_symtab *symtab,
                                int nr, t_resinfo *resinfo)
 {
@@ -196,15 +222,13 @@ static void bc_blocka(const t_commrec *cr, t_blocka *block)
     }
 }
 
-static void bc_grps(const t_commrec *cr, t_grps grps[])
+static void bc_grps(const t_commrec *cr, gmx::ArrayRef<AtomGroupIndices> grps)
 {
-    int i;
-
-    for (i = 0; (i < egcNR); i++)
+    for (auto &group : grps)
     {
-        block_bc(cr, grps[i].nr);
-        snew_bc(cr, grps[i].nm_ind, grps[i].nr);
-        nblock_bc(cr, grps[i].nr, grps[i].nm_ind);
+        int size = group.size();
+        block_bc(cr, size);
+        nblock_abc(cr, size, &group);
     }
 }
 
@@ -224,18 +248,17 @@ static void bc_atoms(const t_commrec *cr, t_symtab *symtab, t_atoms *atoms)
 }
 
 static void bc_groups(const t_commrec *cr, t_symtab *symtab,
-                      int natoms, gmx_groups_t *groups)
+                      int natoms, SimulationGroups *groups)
 {
-    int g, n;
+    int n;
 
-    bc_grps(cr, groups->grps);
-    block_bc(cr, groups->ngrpname);
-    bc_strings(cr, symtab, groups->ngrpname, &groups->grpname);
-    for (g = 0; g < egcNR; g++)
+    bc_grps(cr, groups->groups);
+    bc_strings_container(cr, symtab, groups->groupNames.size(), &groups->groupNames);
+    for (auto group : gmx::keysOf(groups->groups))
     {
         if (MASTER(cr))
         {
-            if (groups->grpnr[g])
+            if (!groups->groupNumbers[group].empty())
             {
                 n = natoms;
             }
@@ -245,14 +268,9 @@ static void bc_groups(const t_commrec *cr, t_symtab *symtab,
             }
         }
         block_bc(cr, n);
-        if (n == 0)
+        if (n != 0)
         {
-            groups->grpnr[g] = nullptr;
-        }
-        else
-        {
-            snew_bc(cr, groups->grpnr[g], n);
-            nblock_bc(cr, n, groups->grpnr[g]);
+            nblock_abc(cr, n, &groups->groupNumbers[group]);
         }
     }
     if (debug)
@@ -818,7 +836,7 @@ void bcast_ir_mtop(const t_commrec *cr, t_inputrec *inputrec, gmx_mtop_t *mtop)
     block_bc(cr, mtop->bIntermolecularInteractions);
     if (mtop->bIntermolecularInteractions)
     {
-        mtop->intermolecular_ilist = gmx::compat::make_unique<InteractionLists>();
+        mtop->intermolecular_ilist = std::make_unique<InteractionLists>();
         bc_ilists(cr, mtop->intermolecular_ilist.get());
     }
 

@@ -3,7 +3,7 @@
  *
  * Copyright (c) 1991-2000, University of Groningen, The Netherlands.
  * Copyright (c) 2001-2004, The GROMACS development team.
- * Copyright (c) 2011,2012,2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
+ * Copyright (c) 2011,2012,2013,2014,2015,2016,2017,2018,2019, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -55,8 +55,8 @@
 
 #include "gromacs/gmxlib/network.h"
 #include "gromacs/math/functions.h"
-#include "gromacs/mdrun/multisim.h"
 #include "gromacs/mdrunutility/handlerestart.h"
+#include "gromacs/mdrunutility/multisim.h"
 #include "gromacs/mdtypes/commrec.h"
 #include "gromacs/utility/arraysize.h"
 #include "gromacs/utility/fatalerror.h"
@@ -91,8 +91,8 @@ int LegacyMdrunOptions::updateFromCommandLine(int argc, char **argv, ArrayRef<co
     }
 
     if (!parse_common_args(&argc, argv, PCA_Flags,
-                           static_cast<int>(filenames.size()), filenames.data(), asize(pa), pa,
-                           static_cast<int>(desc.size()), desc.data(), 0, nullptr, &oenv))
+                           ssize(filenames), filenames.data(), asize(pa), pa,
+                           ssize(desc), desc.data(), 0, nullptr, &oenv))
     {
         return 0;
     }
@@ -140,7 +140,7 @@ int LegacyMdrunOptions::updateFromCommandLine(int argc, char **argv, ArrayRef<co
 
     // now check for a multi-simulation
     ArrayRef<const std::string> multidir = opt2fnsIfOptionSet("-multidir",
-                                                              static_cast<int>(filenames.size()),
+                                                              ssize(filenames),
                                                               filenames.data());
 
     if (replExParams.exchangeInterval != 0 && multidir.size() < 2)
@@ -169,35 +169,24 @@ int LegacyMdrunOptions::updateFromCommandLine(int argc, char **argv, ArrayRef<co
     }
 #endif
 
-    if (!opt2bSet("-cpi",
-                  static_cast<int>(filenames.size()), filenames.data()))
+    if (!opt2parg_bSet("-append", asize(pa), pa))
     {
-        // If we are not starting from a checkpoint we never allow files to be appended
-        // to, since that has caused a ton of strange behaviour and bugs in the past.
-        if (opt2parg_bSet("-append", asize(pa), pa))
+        mdrunOptions.appendingBehavior = AppendingBehavior::Auto;
+    }
+    else
+    {
+        if (opt2parg_bool("-append", asize(pa), pa))
         {
-            // If the user explicitly used the -append option, explain that it is not possible.
-            gmx_fatal(FARGS, "GROMACS can only append to files when restarting from a checkpoint.");
+            mdrunOptions.appendingBehavior = AppendingBehavior::Appending;
         }
         else
         {
-            // If the user did not say anything explicit, just disable appending.
-            bTryToAppendFiles = FALSE;
+            mdrunOptions.appendingBehavior = AppendingBehavior::NoAppending;
         }
     }
 
-    ContinuationOptions &continuationOptions = mdrunOptions.continuationOptions;
-
-    continuationOptions.appendFilesOptionSet = opt2parg_bSet("-append", asize(pa), pa);
-
-    handleRestart(cr, ms, bTryToAppendFiles,
-                  static_cast<int>(filenames.size()),
-                  filenames.data(),
-                  &continuationOptions.appendFiles,
-                  &continuationOptions.startedFromCheckpoint);
-
     mdrunOptions.rerun            = opt2bSet("-rerun",
-                                             static_cast<int>(filenames.size()),
+                                             ssize(filenames),
                                              filenames.data());
     mdrunOptions.ntompOptionIsSet = opt2parg_bSet("-ntomp", asize(pa), pa);
 
@@ -216,6 +205,7 @@ LegacyMdrunOptions::~LegacyMdrunOptions()
     {
         done_commrec(cr);
     }
+    output_env_done(oenv);
     done_multisim(ms);
 }
 

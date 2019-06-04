@@ -1075,7 +1075,7 @@ Temperature coupling
    integrators, the leap-frog :mdp-value:`integrator=md` integrator
    only supports 1. Data for the NH chain variables is not printed
    to the :ref:`edr` file by default, but can be turned on with the
-   :mdp:`print-nose-hoover-chains` option.
+   :mdp:`print-nose-hoover-chain-variables` option.
 
 .. mdp:: print-nose-hoover-chain-variables
 

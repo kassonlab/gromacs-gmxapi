@@ -1,7 +1,7 @@
 #
 # This file is part of the GROMACS molecular simulation package.
 #
-# Copyright (c) 2015,2016,2017,2018, by the GROMACS development team, led by
+# Copyright (c) 2015,2016,2017,2018,2019, by the GROMACS development team, led by
 # Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
 # and including many others, as listed in the AUTHORS file in the
 # top-level source directory and at http://www.gromacs.org.
@@ -33,6 +33,9 @@
 # the research papers on the package. Check out http://www.gromacs.org.
 
 import os.path
+
+# Policy global variables
+use_stdlib_through_env_vars = False
 
 # These are accessible later in the script, just like other
 # declared options, via e.g. context.opts.release.
@@ -166,6 +169,22 @@ def do_build(context):
     else:
         if context.opts.mdrun_only:
             cmake_opts['GMX_BUILD_MDRUN_ONLY'] = 'ON'
+
+    # The build configuration has constructed the environment of the
+    # context so that a particular c++ standard library can be used,
+    # which may come from a different installation of gcc. Here, we
+    # tell CMake how to react to this.
+    #
+    # TODO Once gerrit 9051 and 9053 are both submitted on master,
+    # remove the hasattr part of the predicate, which will then be
+    # redundant.
+    if hasattr(context.env, 'gcc_exe') and context.env.gcc_exe is not None:
+        cmake_opts['GMX_GPLUSPLUS_PATH'] = context.env.gcc_exe
+        # TODO are these needed?
+        # gcc_exe_dirname = os.path.dirname(self.gcc_exe)
+        # gcc_toolchain_path = os.path.join(gcc_exe_dirname, '..')
+        # format_for_linker_flags="-Wl,-rpath,{gcctoolchain}/lib64 -L{gcctoolchain}/lib64"
+        # cmake_opts['CMAKE_CXX_LINK_FLAGS'] = format_for_linker_flags.format(gcctoolchain=gcc_toolchain_path)
 
     context.env.set_env_var('GMX_NO_TERM', '1')
 

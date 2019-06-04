@@ -1,7 +1,7 @@
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
- * Copyright (c) 2018, by the GROMACS development team, led by
+ * Copyright (c) 2018,2019, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -64,6 +64,9 @@ struct shakedata;
 /*! \brief Initializes and return the SHAKE data structure */
 shakedata *shake_init();
 
+//! Destroy SHAKE. Needed to solve memory leaks.
+void done_shake(shakedata *d);
+
 //! Make SHAKE blocks when not using DD.
 void
 make_shake_sblock_serial(shakedata *shaked,
@@ -71,8 +74,8 @@ make_shake_sblock_serial(shakedata *shaked,
 
 //! Make SHAKE blocks when using DD.
 void
-make_shake_sblock_dd(shakedata *shaked,
-                     const t_ilist *ilcon, const t_block *cgs,
+make_shake_sblock_dd(shakedata          *shaked,
+                     const t_ilist      *ilcon,
                      const gmx_domdec_t *dd);
 
 /*! \brief Shake all the atoms blockwise. It is assumed that all the constraints

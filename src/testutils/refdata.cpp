@@ -1,7 +1,7 @@
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
- * Copyright (c) 2011,2012,2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
+ * Copyright (c) 2011,2012,2013,2014,2015,2016,2017,2018,2019, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -54,17 +54,17 @@
 
 #include "gromacs/options/basicoptions.h"
 #include "gromacs/options/ioptionscontainer.h"
+#include "gromacs/utility/any.h"
 #include "gromacs/utility/exceptions.h"
 #include "gromacs/utility/gmxassert.h"
 #include "gromacs/utility/keyvaluetree.h"
 #include "gromacs/utility/path.h"
 #include "gromacs/utility/real.h"
 #include "gromacs/utility/stringutil.h"
-#include "gromacs/utility/variant.h"
 
-#include "testutils/refdata-checkers.h"
-#include "testutils/refdata-impl.h"
-#include "testutils/refdata-xml.h"
+#include "testutils/refdata_checkers.h"
+#include "testutils/refdata_impl.h"
+#include "testutils/refdata_xml.h"
 #include "testutils/testasserts.h"
 #include "testutils/testexceptions.h"
 #include "testutils/testfilemanager.h"
@@ -388,7 +388,11 @@ class TestReferenceChecker::Impl
         static const char * const    cUCharNodeName;
         //! String constant for naming XML elements for integer values.
         static const char * const    cIntegerNodeName;
-        //! String constant for naming XML elements for int64 values.
+        //! String constant for naming XML elements for int32 values.
+        static const char * const    cInt32NodeName;
+        //! String constant for naming XML elements for unsigned int32 values.
+        static const char * const    cUInt32NodeName;
+        //! String constant for naming XML elements for int32 values.
         static const char * const    cInt64NodeName;
         //! String constant for naming XML elements for unsigned int64 values.
         static const char * const    cUInt64NodeName;
@@ -555,6 +559,8 @@ const char *const TestReferenceChecker::Impl::cBooleanNodeName    = "Bool";
 const char *const TestReferenceChecker::Impl::cStringNodeName     = "String";
 const char *const TestReferenceChecker::Impl::cUCharNodeName      = "UChar";
 const char *const TestReferenceChecker::Impl::cIntegerNodeName    = "Int";
+const char *const TestReferenceChecker::Impl::cInt32NodeName      = "Int32";
+const char *const TestReferenceChecker::Impl::cUInt32NodeName     = "UInt32";
 const char *const TestReferenceChecker::Impl::cInt64NodeName      = "Int64";
 const char *const TestReferenceChecker::Impl::cUInt64NodeName     = "UInt64";
 const char *const TestReferenceChecker::Impl::cRealNodeName       = "Real";
@@ -904,6 +910,18 @@ void TestReferenceChecker::checkInteger(int value, const char *id)
                                     ExactStringChecker(formatString("%d", value))));
 }
 
+void TestReferenceChecker::checkInt32(int32_t value, const char *id)
+{
+    EXPECT_PLAIN(impl_->processItem(Impl::cInt32NodeName, id,
+                                    ExactStringChecker(formatString("%" PRId32, value))));
+}
+
+void TestReferenceChecker::checkUInt32(uint32_t value, const char *id)
+{
+    EXPECT_PLAIN(impl_->processItem(Impl::cUInt32NodeName, id,
+                                    ExactStringChecker(formatString("%" PRIu32, value))));
+}
+
 void TestReferenceChecker::checkInt64(int64_t value, const char *id)
 {
     EXPECT_PLAIN(impl_->processItem(Impl::cInt64NodeName, id,
@@ -976,35 +994,47 @@ void TestReferenceChecker::checkVector(const double value[3], const char *id)
 }
 
 
-void TestReferenceChecker::checkVariant(const Variant &variant, const char *id)
+void TestReferenceChecker::checkAny(const Any &any, const char *id)
 {
-    if (variant.isType<bool>())
+    if (any.isType<bool>())
     {
-        checkBoolean(variant.cast<bool>(), id);
+        checkBoolean(any.cast<bool>(), id);
     }
-    else if (variant.isType<int>())
+    else if (any.isType<int>())
     {
-        checkInteger(variant.cast<int>(), id);
+        checkInteger(any.cast<int>(), id);
     }
-    else if (variant.isType<int64_t>())
+    else if (any.isType<int32_t>())
     {
-        checkInt64(variant.cast<int64_t>(), id);
+        checkInt32(any.cast<int32_t>(), id);
     }
-    else if (variant.isType<float>())
+    else if (any.isType<uint32_t>())
     {
-        checkFloat(variant.cast<float>(), id);
+        checkInt32(any.cast<uint32_t>(), id);
     }
-    else if (variant.isType<double>())
+    else if (any.isType<int64_t>())
     {
-        checkDouble(variant.cast<double>(), id);
+        checkInt64(any.cast<int64_t>(), id);
     }
-    else if (variant.isType<std::string>())
+    else if (any.isType<uint64_t>())
     {
-        checkString(variant.cast<std::string>(), id);
+        checkInt64(any.cast<uint64_t>(), id);
+    }
+    else if (any.isType<float>())
+    {
+        checkFloat(any.cast<float>(), id);
+    }
+    else if (any.isType<double>())
+    {
+        checkDouble(any.cast<double>(), id);
+    }
+    else if (any.isType<std::string>())
+    {
+        checkString(any.cast<std::string>(), id);
     }
     else
     {
-        GMX_THROW(TestException("Unsupported variant type"));
+        GMX_THROW(TestException("Unsupported any type"));
     }
 }
 
@@ -1033,7 +1063,7 @@ void TestReferenceChecker::checkKeyValueTreeValue(const KeyValueTreeValue &value
     }
     else
     {
-        checkVariant(value.asVariant(), id);
+        checkAny(value.asAny(), id);
     }
 }
 
@@ -1069,6 +1099,19 @@ int TestReferenceChecker::readInteger(const char *id)
     int value = 0;
     EXPECT_PLAIN(impl_->processItem(Impl::cIntegerNodeName, id,
                                     ValueExtractor<int>(&value)));
+    return value;
+}
+
+
+int32_t TestReferenceChecker::readInt32(const char *id)
+{
+    if (impl_->shouldIgnore())
+    {
+        GMX_THROW(TestException("Trying to read from non-existent reference data value"));
+    }
+    int32_t value = 0;
+    EXPECT_PLAIN(impl_->processItem(Impl::cInt32NodeName, id,
+                                    ValueExtractor<int32_t>(&value)));
     return value;
 }
 

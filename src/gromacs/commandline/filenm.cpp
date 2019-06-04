@@ -3,7 +3,7 @@
  *
  * Copyright (c) 1991-2000, University of Groningen, The Netherlands.
  * Copyright (c) 2001-2004, The GROMACS development team.
- * Copyright (c) 2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
+ * Copyright (c) 2013,2014,2015,2016,2017,2018,2019, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -38,9 +38,11 @@
 
 #include "filenm.h"
 
+#include <cctype>
 #include <cstdio>
 #include <cstring>
 
+#include "gromacs/compat/string_view.h"
 #include "gromacs/fileio/filetypes.h"
 #include "gromacs/utility/basedefinitions.h"
 #include "gromacs/utility/cstringutil.h"
@@ -102,7 +104,7 @@ opt2fns(const char *opt, int nfile, const t_filenm fnm[])
 
     GMX_RELEASE_ASSERT(false, "opt2fns should be called with a valid option");
 
-    return gmx::EmptyArrayRef();
+    return {};
 }
 
 gmx::ArrayRef<const std::string>
@@ -114,7 +116,7 @@ opt2fnsIfOptionSet(const char *opt, int nfile, const t_filenm fnm[])
     }
     else
     {
-        return gmx::EmptyArrayRef();
+        return {};
     }
 }
 
@@ -148,7 +150,7 @@ ftp2fns(int ftp, int nfile, const t_filenm fnm[])
 
     GMX_RELEASE_ASSERT(false, "ftp2fns should be called with a valid option");
 
-    return gmx::EmptyArrayRef();
+    return {};
 }
 
 gmx_bool ftp2bSet(int ftp, int nfile, const t_filenm fnm[])
@@ -242,6 +244,34 @@ gmx_bool is_set(const t_filenm *fnm)
     return ((fnm->flag & ffSET) == ffSET);
 }
 
+namespace
+{
+
+/*! \brief Return the first position within \c filename of the ".partNNNN"
+ * interior sequence produced by mdrun -noappend, or npos if not found. */
+size_t findSuffixFromNoAppendPosition(const gmx::compat::string_view filename)
+{
+    size_t partPosition = filename.find(".part");
+    if ((partPosition != decltype(filename) ::npos) &&
+        (filename.length() - partPosition >= 10) &&
+        (std::isdigit(filename[partPosition + 5])) &&
+        (std::isdigit(filename[partPosition + 6])) &&
+        (std::isdigit(filename[partPosition + 7])) &&
+        (std::isdigit(filename[partPosition + 8])) &&
+        filename[partPosition + 9] == '.')
+    {
+        return partPosition;
+    }
+    return decltype(filename) ::npos;
+}
+
+} // namespace
+
+bool hasSuffixFromNoAppend(const gmx::compat::string_view filename)
+{
+    return (findSuffixFromNoAppendPosition(filename) != decltype(filename) ::npos);
+}
+
 int add_suffix_to_output_names(t_filenm *fnm, int nfile, const char *suffix)
 {
     for (int i = 0; i < nfile; i++)
@@ -252,6 +282,22 @@ int add_suffix_to_output_names(t_filenm *fnm, int nfile, const char *suffix)
                for it, just in case... */
             for (std::string &filename : fnm[i].filenames)
             {
+                // mdrun should not generate files like
+                // md.part0002.part0003.log. mdrun should permit users
+                // to name files like md.equil.part0002.log. So,
+                // before we use Path::concatenateBeforeExtension to
+                // add the requested suffix, we need to check for
+                // files matching mdrun's pattern for adding part
+                // numbers. Then we can remove that if needed.
+                for (size_t partPosition; (partPosition = findSuffixFromNoAppendPosition(filename)) != std::string::npos; )
+                {
+                    // Remove the ".partNNNN" that we have found,
+                    // and then run the loop again to make sure
+                    // there isn't another one to remove, somehow.
+                    std::string temporary = filename.substr(0, partPosition);
+                    temporary += filename.substr(partPosition + 9);
+                    filename.swap(temporary);
+                }
                 filename = gmx::Path::concatenateBeforeExtension(filename, suffix);
             }
         }

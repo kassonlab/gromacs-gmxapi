@@ -1,7 +1,7 @@
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
- * Copyright (c) 2018, by the GROMACS development team, led by
+ * Copyright (c) 2018,2019, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -59,8 +59,7 @@ namespace
 
 TEST(EmptyArrayRefWithPaddingTest, IsEmpty)
 {
-    EmptyArrayRef             emptyArray = {};
-    ArrayRefWithPadding<real> empty(emptyArray);
+    ArrayRefWithPadding<real> empty;
 
     EXPECT_EQ(0U, empty.size());
     EXPECT_TRUE(empty.empty());
@@ -68,8 +67,7 @@ TEST(EmptyArrayRefWithPaddingTest, IsEmpty)
 
 TEST(EmptyConstArrayRefWithPaddingTest, IsEmpty)
 {
-    EmptyArrayRef                   emptyArray = {};
-    ArrayRefWithPadding<const real> empty(emptyArray);
+    ArrayRefWithPadding<const real> empty;
 
     EXPECT_EQ(0U, empty.size());
     EXPECT_TRUE(empty.empty());
@@ -124,6 +122,45 @@ class ArrayRefWithPaddingTest : public ::testing::Test
             {
                 EXPECT_EQ(paddedArrayRef[i], unpaddedArrayRef[i]);
                 EXPECT_EQ(a[i], unpaddedArrayRef[i]);
+            }
+
+            using ConstArrayRefWithPaddingType = ArrayRefWithPadding<const typename ArrayRefType::value_type>;
+            {
+                // Check that we can make a padded view that refers to const elements
+                ConstArrayRefWithPaddingType constArrayRefWithPadding = arrayRefWithPadding.constArrayRefWithPadding();
+                for (index i = 0; i != aSize; ++i)
+                {
+                    EXPECT_EQ(a[i], constArrayRefWithPadding.paddedArrayRef()[i]);
+                }
+            }
+
+            {
+                // Check that we can implicitly make a padded view that refers to const elements
+                ConstArrayRefWithPaddingType constArrayRefWithPadding = arrayRefWithPadding;
+                for (index i = 0; i != aSize; ++i)
+                {
+                    EXPECT_EQ(a[i], constArrayRefWithPadding.paddedArrayRef()[i]);
+                }
+            }
+
+            {
+                // Check that a swap works, by making an empty padded
+                // vector, and a view of it, and observing what
+                // happens when we swap with the one constructed for
+                // the test.
+                PaddedVectorType w;
+                ArrayRefType     view = w.arrayRefWithPadding();
+                EXPECT_TRUE(view.empty());
+
+                view.swap(arrayRefWithPadding);
+                EXPECT_TRUE(arrayRefWithPadding.empty());
+                EXPECT_LE(aSize, view.size());
+                for (index i = 0; i != v.size(); ++i)
+                {
+                    EXPECT_EQ(v[i], view.paddedArrayRef()[i]);
+                }
+                // Restore arrayRefWithPadding for future test code
+                view.swap(arrayRefWithPadding);
             }
         }
 };

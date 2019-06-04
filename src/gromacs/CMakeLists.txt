@@ -95,8 +95,9 @@ endfunction()
 
 add_subdirectory(gmxlib)
 add_subdirectory(mdlib)
-add_subdirectory(applied-forces)
-add_subdirectory(listed-forces)
+add_subdirectory(applied_forces)
+add_subdirectory(listed_forces)
+add_subdirectory(nbnxm)
 add_subdirectory(commandline)
 add_subdirectory(domdec)
 add_subdirectory(ewald)
@@ -107,6 +108,7 @@ add_subdirectory(linearalgebra)
 add_subdirectory(math)
 add_subdirectory(mdrun)
 add_subdirectory(mdrunutility)
+add_subdirectory(mdspan)
 add_subdirectory(mdtypes)
 add_subdirectory(onlinehelp)
 add_subdirectory(options)
@@ -134,6 +136,7 @@ if (NOT GMX_BUILD_MDRUN_ONLY)
     add_subdirectory(correlationfunctions)
     add_subdirectory(statistics)
     add_subdirectory(analysisdata)
+    add_subdirectory(coordinateio)
     add_subdirectory(selection)
     add_subdirectory(trajectoryanalysis)
     add_subdirectory(energyanalysis)
@@ -254,6 +257,14 @@ a clFFT package, or use the latest GROMACS 2018 point release.")
     endif()
 endif()
 
+# Permit GROMACS code to include externally developed headers, such as
+# the functionality from the nonstd project that we use for
+# gmx::compat::optional. These are included as system headers so that
+# no warnings are issued from them.
+#
+# TODO Perhaps generalize this for all headers from src/external
+target_include_directories(libgromacs SYSTEM PRIVATE ${PROJECT_SOURCE_DIR}/src/external)
+
 # Recent versions of gcc and clang give warnings on scanner.cpp, which
 # is a generated source file. These are awkward to suppress inline, so
 # we do it in the compilation command (after testing that the compiler
@@ -307,20 +318,25 @@ target_link_libraries(libgromacs
                       ${FFT_LIBRARIES} ${LINEAR_ALGEBRA_LIBRARIES}
                       ${THREAD_LIB} ${GMX_SHARED_LINKER_FLAGS}
                       ${OpenCL_LIBRARIES}
-                      ${GMX_STDLIB_LIBRARIES}
                       PUBLIC
                       ${GMX_PUBLIC_LIBRARIES}
                       )
+if (GMX_OPENMP)
+    target_link_libraries(libgromacs PUBLIC OpenMP::OpenMP_CXX)
+endif()
 set_target_properties(libgromacs PROPERTIES
                       OUTPUT_NAME "gromacs${GMX_LIBS_SUFFIX}"
                       SOVERSION ${LIBRARY_SOVERSION_MAJOR}
                       VERSION ${LIBRARY_VERSION}
-                      COMPILE_FLAGS "${OpenMP_C_FLAGS}")
+                      )
 
 gmx_manage_lmfit()
 target_link_libraries(libgromacs PRIVATE lmfit)
 
-if (CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND CMAKE_CXX_COMPILER_VERSION MATCHES "^6\.0")
+# Fix everything found by the latest version of clang that we use in
+# Jenkins testing. This should be updated when we update the latest
+# tested version of clang.
+if (CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND CMAKE_CXX_COMPILER_VERSION MATCHES "^7\.0")
    target_compile_options(libgromacs PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-Weverything ${IGNORED_CLANG_ALL_WARNINGS}>)
 endif()
 if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
@@ -409,35 +425,35 @@ if(GMX_USE_OPENCL)
         DESTINATION ${GMX_INSTALL_OCLDIR}/gromacs/pbcutil
         COMPONENT libraries)
 
-    # Install the NB source and headers
+    # Install the NBNXM source and headers
     file(GLOB OPENCL_INSTALLED_FILES
-        mdlib/nbnxn_consts.h
+        nbnxm/constants.h
         )
     install(FILES ${OPENCL_INSTALLED_FILES}
-        DESTINATION ${GMX_INSTALL_OCLDIR}/gromacs/mdlib
+        DESTINATION ${GMX_INSTALL_OCLDIR}/gromacs/nbnxm
         COMPONENT libraries)
     file(GLOB OPENCL_INSTALLED_FILES
-        mdlib/nbnxn_ocl/nbnxn_ocl_kernels.cl
-        mdlib/nbnxn_ocl/nbnxn_ocl_kernel.clh
-        mdlib/nbnxn_ocl/nbnxn_ocl_kernel_pruneonly.clh
-        mdlib/nbnxn_ocl/nbnxn_ocl_kernels.clh
-        mdlib/nbnxn_ocl/nbnxn_ocl_kernels_fastgen.clh
-        mdlib/nbnxn_ocl/nbnxn_ocl_kernels_fastgen_add_twincut.clh
-        mdlib/nbnxn_ocl/nbnxn_ocl_kernel_utils.clh
-        mdlib/nbnxn_ocl/nbnxn_ocl_consts.h
+        nbnxm/opencl/nbnxm_ocl_kernels.cl
+        nbnxm/opencl/nbnxm_ocl_kernel.clh
+        nbnxm/opencl/nbnxm_ocl_kernel_pruneonly.clh
+        nbnxm/opencl/nbnxm_ocl_kernels.clh
+        nbnxm/opencl/nbnxm_ocl_kernels_fastgen.clh
+        nbnxm/opencl/nbnxm_ocl_kernels_fastgen_add_twincut.clh
+        nbnxm/opencl/nbnxm_ocl_kernel_utils.clh
+        nbnxm/opencl/nbnxm_ocl_consts.h
         )
     install(FILES ${OPENCL_INSTALLED_FILES}
-        DESTINATION ${GMX_INSTALL_OCLDIR}/gromacs/mdlib/nbnxn_ocl
+        DESTINATION ${GMX_INSTALL_OCLDIR}/gromacs/nbnxm/opencl
         COMPONENT libraries)
 
     # Install the PME source and headers
     file(GLOB OPENCL_INSTALLED_FILES
-        ewald/pme-spread.clh
-        ewald/pme-solve.clh
-        ewald/pme-gather.clh
-        ewald/pme-gpu-utils.clh
-        ewald/pme-program.cl
-        ewald/pme-gpu-types.h
+        ewald/pme_spread.clh
+        ewald/pme_solve.clh
+        ewald/pme_gather.clh
+        ewald/pme_gpu_utils.clh
+        ewald/pme_program.cl
+        ewald/pme_gpu_types.h
         )
     install(FILES ${OPENCL_INSTALLED_FILES}
         DESTINATION ${GMX_INSTALL_OCLDIR}/gromacs/ewald

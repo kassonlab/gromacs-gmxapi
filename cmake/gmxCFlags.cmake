@@ -71,6 +71,8 @@ function(gmx_set_cmake_compiler_flags)
         # type. Used for, e.g., -Wno-array-bounds in Release to work around
         # gcc-4.8 being a little too vocal about some perfectly good code,
         # while using RelWithAssert (ie. without that suppression) in Jenkins.
+        #
+        # TODO check the behaviour of more recent gcc on the improved code
         set(GMXC_${language}FLAGS_RELEASE "${GMXC_${language}FLAGS_RELEASE} ${GMXC_${language}FLAGS_RELEASE_ONLY}")
 
         # Modify the real CMake variables for compiler flags for all
@@ -111,8 +113,6 @@ macro (gmx_c_flags)
             GMX_TEST_CFLAG(CFLAGS_WARN "-Wall -Wno-unused -Wunused-value -Wunused-parameter" GMXC_CFLAGS)
             GMX_TEST_CFLAG(CFLAGS_WARN_EXTRA "-Wextra -Wno-missing-field-initializers -Wno-sign-compare -Wpointer-arith" GMXC_CFLAGS)
             GMX_TEST_CFLAG(CFLAGS_WARN_UNDEF "-Wundef" GMXC_CFLAGS)
-            # Since 4.8 on by default. For previous version disabling is a no-op. Only disabling for Release because with assert
-            # the warnings are OK.
             GMX_TEST_CFLAG(CFLAGS_WARN_REL "-Wno-array-bounds" GMXC_CFLAGS_RELEASE_ONLY)
             if(CYGWIN)
                 GMX_TEST_CFLAG(CFLAGS_WARN_SUBSCRIPT "-Wno-char-subscripts" GMXC_CFLAGS)
@@ -203,15 +203,6 @@ GMX_TEST_CFLAG(CFLAGS_WARN "/W3 /wd161 /wd177 /wd411 /wd593 /wd981 /wd1418 /wd14
                 GMX_TEST_CXXFLAG(CXXFLAGS_PRAGMA "-wd3180" GMXC_CXXFLAGS)
             endif()
             if (GMX_COMPILER_WARNINGS)
-                if (GMX_GPU)
-# Suppress warnings from CUDA headers
-# 7:   unrecognized token
-# 82:  storage class is not first
-# The below are also required for math_functions.h / math_functions.hpp at least until CUDA 8.0-RC
-# 193: zero used for undefined preprocessing identifer
-# 3346:dynamic exception specifiers are deprecated
-                    GMX_TEST_CXXFLAG(CXXFLAGS_WARN_OLD_GPU "-wd7 -wd82 -wd193 -wd3346" GMXC_CXXFLAGS)
-                endif()
 #All but the following warnings are identical for the C-compiler (see above)
 # 304: access control not specified
 # 383: value copied to temporary, reference to temporary used

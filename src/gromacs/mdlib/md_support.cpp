@@ -3,7 +3,7 @@
  *
  * Copyright (c) 1991-2000, University of Groningen, The Netherlands.
  * Copyright (c) 2001-2004, The GROMACS development team.
- * Copyright (c) 2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
+ * Copyright (c) 2013,2014,2015,2016,2017,2018,2019, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -48,14 +48,15 @@
 #include "gromacs/gmxlib/network.h"
 #include "gromacs/gmxlib/nrnb.h"
 #include "gromacs/math/vec.h"
-#include "gromacs/mdlib/mdrun.h"
-#include "gromacs/mdlib/sim_util.h"
+#include "gromacs/mdlib/dispersioncorrection.h"
 #include "gromacs/mdlib/simulationsignal.h"
+#include "gromacs/mdlib/stat.h"
 #include "gromacs/mdlib/tgroup.h"
 #include "gromacs/mdlib/update.h"
 #include "gromacs/mdlib/vcm.h"
 #include "gromacs/mdtypes/commrec.h"
 #include "gromacs/mdtypes/df_history.h"
+#include "gromacs/mdtypes/enerdata.h"
 #include "gromacs/mdtypes/energyhistory.h"
 #include "gromacs/mdtypes/forcerec.h"
 #include "gromacs/mdtypes/group.h"
@@ -161,12 +162,11 @@ void compute_globals(FILE *fplog, gmx_global_stat *gstat, t_commrec *cr, t_input
                      matrix box, int *totalNumberOfBondedInteractions,
                      gmx_bool *bSumEkinhOld, int flags)
 {
-    tensor   corr_vir, corr_pres;
     gmx_bool bEner, bPres, bTemp;
     gmx_bool bStopCM, bGStat,
              bReadEkin, bEkinAveVel, bScaleEkin, bConstrain;
     gmx_bool bCheckNumberOfBondedInteractions;
-    real     prescorr, enercorr, dvdlcorr, dvdl_ekin;
+    real     dvdl_ekin;
 
     /* translate CGLO flags to gmx_booleans */
     bStopCM                          = ((flags & CGLO_STOPCM) != 0);
@@ -279,25 +279,10 @@ void compute_globals(FILE *fplog, gmx_global_stat *gstat, t_commrec *cr, t_input
         enerd->term[F_EKIN] = trace(ekind->ekin);
     }
 
-    /* ##########  Long range energy information ###### */
-
-    if (bEner || bPres || bConstrain)
-    {
-        calc_dispcorr(ir, fr, box, state->lambda[efptVDW],
-                      corr_pres, corr_vir, &prescorr, &enercorr, &dvdlcorr);
-    }
-
-    if (bEner)
-    {
-        enerd->term[F_DISPCORR]  = enercorr;
-        enerd->term[F_EPOT]     += enercorr;
-        enerd->term[F_DVDL_VDW] += dvdlcorr;
-    }
-
     /* ########## Now pressure ############## */
+    // TODO: For the VV integrator bConstrain is needed in the conditional. This is confusing, so get rid of this.
     if (bPres || bConstrain)
     {
-
         m_add(force_vir, shake_vir, total_vir);
 
         /* Calculate pressure and apply LR correction if PPPM is used.
@@ -305,31 +290,32 @@ void compute_globals(FILE *fplog, gmx_global_stat *gstat, t_commrec *cr, t_input
          */
 
         enerd->term[F_PRES] = calc_pres(fr->ePBC, ir->nwall, box, ekind->ekin, total_vir, pres);
+    }
 
+    /* ##########  Long range energy information ###### */
+    if ((bEner || bPres) && fr->dispersionCorrection)
+    {
         /* Calculate long range corrections to pressure and energy */
         /* this adds to enerd->term[F_PRES] and enerd->term[F_ETOT],
            and computes enerd->term[F_DISPCORR].  Also modifies the
-           total_vir and pres tesors */
+           total_vir and pres tensors */
 
-        m_add(total_vir, corr_vir, total_vir);
-        m_add(pres, corr_pres, pres);
-        enerd->term[F_PDISPCORR] = prescorr;
-        enerd->term[F_PRES]     += prescorr;
-    }
-}
+        const DispersionCorrection::Correction correction =
+            fr->dispersionCorrection->calculate(box, state->lambda[efptVDW]);
 
-/* check whether an 'nst'-style parameter p is a multiple of nst, and
-   set it to be one if not, with a warning. */
-static void check_nst_param(const gmx::MDLogger &mdlog,
-                            const char *desc_nst, int nst,
-                            const char *desc_p, int *p)
-{
-    if (*p > 0 && *p % nst != 0)
-    {
-        /* Round up to the next multiple of nst */
-        *p = ((*p)/nst + 1)*nst;
-        GMX_LOG(mdlog.warning).asParagraph().appendTextFormatted(
-                "NOTE: %s changes %s to %d", desc_nst, desc_p, *p);
+        if (bEner)
+        {
+            enerd->term[F_DISPCORR]  = correction.energy;
+            enerd->term[F_EPOT]     += correction.energy;
+            enerd->term[F_DVDL_VDW] += correction.dvdl;
+        }
+        if (bPres)
+        {
+            correction.correctVirial(total_vir);
+            correction.correctPressure(pres);
+            enerd->term[F_PDISPCORR] = correction.pressure;
+            enerd->term[F_PRES]     += correction.pressure;
+        }
     }
 }
 
@@ -445,14 +431,11 @@ static int lcd4(int i1, int i2, int i3, int i4)
     return nst;
 }
 
-int check_nstglobalcomm(const gmx::MDLogger &mdlog, int nstglobalcomm, t_inputrec *ir, const t_commrec * cr)
+int computeGlobalCommunicationPeriod(const gmx::MDLogger &mdlog,
+                                     t_inputrec          *ir,
+                                     const t_commrec     *cr)
 {
-    if (!EI_DYNAMICS(ir->eI))
-    {
-        nstglobalcomm = 1;
-    }
-
-    if (nstglobalcomm == -1)
+    int nstglobalcomm;
     {
         // Set up the default behaviour
         if (!(ir->nstcalcenergy > 0 ||
@@ -486,40 +469,9 @@ int check_nstglobalcomm(const gmx::MDLogger &mdlog, int nstglobalcomm, t_inputre
                                  ir->epc != epcNO ? ir->nstpcouple : 0);
         }
     }
-    else
-    {
-        // Check that the user's choice of mdrun -gcom will work
-        if (ir->nstlist > 0 &&
-            nstglobalcomm > ir->nstlist && nstglobalcomm % ir->nstlist != 0)
-        {
-            nstglobalcomm = (nstglobalcomm / ir->nstlist)*ir->nstlist;
-            GMX_LOG(mdlog.warning).asParagraph().appendTextFormatted(
-                    "WARNING: nstglobalcomm is larger than nstlist, but not a multiple, setting it to %d",
-                    nstglobalcomm);
-        }
-        if (ir->nstcalcenergy > 0)
-        {
-            check_nst_param(mdlog, "-gcom", nstglobalcomm,
-                            "nstcalcenergy", &ir->nstcalcenergy);
-        }
-        if (ir->etc != etcNO && ir->nsttcouple > 0)
-        {
-            check_nst_param(mdlog, "-gcom", nstglobalcomm,
-                            "nsttcouple", &ir->nsttcouple);
-        }
-        if (ir->epc != epcNO && ir->nstpcouple > 0)
-        {
-            check_nst_param(mdlog, "-gcom", nstglobalcomm,
-                            "nstpcouple", &ir->nstpcouple);
-        }
 
-        check_nst_param(mdlog, "-gcom", nstglobalcomm,
-                        "nstenergy", &ir->nstenergy);
-
-        check_nst_param(mdlog, "-gcom", nstglobalcomm,
-                        "nstlog", &ir->nstlog);
-    }
-
+    // TODO change this behaviour. Instead grompp should print
+    // a (performance) note and mdrun should not change ir.
     if (ir->comm_mode != ecmNO && ir->nstcomm < nstglobalcomm)
     {
         GMX_LOG(mdlog.warning).asParagraph().appendTextFormatted(

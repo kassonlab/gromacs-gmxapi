@@ -1,7 +1,7 @@
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
- * Copyright (c) 2011,2012,2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
+ * Copyright (c) 2011,2012,2013,2014,2015,2016,2017,2018,2019, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -429,6 +429,40 @@ std::string replaceAllWords(const std::string &input,
 //! \copydoc replaceAllWords(const std::string &, const char *, const char *)
 std::string replaceAllWords(const std::string &input,
                             const std::string &from, const std::string &to);
+
+/*! \brief Return whether two strings are equal, ignoring case.
+ *
+ * Checks if two strings have the same length and if all characters
+ * in them match when compared case insensitive.
+ * Characters are converted by using std::tolower.
+ *
+ * \param[in] source Search string to compare against \p target.
+ * \param[in] target String to be matched to \p source.
+ * \returns True if the strings match.
+ */
+bool equalCaseInsensitive(const std::string &source,
+                          const std::string &target);
+
+/*! \brief
+ * Checks if at most \p maxLengthOfComparison characters of two strings match case insensitive.
+ *
+ * The function tests two strings \p source and \p target to see if at most
+ * \p maxLengthOfComparison characters match between the two. If fewer characters are present
+ * in \p source, only the maximum number of characters in \p source will be compared instead.
+ * In this case both \p source and \p target also need to have the same length, or the strings will
+ * compare as false, even if \p target matches \p source over the length of \p source.
+ *
+ * If \p maxLengthOfComparison is 0, the function always returns true.
+ * Characters are converted by using std::tolower.
+ *
+ * \param[in] source Search string to compare against \p target.
+ * \param[in] target String to be matched to \p source.
+ * \param[in] maxLengthOfComparison The maximum string length to compare.
+ * \returns True if the strings match.
+ */
+bool equalCaseInsensitive(const std::string &source,
+                          const std::string &target,
+                          size_t             maxLengthOfComparison);
 
 class TextLineWrapper;
 

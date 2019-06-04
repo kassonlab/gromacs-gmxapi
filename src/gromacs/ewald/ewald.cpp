@@ -3,7 +3,7 @@
  *
  * Copyright (c) 1991-2000, University of Groningen, The Netherlands.
  * Copyright (c) 2001-2004, The GROMACS development team.
- * Copyright (c) 2013,2014,2015,2017,2018, by the GROMACS development team, led by
+ * Copyright (c) 2013,2014,2015,2017,2018,2019, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -55,7 +55,7 @@
 
 #include <algorithm>
 
-#include "gromacs/ewald/ewald-utils.h"
+#include "gromacs/ewald/ewald_utils.h"
 #include "gromacs/math/functions.h"
 #include "gromacs/math/gmxcomplex.h"
 #include "gromacs/math/units.h"
@@ -140,7 +140,7 @@ real do_ewald(const t_inputrec *ir,
               rvec              f[],
               const real        chargeA[],
               const real        chargeB[],
-              matrix            box,
+              const matrix      box,
               const t_commrec  *cr,
               int               natoms,
               matrix            lrvir,
@@ -320,9 +320,12 @@ real do_ewald(const t_inputrec *ir,
     return energy;
 }
 
-real ewald_charge_correction(const t_commrec *cr, t_forcerec *fr, real lambda,
-                             matrix box,
-                             real *dvdlambda, tensor vir)
+real ewald_charge_correction(const t_commrec  *cr,
+                             const t_forcerec *fr,
+                             const real        lambda,
+                             const matrix      box,
+                             real             *dvdlambda,
+                             tensor            vir)
 
 {
     real vol, fac, qs2A, qs2B, vc, enercorr;

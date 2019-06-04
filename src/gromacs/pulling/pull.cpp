@@ -3,7 +3,7 @@
  *
  * Copyright (c) 1991-2000, University of Groningen, The Netherlands.
  * Copyright (c) 2001-2004, The GROMACS development team.
- * Copyright (c) 2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
+ * Copyright (c) 2013,2014,2015,2016,2017,2018,2019, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -46,9 +46,9 @@
 #include <cstdlib>
 
 #include <algorithm>
+#include <memory>
 
 #include "gromacs/commandline/filenm.h"
-#include "gromacs/compat/make_unique.h"
 #include "gromacs/domdec/domdec_struct.h"
 #include "gromacs/domdec/localatomset.h"
 #include "gromacs/domdec/localatomsetmanager.h"
@@ -59,7 +59,6 @@
 #include "gromacs/math/vec.h"
 #include "gromacs/math/vectypes.h"
 #include "gromacs/mdlib/gmx_omp_nthreads.h"
-#include "gromacs/mdlib/mdrun.h"
 #include "gromacs/mdtypes/commrec.h"
 #include "gromacs/mdtypes/forceoutput.h"
 #include "gromacs/mdtypes/inputrec.h"
@@ -1079,7 +1078,7 @@ static void do_constraint(struct pull_t *pull, t_pbc *pbc,
         /* update the atom positions */
         auto localAtomIndices = pgrp->atomSet.localIndex();
         copy_dvec(dr, tmp);
-        for (gmx::index j = 0; j < localAtomIndices.size(); j++)
+        for (gmx::index j = 0; j < localAtomIndices.ssize(); j++)
         {
             ii = localAtomIndices[j];
             if (!pgrp->localWeights.empty())
@@ -1376,7 +1375,7 @@ void register_external_pull_potential(struct pull_t *pull,
     GMX_RELEASE_ASSERT(pull != nullptr, "register_external_pull_potential called before init_pull");
     GMX_RELEASE_ASSERT(provider != nullptr, "register_external_pull_potential called with NULL as provider name");
 
-    if (coord_index < 0 || coord_index >= static_cast<int>(pull->coord.size()))
+    if (coord_index < 0 || coord_index >= gmx::ssize(pull->coord))
     {
         gmx_fatal(FARGS, "Module '%s' attempted to register an external potential for pull coordinate %d which is out of the pull coordinate range %d - %zu\n",
                   provider, coord_index + 1, 1, pull->coord.size());
@@ -1453,7 +1452,7 @@ void apply_external_pull_coord_force(struct pull_t        *pull,
 {
     pull_coord_work_t *pcrd;
 
-    GMX_ASSERT(coord_index >= 0 && coord_index < static_cast<int>(pull->coord.size()), "apply_external_pull_coord_force called with coord_index out of range");
+    GMX_ASSERT(coord_index >= 0 && coord_index < gmx::ssize(pull->coord), "apply_external_pull_coord_force called with coord_index out of range");
 
     if (pull->comm.bParticipate)
     {
@@ -1729,9 +1728,9 @@ static void init_pull_group_index(FILE *fplog, const t_commrec *cr,
                              ir->eI == eiBD);
 
     /* In parallel, store we need to extract localWeights from weights at DD time */
-    std::vector<real>  &weights = ((cr && PAR(cr)) ? pg->globalWeights : pg->localWeights);
+    std::vector<real>         &weights = ((cr && PAR(cr)) ? pg->globalWeights : pg->localWeights);
 
-    const gmx_groups_t *groups  = &mtop->groups;
+    const SimulationGroups    &groups  = mtop->groups;
 
     /* Count frozen dimensions and (weighted) mass */
     int    nfrozen = 0;
@@ -1747,7 +1746,7 @@ static void init_pull_group_index(FILE *fplog, const t_commrec *cr,
             for (int d = 0; d < DIM; d++)
             {
                 if (pulldim_con[d] == 1 &&
-                    ir->opts.nFreeze[getGroupType(groups, egcFREEZE, ii)][d])
+                    ir->opts.nFreeze[getGroupType(groups, SimulationAtomGroupType::Freeze, ii)][d])
                 {
                     nfrozen++;
                 }
@@ -1787,13 +1786,13 @@ static void init_pull_group_index(FILE *fplog, const t_commrec *cr,
             }
             else
             {
-                if (groups->grpnr[egcTC] == nullptr)
+                if (groups.groupNumbers[SimulationAtomGroupType::TemperatureCoupling].empty())
                 {
                     mbd = ir->delta_t/ir->opts.tau_t[0];
                 }
                 else
                 {
-                    mbd = ir->delta_t/ir->opts.tau_t[groups->grpnr[egcTC][ii]];
+                    mbd = ir->delta_t/ir->opts.tau_t[groups.groupNumbers[SimulationAtomGroupType::TemperatureCoupling][ii]];
                 }
             }
             w                   *= m/mbd;
@@ -1896,7 +1895,7 @@ init_pull(FILE *fplog, const pull_params_t *pull_params, const t_inputrec *ir,
             if (group.epgrppbc == epgrppbcREFAT || group.epgrppbc == epgrppbcPREVSTEPCOM)
             {
                 /* pbcAtomSet consists of a single atom */
-                group.pbcAtomSet = gmx::compat::make_unique<gmx::LocalAtomSet>(atomSets->add({&group.params.pbcatom, &group.params.pbcatom + 1}));
+                group.pbcAtomSet = std::make_unique<gmx::LocalAtomSet>(atomSets->add({&group.params.pbcatom, &group.params.pbcatom + 1}));
             }
         }
     }
@@ -2266,13 +2265,15 @@ static void destroy_pull(struct pull_t *pull)
     delete pull;
 }
 
-void preparePrevStepPullCom(const t_inputrec *ir, const t_mdatoms *md, t_state *state, const t_state *state_global, const t_commrec *cr, bool startingFromCheckpoint)
+void preparePrevStepPullCom(const t_inputrec *ir, pull_t *pull_work,
+                            const t_mdatoms *md, t_state *state, const t_state *state_global,
+                            const t_commrec *cr, bool startingFromCheckpoint)
 {
     if (!ir->pull || !ir->pull->bSetPbcRefToPrevStepCOM)
     {
         return;
     }
-    allocStatePrevStepPullCom(state, ir->pull_work);
+    allocStatePrevStepPullCom(state, pull_work);
     if (startingFromCheckpoint)
     {
         if (MASTER(cr))
@@ -2284,14 +2285,14 @@ void preparePrevStepPullCom(const t_inputrec *ir, const t_mdatoms *md, t_state *
             /* Only the master rank has the checkpointed COM from the previous step */
             gmx_bcast(sizeof(double) * state->pull_com_prev_step.size(), &state->pull_com_prev_step[0], cr);
         }
-        setPrevStepPullComFromState(ir->pull_work, state);
+        setPrevStepPullComFromState(pull_work, state);
     }
     else
     {
         t_pbc pbc;
         set_pbc(&pbc, ir->ePBC, state->box);
-        initPullComFromPrevStep(cr, ir->pull_work, md, &pbc, state->x.rvec_array());
-        updatePrevStepPullCom(ir->pull_work, state);
+        initPullComFromPrevStep(cr, pull_work, md, &pbc, state->x.rvec_array());
+        updatePrevStepPullCom(pull_work, state);
     }
 }
 

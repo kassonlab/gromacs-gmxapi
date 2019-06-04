@@ -3,7 +3,7 @@
  *
  * Copyright (c) 1991-2000, University of Groningen, The Netherlands.
  * Copyright (c) 2001-2004, The GROMACS development team.
- * Copyright (c) 2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
+ * Copyright (c) 2013,2014,2015,2016,2017,2018,2019, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -52,7 +52,7 @@
 #include "gromacs/fileio/xvgr.h"
 #include "gromacs/gmxana/gmx_ana.h"
 #include "gromacs/linearalgebra/nrjac.h"
-#include "gromacs/listed-forces/bonded.h"
+#include "gromacs/listed_forces/bonded.h"
 #include "gromacs/math/functions.h"
 #include "gromacs/math/units.h"
 #include "gromacs/math/vec.h"
@@ -502,7 +502,7 @@ static void mol_quad(int k0, int k1, rvec x[], const t_atom atom[], rvec quad)
     rvec     com;        /* center of mass */
     rvec     r;          /* distance of atoms to center of mass */
     double **inten;
-    double   dd[DIM], **ev, tmp;
+    double   dd[DIM], **ev;
 
     snew(inten, DIM);
     snew(ev, DIM);
@@ -586,15 +586,18 @@ static void mol_quad(int k0, int k1, rvec x[], const t_atom atom[], rvec quad)
      * At the moment I have no idea how this will work out for other molecules...
      */
 
-#define SWAP(i)                                 \
-    if (dd[(i)+1] > dd[i]) {                      \
-        tmp       = dd[i];                              \
-        dd[i]     = dd[(i)+1];                          \
-        dd[(i)+1] = tmp;                            \
+    if (dd[1] > dd[0])
+    {
+        std::swap(dd[0], dd[1]);
     }
-    SWAP(0);
-    SWAP(1);
-    SWAP(0);
+    if (dd[2] > dd[1])
+    {
+        std::swap(dd[1], dd[2]);
+    }
+    if (dd[1] > dd[0])
+    {
+        std::swap(dd[0], dd[1]);
+    }
 
     for (m = 0; (m < DIM); m++)
     {

@@ -10,6 +10,101 @@ Installation guide
 
 .. highlight:: bash
 
+gmxapi and Python package
+-------------------------
+
+This copy of |Gromacs| is derived from the
+`sandbox-gmxapi <https://github.com/kassonlab/gromacs-gmxapi/tree/kassonLabFork>`_
+branch of the primary
+|Gromacs| `repository <https://gerrit.gromacs.org/gromacs.git>`_.
+This section of the documentation supplements the standard |Gromacs| installation
+instructions to describe access to Python-driven features targeted for a future
+|Gromacs| release. For details, see the ``python_packaging`` directory in the
+source tree.
+
+The following instructions assume the ``bash`` shell and
+
+::
+
+    SOURCE=$PWD/gromacs-gmxapi
+
+Get the fork
+^^^^^^^^^^^^
+
+::
+
+    git clone https://gerrit.gromacs.org/gromacs.git -b sandbox-gmxapi --single-branch $SOURCE
+
+or
+
+::
+
+    git clone https://github.com/kassonlab/gromacs-gmxapi.git $SOURCE
+    cd $SOURCE
+    git checkout kassonLabFork
+
+Build and install GROMACS
+^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Refer to additional instructions below, but be sure to
+enable the gmxapi library with the ``-DGMXAPI=ON`` argument.
+
+::
+
+    mkdir build
+    cd build
+    cmake .. --DGMX_THREAD_MPI=ON -DGMXAPI=ON
+    make -j10 install
+    cd ..
+
+After installing |Gromacs|, be sure to "source" the GMXRC. E.g. if you used
+``-DCMAKE_INSTALL_PREFIX=/usr/local/gromacs`` as a CMake argument to configure
+the install location, in a ``bash`` shell run ``source /usr/local/gromacs/bin/GMXRC``
+before proceeding.
+
+Build and install the gmxapi Python package
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Assuming ``python`` and ``pip`` are from a Python 3 installation::
+
+    cd $SOURCE/python_packaging
+    pip install -r src/requirements.txt
+    (cd src && pip install .)
+
+For more detailed instructions, refer to the ``README.md`` file in the ``python_packaging``
+directory.
+
+Refer to ``python_packaging/examples`` or run ``pydoc gmxapi`` for usage.
+
+Build and install the sample_restraint package
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+This is the sample source tree for an MD restraint plug-in.
+
+::
+
+    cd sample_restraint
+    mkdir build
+    cd build
+    cmake ..
+    make -j10 install
+    cd ..
+
+Explore the example notebook
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Make sure a recent version of the jupyter notebook server is available::
+
+    pip install --upgrade jupyter
+
+::
+
+    cd $SOURCE/python_packaging/sample_restraint/examples
+    jupyter notebook
+
+and look at ``example.ipynb``
+
+
 Introduction to building |Gromacs|
 ----------------------------------
 
@@ -55,7 +150,7 @@ Quick and dirty cluster installation
 
 On a cluster where users are expected to be running across multiple
 nodes using MPI, make one installation similar to the above, and
-another using an MPI wrapper compiler and which is `building only
+another using ``-DGMX_MPI=on`` and which is `building only
 mdrun`_, because that is the only component of |Gromacs| that uses
 MPI. The latter will install a single simulation engine binary,
 i.e. ``mdrun_mpi`` when the default suffix is used. Hence it is safe
@@ -104,20 +199,20 @@ PowerPC including POWER8, ARM v7, ARM v8, and SPARC VIII.
 Compiler
 ^^^^^^^^
 
-|Gromacs| can be compiled on any platform with ANSI C99 and C++11
+|Gromacs| can be compiled on any platform with ANSI C99 and C++14
 compilers, and their respective standard C/C++ libraries. Good
 performance on an OS and architecture requires choosing a good
 compiler. We recommend gcc, because it is free, widely available and
 frequently provides the best performance.
 
 You should strive to use the most recent version of your
-compiler. Since we require full C++11 support the minimum supported
+compiler. Since we require full C++14 support the minimum supported
 compiler versions are
 
-* GNU (gcc) 4.8.1
+* GNU (gcc) 5.1
 * Intel (icc) 17.0.1
-* LLVM (clang) 3.3
-* Microsoft (MSVC) 2017 (C++14 is used)
+* LLVM (clang) 3.6
+* Microsoft (MSVC) 2017
 
 Other compilers may work (Cray, Pathscale, older clang) but do
 not offer competitive performance. We recommend against PGI because
@@ -131,32 +226,24 @@ You may also need the most recent version of other compiler toolchain
 components beside the compiler itself (e.g. assembler or linker);
 these are often shipped by your OS distribution's binutils package.
 
-C++11 support requires adequate support in both the compiler and the
+C++14 support requires adequate support in both the compiler and the
 C++ library. The gcc and MSVC compilers include their own standard
-libraries and require no further configuration. For configuration of
-other compilers, read on.
+libraries and require no further configuration. If your vendor's
+compiler also manages the standard library library via compiler flags,
+these will be honored. For configuration of other compilers, read on.
 
 On Linux, both the Intel and clang compiler use the libstdc++ which
 comes with gcc as the default C++ library. For |Gromacs|, we require
-the compiler to support libstc++ version 4.8.1 or higher. To select a
-particular libstdc++ library, use:
-
-* For Intel: ``-DGMX_STDLIB_CXX_FLAGS=-gcc-name=/path/to/gcc/binary``
-  or make sure that the correct gcc version is first in path (e.g. by
-  loading the gcc module). It can also be useful to add
-  ``-DCMAKE_CXX_LINK_FLAGS="-Wl,-rpath,/path/to/gcc/lib64
-  -L/path/to/gcc/lib64"`` to ensure linking works correctly.
-* For clang:
-  ``-DCMAKE_CXX_FLAGS=--gcc-toolchain=/path/to/gcc/folder``. This
-  folder should contain ``include/c++``.
+the compiler to support libstc++ version 5.1 or higher. To select a
+particular libstdc++ library, provide the path to g++ with
+``-DGMX_GPLUSPLUS_PATH=/path/to/g++``.
 
 On Windows with the Intel compiler, the MSVC standard library is used,
 and at least MSVC 2017 is required. Load the enviroment variables with
 vcvarsall.bat.
 
-To build with any compiler and clang's libcxx standard library, use
-``-DGMX_STDLIB_CXX_FLAGS=-stdlib=libc++
--DGMX_STDLIB_LIBRARIES='-lc++abi -lc++'``.
+To build with clang and llvm's libcxx standard library, use
+``-DCMAKE_CXX_FLAGS=-stdlib=libc++``.
 
 If you are running on Mac OS X, the best option is the Intel
 compiler. Both clang and gcc will work, but they produce lower
@@ -187,8 +274,7 @@ GPU support
 
 |Gromacs| has excellent support for NVIDIA GPUs supported via CUDA.
 On Linux, NVIDIA CUDA_ toolkit with minimum version |REQUIRED_CUDA_VERSION|
-is required, and the latest version is strongly encouraged. Using
-Microsoft MSVC compiler requires version 9.0. NVIDIA GPUs with at
+is required, and the latest version is strongly encouraged. NVIDIA GPUs with at
 least NVIDIA compute capability |REQUIRED_CUDA_COMPUTE_CAPABILITY| are
 required. You are strongly recommended to
 get the latest CUDA version and driver that supports your hardware, but
@@ -231,6 +317,11 @@ you will need to have
 * an MPI library installed that supports the MPI 1.3
   standard, and
 * wrapper compilers that will compile code using that library.
+
+To compile with MPI set your compiler to the normal (non-MPI) compiler
+and add ``-DGMX_MPI=on`` to the cmake options. It is possible to set
+the compiler to the MPI compiler wrapper but it is neither necessary
+nor recommended.
 
 The |Gromacs| team recommends OpenMPI_ version
 1.6 (or higher), MPICH_ version 1.4.1 (or
@@ -545,9 +636,9 @@ lead to performance loss, e.g. on Intel Skylake-X/SP and AMD Zen.
    code will work on the  AMD Bulldozer and Piledriver processors, it is significantly less
    efficient than the ``AVX_128_FMA`` choice above - do not be fooled
    to assume that 256 is better than 128 in this case.
-6. ``AVX2_128`` AMD Zen microarchitecture processors (2017);
+6. ``AVX2_128`` AMD Zen/Zen2 and Hygon Dhyana microarchitecture processors;
    it will enable AVX2 with 3-way fused multiply-add instructions.
-   While the Zen microarchitecture does support 256-bit AVX2 instructions,
+   While these microarchitectures do support 256-bit AVX2 instructions,
    hence ``AVX2_256`` is also supported, 128-bit will generally be faster,
    in particular when the non-bonded tasks run on the CPU -- hence
    the default ``AVX2_128``. With GPU offload however ``AVX2_256``
@@ -669,8 +760,8 @@ best-tested and supported of these. Linux running on POWER 8, ARM v7 and v8
 CPUs also works well.
 
 Experimental support is available for compiling CUDA code, both for host and
-device, using clang (version 3.9 or later).
-A CUDA toolkit (>= v7.0) is still required but it is used only for GPU device code
+device, using clang (version 6.0 or later).
+A CUDA toolkit is still required but it is used only for GPU device code
 generation and to link against the CUDA runtime library.
 The clang CUDA support simplifies compilation and provides benefits for development
 (e.g. allows the use code sanitizers in CUDA host-code).
@@ -683,7 +774,7 @@ virtual architecture code is always embedded for all requested architectures
 Note that this is mainly a developer-oriented feature and it is not recommended
 for production use as the performance can be significantly lower than that
 of code compiled with nvcc (and it has also received less testing).
-However, note that with clang 5.0 the performance gap is significantly narrowed
+However, note that since clang 5.0 the performance gap is only moderate
 (at the time of writing, about 20% slower GPU kernels), so this version
 could be considered in non performance-critical use-cases.
 
@@ -1261,11 +1352,12 @@ much everywhere, it is important that we tell you where we really know
 it works because we have tested it. We do test on Linux, Windows, and
 Mac with a range of compilers and libraries for a range of our
 configuration options. Every commit in our git source code repository
-is currently tested on x86 with a number of gcc versions ranging from 4.8.1
-through 7, versions 16 and 18 of the Intel compiler, and Clang
-versions 3.4 through 5. For this, we use a variety of GNU/Linux
+is currently tested on x86 with a number of gcc versions ranging from 5.1
+through 8.1, version 19 of the Intel compiler, and Clang
+versions 3.6 through 7. For this, we use a variety of GNU/Linux
 flavors and versions as well as recent versions of Windows. Under
 Windows, we test both MSVC 2017 and version 16 of the Intel compiler.
+Other compiler, library, and OS versions are tested less frequently.
 For details, you can
 have a look at the `continuous integration server used by GROMACS`_,
 which runs Jenkins_.

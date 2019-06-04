@@ -1,7 +1,7 @@
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
- * Copyright (c) 2010,2011,2012,2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
+ * Copyright (c) 2010,2011,2012,2013,2014,2015,2016,2017,2018,2019, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -84,8 +84,8 @@ static void checkCompiledTargetCompatibility(int                   deviceId,
     if (cudaErrorInvalidDeviceFunction == stat)
     {
         gmx_fatal(FARGS,
-                  "The %s binary does not include support for the CUDA architecture of "
-                  "the GPU ID #%d (compute capability %d.%d) detected during detection. "
+                  "The %s binary does not include support for the CUDA architecture of a "
+                  "detected GPU: %s, ID #%d (compute capability %d.%d). "
                   "By default, GROMACS supports all architectures of compute "
                   "capability >= 3.0, so your GPU "
                   "might be rare, or some architectures were disabled in the build. "
@@ -93,7 +93,7 @@ static void checkCompiledTargetCompatibility(int                   deviceId,
                   "GMX_CUDA_TARGET_COMPUTE CMake variables to add this architecture. "
                   "To work around this error, use the CUDA_VISIBLE_DEVICES environment"
                   "variable to pass a list of GPUs that excludes the ID %d.",
-                  gmx::getProgramContext().displayName(), deviceId,
+                  gmx::getProgramContext().displayName(), deviceProp.name, deviceId,
                   deviceProp.major, deviceProp.minor, deviceId);
     }
 
@@ -496,22 +496,6 @@ int get_current_cuda_gpu_device_id(void)
 size_t sizeof_gpu_dev_info(void)
 {
     return sizeof(gmx_device_info_t);
-}
-
-void gpu_set_host_malloc_and_free(bool               bUseGpuKernels,
-                                  gmx_host_alloc_t **nb_alloc,
-                                  gmx_host_free_t  **nb_free)
-{
-    if (bUseGpuKernels)
-    {
-        *nb_alloc = &pmalloc;
-        *nb_free  = &pfree;
-    }
-    else
-    {
-        *nb_alloc = nullptr;
-        *nb_free  = nullptr;
-    }
 }
 
 void startGpuProfiler(void)

@@ -46,7 +46,7 @@
 #include "gromacs/commandline/pargs.h"
 #include "gromacs/fileio/confio.h"
 #include "gromacs/fileio/pdbio.h"
-#include "gromacs/gmxlib/conformation-utilities.h"
+#include "gromacs/gmxlib/conformation_utilities.h"
 #include "gromacs/gmxpreprocess/makeexclusiondistances.h"
 #include "gromacs/math/functions.h"
 #include "gromacs/math/units.h"
@@ -640,7 +640,7 @@ static void removeExtraSolventMolecules(t_atoms *atoms, std::vector<RVec> *x,
 static void add_solv(const char *filename, t_atoms *atoms,
                      t_symtab *symtab,
                      std::vector<RVec> *x, std::vector<RVec> *v,
-                     int ePBC, matrix box, gmx_atomprop_t aps,
+                     int ePBC, matrix box, AtomProperties *aps,
                      real defaultDistance, real scaleFactor,
                      real rshell, int max_sol)
 {
@@ -751,8 +751,12 @@ static void add_solv(const char *filename, t_atoms *atoms,
     }
 }
 
-static void update_top(t_atoms *atoms, int firstSolventResidueIndex, matrix box, int NFILE, t_filenm fnm[],
-                       gmx_atomprop_t aps)
+static void update_top(t_atoms        *atoms,
+                       int             firstSolventResidueIndex,
+                       matrix          box,
+                       int             NFILE,
+                       t_filenm        fnm[],
+                       AtomProperties *aps)
 {
     FILE        *fpin, *fpout;
     char         buf[STRLEN*2], buf2[STRLEN], *temp;
@@ -768,9 +772,9 @@ static void update_top(t_atoms *atoms, int firstSolventResidueIndex, matrix box,
     mtot = 0;
     for (i = 0; (i < atoms->nr); i++)
     {
-        gmx_atomprop_query(aps, epropMass,
-                           *atoms->resinfo[atoms->atom[i].resind].name,
-                           *atoms->atomname[i], &mm);
+        aps->setAtomProperty(epropMass,
+                             std::string(*atoms->resinfo[atoms->atom[i].resind].name),
+                             std::string(*atoms->atomname[i]), &mm);
         mtot += mm;
     }
 
@@ -928,7 +932,6 @@ int gmx_solvate(int argc, char *argv[])
     /* parameter data */
     gmx_bool       bProt, bBox;
     const char    *conf_prot, *confout;
-    gmx_atomprop_t aps;
 
     t_filenm       fnm[] = {
         { efSTX, "-cp", "protein", ffOPTRD },
@@ -976,7 +979,7 @@ int gmx_solvate(int argc, char *argv[])
                   "a box size (-box) must be specified");
     }
 
-    aps = gmx_atomprop_init();
+    AtomProperties           aps;
 
     /* solute configuration data */
     gmx_mtop_t        top;
@@ -1033,7 +1036,7 @@ int gmx_solvate(int argc, char *argv[])
     }
 
     add_solv(solventFileName, atoms, &top.symtab, &x, &v, ePBCForOutput, box,
-             aps, defaultDistance, scaleFactor, r_shell, max_sol);
+             &aps, defaultDistance, scaleFactor, r_shell, max_sol);
 
     /* write new configuration 1 to file confout */
     confout = ftp2fn(efSTO, NFILE, fnm);
@@ -1045,11 +1048,10 @@ int gmx_solvate(int argc, char *argv[])
     /* print size of generated configuration */
     fprintf(stderr, "\nOutput configuration contains %d atoms in %d residues\n",
             atoms->nr, atoms->nres);
-    update_top(atoms, firstSolventResidueIndex, box, NFILE, fnm, aps);
+    update_top(atoms, firstSolventResidueIndex, box, NFILE, fnm, &aps);
 
     done_atom(atoms);
     sfree(atoms);
-    gmx_atomprop_destroy(aps);
     output_env_done(oenv);
 
     return 0;

@@ -45,6 +45,23 @@ different hardware, or with a different compiler, etc. will not be
 reproducible. This should normally only be used when investigating
 possible problems.
 
+Halting running simulations
+---------------------------
+
+When :ref:`gmx mdrun` receives a TERM or INT signal (e.g. when ctrl+C is
+pressed), it will stop at the next neighbor search step or at the
+second global communication step, whichever happens later.
+When :ref:`gmx mdrun` receives a second TERM or INT signal and
+reproducibility is not requested, it will stop at the first global
+communication step.
+In both cases all the usual output will be written to file and
+a checkpoint file is written at the last step.
+When :ref:`gmx mdrun` receives an ABRT signal or the third TERM or INT signal,
+it will abort directly without writing a new checkpoint file.
+When running with MPI, a signal to one of the :ref:`gmx mdrun` ranks
+is sufficient, this signal should not be sent to mpirun or
+the :ref:`gmx mdrun` process that is the parent of the others.
+
 Running multi-simulations
 -------------------------
 There are numerous situations where running a related set of
@@ -134,9 +151,8 @@ This method was initially described as a ProtSqueeze technique
 (`Yesylevskyy S.O., J Chem Inf Model 47(5) (2007) 1986-94`_) and
 later implemented in |Gromacs| as g_membed tool (`Wolf et al, J Comp Chem 31 (2010) 2169-2174`_).
 Currently the functionality of g_membed is available in mdrun if
-``-membed`` option is specified (see below). This approach is
-unsuitable, and may be deprecated and replaced in future, e.g. with
-``gmx membed``.
+``-membed`` option is specified (see below). The current implementation as a sub-tool of mdrun is 
+deprecated, and may be replaced in the future, e.g. with ``gmx membed``.
 
 .. _Yesylevskyy S.O., J Chem Inf Model 47(5) (2007) 1986-94: https://dx.doi.org/10.1021/ci600553y
 .. _Wolf et al, J Comp Chem 31 (2010) 2169-2174: http://onlinelibrary.wiley.com/doi/10.1002/jcc.21507/full

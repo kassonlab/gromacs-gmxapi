@@ -1,7 +1,7 @@
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
- * Copyright (c) 2018, by the GROMACS development team, led by
+ * Copyright (c) 2018,2019, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -46,12 +46,13 @@
 
 #include "gromacs/domdec/domdec.h"
 #include "gromacs/ewald/pme.h"
-#include "gromacs/ewald/pme-load-balancing.h"
+#include "gromacs/ewald/pme_load_balancing.h"
 #include "gromacs/gmxlib/nrnb.h"
 #include "gromacs/gpu_utils/gpu_utils.h"
-#include "gromacs/mdlib/nbnxn_gpu_data_mgmt.h"
-#include "gromacs/mdlib/sim_util.h"
+#include "gromacs/mdrunutility/printtime.h"
 #include "gromacs/mdtypes/commrec.h"
+#include "gromacs/nbnxm/gpu_data_mgmt.h"
+#include "gromacs/nbnxm/nbnxm.h"
 #include "gromacs/timing/walltime_accounting.h"
 #include "gromacs/utility/cstringutil.h"
 #include "gromacs/utility/fatalerror.h"
@@ -173,9 +174,9 @@ bool ResetHandler::resetCountersImpl(
                 "step %s: resetting all time and cycle counters",
                 gmx_step_str(step, sbuf));
 
-        if (use_GPU(nbv))
+        if (nbv && nbv->useGpu())
         {
-            nbnxn_gpu_reset_timings(nbv);
+            Nbnxm::gpu_reset_timings(nbv);
         }
 
         if (pme_gpu_task_enabled(pme))
@@ -183,7 +184,7 @@ bool ResetHandler::resetCountersImpl(
             pme_gpu_reset_timings(pme);
         }
 
-        if (use_GPU(nbv) || pme_gpu_task_enabled(pme))
+        if ((nbv && nbv->useGpu()) || pme_gpu_task_enabled(pme))
         {
             resetGpuProfiler();
         }

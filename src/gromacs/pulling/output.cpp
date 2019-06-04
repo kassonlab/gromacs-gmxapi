@@ -3,7 +3,7 @@
  *
  * Copyright (c) 1991-2000, University of Groningen, The Netherlands.
  * Copyright (c) 2001-2004, The GROMACS development team.
- * Copyright (c) 2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
+ * Copyright (c) 2013,2014,2015,2016,2017,2018,2019, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -40,11 +40,14 @@
 
 #include <cstdio>
 
+#include <memory>
+
 #include "gromacs/commandline/filenm.h"
-#include "gromacs/compat/make_unique.h"
 #include "gromacs/fileio/gmxfio.h"
 #include "gromacs/fileio/xvgr.h"
 #include "gromacs/math/vec.h"
+#include "gromacs/mdrunutility/handlerestart.h"
+#include "gromacs/mdtypes/mdrunoptions.h"
 #include "gromacs/mdtypes/observableshistory.h"
 #include "gromacs/mdtypes/pullhistory.h"
 #include "gromacs/pulling/pull.h"
@@ -384,13 +387,13 @@ static void set_legend_for_coord_components(const pull_coord_work_t *pcrd, int c
 static FILE *open_pull_out(const char *fn, struct pull_t *pull,
                            const gmx_output_env_t *oenv,
                            gmx_bool bCoord,
-                           const ContinuationOptions &continuationOptions)
+                           const bool restartWithAppending)
 {
     FILE  *fp;
     int    nsets, m;
     char **setname, buf[50];
 
-    if (continuationOptions.appendFiles)
+    if (restartWithAppending)
     {
         fp = gmx_fio_fopen(fn, "a+");
     }
@@ -497,11 +500,11 @@ static FILE *open_pull_out(const char *fn, struct pull_t *pull,
     return fp;
 }
 
-void init_pull_output_files(pull_t                    *pull,
-                            int                        nfile,
-                            const t_filenm             fnm[],
-                            const gmx_output_env_t    *oenv,
-                            const ContinuationOptions &continuationOptions)
+void init_pull_output_files(pull_t                     *pull,
+                            int                         nfile,
+                            const t_filenm              fnm[],
+                            const gmx_output_env_t     *oenv,
+                            const gmx::StartingBehavior startingBehavior)
 {
     /* Check for px and pf filename collision, if we are writing
        both files */
@@ -514,6 +517,7 @@ void init_pull_output_files(pull_t                    *pull,
     }
     GMX_CATCH_ALL_AND_EXIT_WITH_FATAL_ERROR;
 
+    bool restartWithAppending = startingBehavior == gmx::StartingBehavior::RestartWithAppending;
     if ((pull->params.nstxout != 0) &&
         (pull->params.nstfout != 0) &&
         (px_filename == pf_filename))
@@ -528,9 +532,9 @@ void init_pull_output_files(pull_t                    *pull,
             }
             GMX_CATCH_ALL_AND_EXIT_WITH_FATAL_ERROR;
             pull->out_x = open_pull_out(px_appended.c_str(), pull, oenv,
-                                        TRUE, continuationOptions);
+                                        TRUE, restartWithAppending);
             pull->out_f = open_pull_out(pf_appended.c_str(), pull, oenv,
-                                        FALSE, continuationOptions);
+                                        FALSE, restartWithAppending);
             return;
         }
         else
@@ -543,12 +547,12 @@ void init_pull_output_files(pull_t                    *pull,
     if (pull->params.nstxout != 0)
     {
         pull->out_x = open_pull_out(opt2fn("-px", nfile, fnm), pull, oenv,
-                                    TRUE, continuationOptions);
+                                    TRUE, restartWithAppending);
     }
     if (pull->params.nstfout != 0)
     {
         pull->out_f = open_pull_out(opt2fn("-pf", nfile, fnm), pull, oenv,
-                                    FALSE, continuationOptions);
+                                    FALSE, restartWithAppending);
     }
 }
 
@@ -565,7 +569,7 @@ void initPullHistory(pull_t             *pull,
     /* If pull->coordForceHistory is already set we are starting from a checkpoint. Do not reset it. */
     if (observablesHistory->pullHistory == nullptr)
     {
-        observablesHistory->pullHistory           = gmx::compat::make_unique<PullHistory>();
+        observablesHistory->pullHistory           = std::make_unique<PullHistory>();
         pull->coordForceHistory                   = observablesHistory->pullHistory.get();
         pull->coordForceHistory->numValuesInXSum  = 0;
         pull->coordForceHistory->numValuesInFSum  = 0;

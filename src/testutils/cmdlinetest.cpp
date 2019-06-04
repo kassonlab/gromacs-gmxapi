@@ -1,7 +1,7 @@
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
- * Copyright (c) 2012,2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
+ * Copyright (c) 2012,2013,2014,2015,2016,2017,2018,2019, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -55,6 +55,7 @@
 #include "gromacs/commandline/cmdlineoptionsmodule.h"
 #include "gromacs/commandline/cmdlineprogramcontext.h"
 #include "gromacs/utility/arrayref.h"
+#include "gromacs/utility/futil.h"
 #include "gromacs/utility/gmxassert.h"
 #include "gromacs/utility/strconvert.h"
 #include "gromacs/utility/stringstream.h"
@@ -91,7 +92,7 @@ CommandLine::Impl::Impl(const ArrayRef<const char *const> &cmdline)
 {
     args_.reserve(cmdline.size());
     argv_.reserve(cmdline.size() + 1);
-    argc_ = static_cast<int>(cmdline.size());
+    argc_ = ssize(cmdline);
     for (const auto &arg : cmdline)
     {
         char *argCopy = strdup(arg);
@@ -167,7 +168,7 @@ void CommandLine::initFromArray(const ArrayRef<const char *const> &cmdline)
 
 void CommandLine::append(const char *arg)
 {
-    GMX_RELEASE_ASSERT(impl_->argc_ == static_cast<int>(impl_->args_.size()),
+    GMX_RELEASE_ASSERT(impl_->argc_ == ssize(impl_->args_),
                        "Command-line has been modified externally");
     size_t newSize = impl_->args_.size() + 1;
     impl_->args_.reserve(newSize);
@@ -441,6 +442,21 @@ void CommandLineTestBase::setInputFile(
     setInputFile(option, filename.c_str());
 }
 
+void CommandLineTestBase::setModifiableInputFile(
+        const char *option, const std::string &filename)
+{
+    setModifiableInputFile(option, filename.c_str());
+}
+
+void CommandLineTestBase::setModifiableInputFile(
+        const char *option, const char *filename)
+{
+    std::string originalFileName   = gmx::test::TestFileManager::getInputFilePath(filename);
+    std::string modifiableFileName = fileManager().getTemporaryFilePath(filename);
+    gmx_file_copy(originalFileName.c_str(), modifiableFileName.c_str(), true);
+    impl_->cmdline_.addOption(option, modifiableFileName);
+}
+
 void CommandLineTestBase::setInputFileContents(
         const char *option, const char *extension, const std::string &contents)
 {
@@ -467,6 +483,26 @@ void CommandLineTestBase::setOutputFile(
         const char *option, const char *filename,
         const IFileMatcherSettings &matcher)
 {
+    impl_->helper_.setOutputFile(&impl_->cmdline_, option, filename, matcher);
+}
+
+void CommandLineTestBase::setInputAndOutputFile(
+        const char *option, const char *filename,
+        const ITextBlockMatcherSettings &matcher)
+{
+    std::string originalFileName   = gmx::test::TestFileManager::getInputFilePath(filename);
+    std::string modifiableFileName = fileManager().getTemporaryFilePath(filename);
+    gmx_file_copy(originalFileName.c_str(), modifiableFileName.c_str(), true);
+    impl_->helper_.setOutputFile(&impl_->cmdline_, option, filename, matcher);
+}
+
+void CommandLineTestBase::setInputAndOutputFile(
+        const char *option, const char *filename,
+        const IFileMatcherSettings &matcher)
+{
+    std::string originalFileName   = gmx::test::TestFileManager::getInputFilePath(filename);
+    std::string modifiableFileName = fileManager().getTemporaryFilePath(filename);
+    gmx_file_copy(originalFileName.c_str(), modifiableFileName.c_str(), true);
     impl_->helper_.setOutputFile(&impl_->cmdline_, option, filename, matcher);
 }
 

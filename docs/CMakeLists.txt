@@ -60,18 +60,17 @@ set(EXPECTED_DOXYGEN_VERSION 1.8.5)
 
 set(EXPECTED_SPHINX_VERSION 1.6.1)
 
-if (DEFINED PYTHON_EXECUTABLE)
-    # Keep quiet on subsequent runs of cmake
-    set(PythonInterp_FIND_QUIETLY ON)
+if(NOT DEFINED Sphinx_FIND_QUIETLY)
+    if(NOT DEFINED _gmx_sphinx_checked)
+        set(_gmx_sphinx_checked TRUE
+            CACHE BOOL
+            "Suppresses output after first configuration."
+            FORCE)
+    else()
+        set(Sphinx_FIND_QUIETLY ON)
+    endif()
 endif()
-find_package(PythonInterp 2.7)
-
-
-if (NOT ${PYTHON_VERSION_MAJOR} EQUAL 3)
-    find_package(Sphinx ${EXPECTED_SPHINX_VERSION} QUIET COMPONENTS pygments)
-else()
-    MESSAGE(STATUS "Can not build documentation with Python 3")
-endif()
+find_package(Sphinx ${EXPECTED_SPHINX_VERSION} COMPONENTS pygments)
 
 # Even if we aren't going to make the full webpage, set up to put all
 # the documentation output in the same place, for convenience
@@ -113,10 +112,7 @@ elseif (BUILD_IS_INSOURCE)
     set(MANUAL_BUILD_NOT_POSSIBLE_REASON "the build is in-source")
 else()
     include(manual/UseLATEX.cmake)
-    if(${PYTHON_VERSION_MAJOR} EQUAL 3)
-        set(MANUAL_BUILD_IS_POSSIBLE OFF)
-        set(MANUAL_BUILD_NOT_POSSIBLE_REASON "We can not build the documentation when using python3")
-    elseif(NOT SPHINX_FOUND)
+    if(NOT SPHINX_FOUND)
         set(MANUAL_BUILD_IS_POSSIBLE OFF)
         set(MANUAL_BUILD_NOT_POSSIBLE_REASON "Sphinx has not been found and is needed to create the LaTex input files")
     elseif(NOT PDFLATEX_COMPILER)
@@ -245,6 +241,7 @@ if (SPHINX_FOUND)
         reference-manual/analysis/rmsd.rst
         reference-manual/analysis/covariance-analysis.rst
         reference-manual/analysis/dihedral-pca.rst
+        reference-manual/analysis/hydrogen-bonds.rst
         reference-manual/analysis/protein-related.rst
         reference-manual/analysis/interface-related.rst)
     # The image files have also been ordered by the respective
@@ -367,6 +364,15 @@ if (SPHINX_FOUND)
         how-to/visualize.rst
         install-guide/index.rst
         release-notes/index.rst
+        release-notes/2020/major/highlights.rst
+        release-notes/2020/major/features.rst
+        release-notes/2020/major/performance.rst
+        release-notes/2020/major/tools.rst
+        release-notes/2020/major/bugs-fixed.rst
+        release-notes/2020/major/removed-functionality.rst
+        release-notes/2020/major/deprecated-functionality.rst
+        release-notes/2020/major/portability.rst
+        release-notes/2020/major/miscellaneous.rst
         release-notes/2019/2019.2.rst
         release-notes/2019/2019.1.rst
         release-notes/2019/major/highlights.rst
@@ -536,7 +542,7 @@ if (SPHINX_FOUND)
     add_custom_target(install-guide
         COMMAND
             ${SPHINX_EXECUTABLE}
-            -q -E -b text
+            -q -b text
             -w sphinx-install.log
             -d ${CMAKE_CURRENT_BINARY_DIR}/install-guide/_doctrees
             -c ${SPHINX_INPUT_DIR}
@@ -559,12 +565,13 @@ if (SPHINX_FOUND)
     add_custom_target(webpage-sphinx
         DEPENDS sphinx-programs
         DEPENDS sphinx-input
-        DEPENDS sphinx-image-conversion 
+        DEPENDS sphinx-image-conversion
+        DEPENDS manual
         COMMAND
             ${CMAKE_COMMAND} -E make_directory ${SPHINX_INPUT_DIR}/_static
         COMMAND
             ${SPHINX_EXECUTABLE}
-            -q -E -b html
+            -q -b html
             -w sphinx-html.log
             -d "${SPHINX_CACHE_DIR}"
             "${SPHINX_INPUT_DIR}"
@@ -578,7 +585,7 @@ if (SPHINX_FOUND)
     add_custom_target(man
         COMMAND
             ${SPHINX_EXECUTABLE}
-            -q -E -b man
+            -q -b man
             -w sphinx-man.log
             -d ${SPHINX_CACHE_DIR}
             -t do_man
@@ -636,7 +643,7 @@ set(HTML_BUILD_NOT_POSSIBLE_REASON)
 set(HTML_BUILD_WARNINGS)
 
 # Next, turn it off if any of the preconditions are unsatisified
-if (NOT PYTHON_EXECUTABLE)
+if (NOT Python3_Interpreter_FOUND)
     set(HTML_BUILD_IS_POSSIBLE OFF)
     set(HTML_BUILD_NOT_POSSIBLE_REASON "Python is required")
 elseif (NOT SPHINX_FOUND)

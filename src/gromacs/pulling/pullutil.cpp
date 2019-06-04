@@ -3,7 +3,7 @@
  *
  * Copyright (c) 1991-2000, University of Groningen, The Netherlands.
  * Copyright (c) 2001-2004, The GROMACS development team.
- * Copyright (c) 2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
+ * Copyright (c) 2013,2014,2015,2016,2017,2018,2019, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -251,7 +251,7 @@ static void make_cyl_refgrps(const t_commrec *cr,
             pdyna.dv.resize(localAtomIndices.size());
 
             /* loop over all atoms in the main ref group */
-            for (gmx::index indexInSet = 0; indexInSet < localAtomIndices.size(); indexInSet++)
+            for (gmx::index indexInSet = 0; indexInSet < localAtomIndices.ssize(); indexInSet++)
             {
                 int    atomIndex = localAtomIndices[indexInSet];
                 rvec   dx;
@@ -867,7 +867,7 @@ static bool pullGroupObeysPbcRestrictions(const pull_group_work_t &group,
     }
 
     auto localAtomIndices = group.atomSet.localIndex();
-    for (gmx::index indexInSet = 0; indexInSet < localAtomIndices.size(); indexInSet++)
+    for (gmx::index indexInSet = 0; indexInSet < localAtomIndices.ssize(); indexInSet++)
     {
         rvec dx;
         pbc_dx(&pbc, x[localAtomIndices[indexInSet]], x_pbc, dx);
@@ -957,7 +957,7 @@ bool pullCheckPbcWithinGroup(const pull_t                  &pull,
     {
         return true;
     }
-    GMX_ASSERT(groupNr < static_cast<int>(pull.group.size()), "groupNr is out of range");
+    GMX_ASSERT(groupNr < gmx::ssize(pull.group), "groupNr is out of range");
 
     /* Check PBC if the group uses a PBC reference atom treatment. */
     const pull_group_work_t &group = pull.group[groupNr];
@@ -1016,7 +1016,7 @@ void updatePrevStepPullCom(struct pull_t *pull, t_state *state)
     }
 }
 
-void allocStatePrevStepPullCom(t_state *state, pull_t *pull)
+void allocStatePrevStepPullCom(t_state *state, const pull_t *pull)
 {
     if (!pull)
     {

@@ -1,7 +1,7 @@
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
- * Copyright (c) 2013,2014,2015,2018, by the GROMACS development team, led by
+ * Copyright (c) 2013,2014,2015,2018,2019, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -572,8 +572,8 @@ void gmx_tng_prepare_md_writing(gmx_tng_trajectory_t  gmx_tng,
 #if GMX_USE_TNG
 /* Check if all atoms in the molecule system are selected
  * by a selection group of type specified by gtype. */
-static gmx_bool all_atoms_selected(const gmx_mtop_t *mtop,
-                                   const int         gtype)
+static gmx_bool all_atoms_selected(const gmx_mtop_t             *mtop,
+                                   const SimulationAtomGroupType gtype)
 {
     /* Iterate through all atoms in the molecule system and
      * check if they belong to a selection group of the
@@ -588,7 +588,7 @@ static gmx_bool all_atoms_selected(const gmx_mtop_t *mtop,
         {
             for (int atomIndex = 0; atomIndex < atoms.nr; atomIndex++, i++)
             {
-                if (getGroupType(&mtop->groups, gtype, i) != 0)
+                if (getGroupType(mtop->groups, gtype, i) != 0)
                 {
                     return FALSE;
                 }
@@ -629,22 +629,22 @@ static void add_selection_groups(gmx_tng_trajectory_t  gmx_tng,
 
     /* If no atoms are selected we do not need to create a
      * TNG selection group molecule. */
-    if (mtop->groups.ngrpnr[egcCompressedX] == 0)
+    if (mtop->groups.numberOfGroupNumbers(SimulationAtomGroupType::CompressedPositionOutput) == 0)
     {
         return;
     }
 
     /* If all atoms are selected we do not have to create a selection
      * group molecule in the TNG molecule system. */
-    if (all_atoms_selected(mtop, egcCompressedX))
+    if (all_atoms_selected(mtop, SimulationAtomGroupType::CompressedPositionOutput))
     {
         return;
     }
 
     /* The name of the TNG molecule containing the selection group is the
      * same as the name of the selection group. */
-    nameIndex = *mtop->groups.grps[egcCompressedX].nm_ind;
-    groupName = *mtop->groups.grpname[nameIndex];
+    nameIndex = mtop->groups.groups[SimulationAtomGroupType::CompressedPositionOutput][0];
+    groupName = *mtop->groups.groupNames[nameIndex];
 
     tng_molecule_alloc(tng, &mol);
     tng_molecule_name_set(tng, mol, groupName);
@@ -664,7 +664,7 @@ static void add_selection_groups(gmx_tng_trajectory_t  gmx_tng,
                 char *res_name;
                 int   res_id;
 
-                if (getGroupType(&mtop->groups, egcCompressedX, i) != 0)
+                if (getGroupType(mtop->groups, SimulationAtomGroupType::CompressedPositionOutput, i) != 0)
                 {
                     continue;
                 }
@@ -707,8 +707,8 @@ static void add_selection_groups(gmx_tng_trajectory_t  gmx_tng,
                             int atom1, atom2;
                             atom1 = ilist.iatoms[l] + atom_offset;
                             atom2 = ilist.iatoms[l + 1] + atom_offset;
-                            if (getGroupType(&mtop->groups, egcCompressedX, atom1) == 0 &&
-                                getGroupType(&mtop->groups, egcCompressedX, atom2) == 0)
+                            if (getGroupType(mtop->groups, SimulationAtomGroupType::CompressedPositionOutput, atom1) == 0 &&
+                                getGroupType(mtop->groups, SimulationAtomGroupType::CompressedPositionOutput, atom2) == 0)
                             {
                                 tng_molecule_bond_add(tng, mol, ilist.iatoms[l],
                                                       ilist.iatoms[l + 1], &tngBond);
@@ -724,14 +724,14 @@ static void add_selection_groups(gmx_tng_trajectory_t  gmx_tng,
                     atom1 = ilist.iatoms[l] + atom_offset;
                     atom2 = ilist.iatoms[l + 1] + atom_offset;
                     atom3 = ilist.iatoms[l + 2] + atom_offset;
-                    if (getGroupType(&mtop->groups, egcCompressedX, atom1) == 0)
+                    if (getGroupType(mtop->groups, SimulationAtomGroupType::CompressedPositionOutput, atom1) == 0)
                     {
-                        if (getGroupType(&mtop->groups, egcCompressedX, atom2) == 0)
+                        if (getGroupType(mtop->groups, SimulationAtomGroupType::CompressedPositionOutput, atom2) == 0)
                         {
                             tng_molecule_bond_add(tng, mol, atom1,
                                                   atom2, &tngBond);
                         }
-                        if (getGroupType(&mtop->groups, egcCompressedX, atom3) == 0)
+                        if (getGroupType(mtop->groups, SimulationAtomGroupType::CompressedPositionOutput, atom3) == 0)
                         {
                             tng_molecule_bond_add(tng, mol, atom1,
                                                   atom3, &tngBond);
@@ -1297,7 +1297,7 @@ void gmx_tng_setup_atom_subgroup(gmx_tng_trajectory_t     gmx_tng,
 
     tng_num_particles_get(tng, &nAtoms);
 
-    if (nAtoms == ind.size())
+    if (nAtoms == ind.ssize())
     {
         return;
     }
@@ -1307,7 +1307,7 @@ void gmx_tng_setup_atom_subgroup(gmx_tng_trajectory_t     gmx_tng,
     {
         tng_molecule_num_atoms_get(tng, mol, &nAtoms);
         tng_molecule_cnt_get(tng, mol, &cnt);
-        if (nAtoms == ind.size())
+        if (nAtoms == ind.ssize())
         {
             stat = TNG_SUCCESS;
         }
@@ -1323,7 +1323,7 @@ void gmx_tng_setup_atom_subgroup(gmx_tng_trajectory_t     gmx_tng,
         tng_molecule_name_set(tng, mol, name);
         tng_molecule_chain_add(tng, mol, "", &chain);
 
-        for (int i = 0; i < ind.size(); i++)
+        for (int i = 0; i < ind.ssize(); i++)
         {
             char        temp_name[256], temp_type[256];
 

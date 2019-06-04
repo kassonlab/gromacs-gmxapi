@@ -1,7 +1,7 @@
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
- * Copyright (c) 2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
+ * Copyright (c) 2013,2014,2015,2016,2017,2018,2019, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -38,7 +38,6 @@
 #include <stdio.h>
 
 #include "gromacs/fileio/enxio.h"
-#include "gromacs/math/paddedvector.h"
 #include "gromacs/math/vectypes.h"
 #include "gromacs/timing/wallcycle.h"
 #include "gromacs/utility/arrayref.h"
@@ -47,7 +46,6 @@
 class energyhistory_t;
 struct gmx_mtop_t;
 struct gmx_output_env_t;
-struct MdrunOptions;
 struct ObservablesHistory;
 struct t_commrec;
 struct t_filenm;
@@ -55,7 +53,9 @@ struct t_inputrec;
 
 namespace gmx
 {
+enum class StartingBehavior;
 class IMDOutputProvider;
+struct MdrunOptions;
 }
 
 typedef struct gmx_mdoutf *gmx_mdoutf_t;
@@ -65,16 +65,17 @@ typedef struct gmx_mdoutf *gmx_mdoutf_t;
  * Returns a pointer to a data structure with all output file pointers
  * and names required by mdrun.
  */
-gmx_mdoutf_t init_mdoutf(FILE                   *fplog,
-                         int                     nfile,
-                         const t_filenm          fnm[],
-                         const MdrunOptions     &mdrunOptions,
-                         const t_commrec        *cr,
-                         gmx::IMDOutputProvider *outputProvider,
-                         const t_inputrec       *ir,
-                         gmx_mtop_t             *mtop,
-                         const gmx_output_env_t *oenv,
-                         gmx_wallcycle_t         wcycle);
+gmx_mdoutf_t init_mdoutf(FILE                    *fplog,
+                         int                      nfile,
+                         const t_filenm           fnm[],
+                         const gmx::MdrunOptions &mdrunOptions,
+                         const t_commrec         *cr,
+                         gmx::IMDOutputProvider  *outputProvider,
+                         const t_inputrec        *ir,
+                         gmx_mtop_t              *mtop,
+                         const gmx_output_env_t  *oenv,
+                         gmx_wallcycle_t          wcycle,
+                         gmx::StartingBehavior    startingBehavior);
 
 /*! \brief Getter for file pointer */
 ener_file_t mdoutf_get_fp_ene(gmx_mdoutf_t of);
@@ -101,11 +102,23 @@ void done_mdoutf(gmx_mdoutf_t of);
  * determined by the mdof_flags defined below. Data is collected to
  * the master node only when necessary. Without domain decomposition
  * only data from state_local is used and state_global is ignored.
+ *
+ * \param[in] fplog              File handler to log file.
+ * \param[in] cr                 Communication record.
+ * \param[in] of                 File handler to trajectory file.
+ * \param[in] mdof_flags         Flags indicating what data is written.
+ * \param[in] natoms             The total number of atoms in the system.
+ * \param[in] step               The current time step.
+ * \param[in] t                  The current time.
+ * \param[in] state_local        Pointer to the local state object.
+ * \param[in] state_global       Pointer to the global state object.
+ * \param[in] observablesHistory Pointer to the ObservableHistory object.
+ * \param[in] f_local            The local forces.
  */
 void mdoutf_write_to_trajectory_files(FILE *fplog, const t_commrec *cr,
                                       gmx_mdoutf_t of,
                                       int mdof_flags,
-                                      gmx_mtop_t *top_global,
+                                      int natoms,
                                       int64_t step, double t,
                                       t_state *state_local, t_state *state_global,
                                       ObservablesHistory *observablesHistory,

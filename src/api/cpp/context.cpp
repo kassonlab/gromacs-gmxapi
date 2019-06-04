@@ -54,11 +54,10 @@
 #include "gromacs/commandline/pargs.h"
 #include "gromacs/commandline/filenm.h"
 #include "gromacs/commandline/pargs.h"
-#include "gromacs/compat/make_unique.h"
 #include "gromacs/gmxlib/network.h"
 #include "gromacs/mdlib/stophandler.h"
-#include "gromacs/mdrun/logging.h"
-#include "gromacs/mdrun/multisim.h"
+#include "gromacs/mdrunutility/logging.h"
+#include "gromacs/mdrunutility/multisim.h"
 #include "gromacs/mdrun/runner.h"
 #include "gromacs/mdrunutility/handlerestart.h"
 #include "gromacs/mdtypes/commrec.h"
@@ -71,9 +70,9 @@
 #include "gmxapi/status.h"
 #include "gmxapi/version.h"
 
-#include "context-impl.h"
+#include "context_impl.h"
 #include "createsession.h"
-#include "session-impl.h"
+#include "session_impl.h"
 #include "workflow.h"
 
 namespace gmxapi
@@ -120,23 +119,22 @@ std::shared_ptr<Session> ContextImpl::launch(const Workflow &work)
          * a microstate for gmxapi interfaces.
          */
 
-        // Note: these output options normalize the file names, but not their
-        // paths. gmxapi 0.0.7 changes working directory for each session, so the
-        // relative paths are appropriate, but a near-future version will avoid
-        // changing directories once the process starts and manage file paths explicitly.
-        using gmxapi::c_majorVersion;
-        using gmxapi::c_minorVersion;
-        using gmxapi::c_patchVersion;
-        static_assert(!(c_majorVersion != 0 || c_minorVersion != 0 || c_patchVersion > 7),
-                      "Developer notice: check assumptions about working directory and relative file paths for this "
-                      "software version.");
-
         // Set input TPR name
         mdArgs_.emplace_back("-s");
         mdArgs_.emplace_back(filename);
+
         // Set checkpoint file name
         mdArgs_.emplace_back("-cpi");
         mdArgs_.emplace_back("state.cpt");
+        /* Note: we normalize the checkpoint file name, but not its full path.
+         * Through version 0.0.8, gmxapi clients change working directory
+         * for each session, so relative path(s) below are appropriate.
+         * A future gmxapi version should avoid changing directories once the
+         * process starts and instead manage files (paths) in an absolute and
+         * immutable way, with abstraction provided through the Context chain-of-responsibility.
+         * TODO: API abstractions for initializing simulations that may be new or partially complete.
+         * Reference gmxapi milestone 13 at https://redmine.gromacs.org/issues/2585
+         */
 
         // Create a mock argv. Note that argv[0] is expected to hold the program name.
         const int  offset = 1;
@@ -151,6 +149,8 @@ std::shared_ptr<Session> ContextImpl::launch(const Workflow &work)
             argv[argvIndex] = new char[mdArg.length() + 1];
             strcpy(argv[argvIndex], mdArg.c_str());
         }
+
+        auto mdModules = std::make_unique<MDModules>();
 
         // pointer-to-t_commrec is the de facto handle type for communications record.
         // Complete shared / borrowed ownership requires a reference to this stack variable
@@ -168,18 +168,19 @@ std::shared_ptr<Session> ContextImpl::launch(const Workflow &work)
             return nullptr;
         }
 
-        if (MASTER(options_.cr))
-        {
-            options_.logFileGuard = openLogFile(ftp2fn(efLOG,
-                                                       options_.filenames.size(),
-                                                       options_.filenames.data()),
-                                                options_.mdrunOptions.continuationOptions.appendFiles);
-        }
-
+        StartingBehavior startingBehavior = StartingBehavior::NewSimulation;
+        LogFilePtr       logFileGuard     = nullptr;
+        std::tie(startingBehavior,
+                 logFileGuard) = handleRestart(options_.cr,
+                                               options_.ms,
+                                               options_.mdrunOptions.appendingBehavior,
+                                               ssize(options_.filenames),
+                                               options_.filenames.data());
         auto simulationContext = createSimulationContext(options_.cr);
 
-        auto builder = MdrunnerBuilder(compat::not_null<decltype( &simulationContext)>(&simulationContext));
-        builder.addSimulationMethod(options_.mdrunOptions, options_.pforce);
+        auto builder = MdrunnerBuilder(std::move(mdModules),
+                                       compat::not_null<decltype( &simulationContext)>(&simulationContext));
+        builder.addSimulationMethod(options_.mdrunOptions, options_.pforce, startingBehavior);
         builder.addDomainDecomposition(options_.domdecOptions);
         // \todo pass by value
         builder.addNonBonded(options_.nbpu_opt_choices[0]);
@@ -199,13 +200,13 @@ std::shared_ptr<Session> ContextImpl::launch(const Workflow &work)
         // \todo Implement lifetime management for gmx_output_env_t.
         // \todo Output environment should be configured outside of Mdrunner and provided as a resource.
         builder.addOutputEnvironment(options_.oenv);
-        builder.addLogFile(options_.logFileGuard.get());
+        builder.addLogFile(logFileGuard.get());
 
         // Note, creation is not mature enough to be exposed in the external API yet.
         launchedSession = createSession(shared_from_this(),
                                         std::move(builder),
                                         simulationContext,
-                                        std::move(options_.logFileGuard),
+                                        std::move(logFileGuard),
                                         options_.ms);
 
         // Clean up argv once builder is no longer in use

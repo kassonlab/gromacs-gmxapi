@@ -1,7 +1,7 @@
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
- * Copyright (c) 2011,2012,2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
+ * Copyright (c) 2011,2012,2013,2014,2015,2016,2017,2018,2019, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -58,7 +58,7 @@ namespace gmx
 class IOptionsContainer;
 class KeyValueTreeObject;
 class KeyValueTreeValue;
-class Variant;
+class Any;
 
 namespace test
 {
@@ -354,6 +354,10 @@ class TestReferenceChecker
         void checkUChar(unsigned char value, const char *id);
         //! Check a single integer value.
         void checkInteger(int value, const char *id);
+        //! Check a single int32 value.
+        void checkInt32(int32_t value, const char *id);
+        //! Check a single uint32 value.
+        void checkUInt32(uint32_t value, const char *id);
         //! Check a single int64 value.
         void checkInt64(int64_t value, const char *id);
         //! Check a single uint64 value.
@@ -374,8 +378,8 @@ class TestReferenceChecker
         void checkVector(const double value[3], const char *id);
         //! Check a single floating-point value from a string.
         void checkRealFromString(const std::string &value, const char *id);
-        //! Checks a variant value that contains a supported simple type.
-        void checkVariant(const Variant &value, const char *id);
+        //! Checks a any value that contains a supported simple type.
+        void checkAny(const Any &value, const char *id);
         //! Checks a key-value tree rooted at a object.
         void checkKeyValueTreeObject(const KeyValueTreeObject &tree, const char *id);
         //! Checks a generic key-value tree value.
@@ -396,6 +400,8 @@ class TestReferenceChecker
         unsigned char readUChar(const char *id);
         //! Reads an integer value.
         int readInteger(const char *id);
+        //! Reads a 32-bit integer value.
+        int32_t readInt32(const char *id);
         //! Reads a 64-bit integer value.
         int64_t readInt64(const char *id);
         //! Reads a float value.
@@ -430,17 +436,17 @@ class TestReferenceChecker
         {
             checkString(value, id);
         }
-        //! Check a single integer value.
+        //! Check a single signed integer value
         void checkValue(int value, const char *id)
         {
             checkInteger(value, id);
         }
-        //! Check a single integer value.
+        //! Check a single signed integer value of width 64 bits.
         void checkValue(int64_t value, const char *id)
         {
             checkInt64(value, id);
         }
-        //! Check a single integer value.
+        //! Check a single unsigned integer value of width 64 bits.
         void checkValue(uint64_t value, const char *id)
         {
             checkUInt64(value, id);

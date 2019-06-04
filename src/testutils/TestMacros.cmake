@@ -1,7 +1,7 @@
 #
 # This file is part of the GROMACS molecular simulation package.
 #
-# Copyright (c) 2011,2012,2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
+# Copyright (c) 2011,2012,2013,2014,2015,2016,2017,2018,2019, by the GROMACS development team, led by
 # Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
 # and including many others, as listed in the AUTHORS file in the
 # top-level source directory and at http://www.gromacs.org.
@@ -76,13 +76,20 @@ function (gmx_add_gtest_executable EXENAME)
             ${_source_files} ${TESTUTILS_DIR}/unittest_main.cpp)
         target_link_libraries(${EXENAME}
             ${TESTUTILS_LIBS} libgromacs ${GMOCK_LIBRARIES}
-            ${GMX_COMMON_LIBRARIES} ${GMX_EXE_LINKER_FLAGS} ${GMX_STDLIB_LIBRARIES})
+            ${GMX_COMMON_LIBRARIES} ${GMX_EXE_LINKER_FLAGS})
         set_property(TARGET ${EXENAME}
             APPEND PROPERTY COMPILE_FLAGS "${GMOCK_COMPILE_FLAGS}")
         set_property(TARGET ${EXENAME}
             APPEND PROPERTY COMPILE_DEFINITIONS "${GMOCK_COMPILE_DEFINITIONS}")
         set_property(TARGET ${EXENAME}
             APPEND PROPERTY COMPILE_DEFINITIONS "${EXTRA_COMPILE_DEFINITIONS}")
+
+        # Permit GROMACS code to include externally developed headers,
+        # such as the functionality from the nonstd project that we
+        # use for gmx::compat::optional. These are included as system
+        # headers so that no warnings are issued from them.
+        target_include_directories(${EXENAME} SYSTEM PRIVATE ${PROJECT_SOURCE_DIR}/src/external)
+
         if(GMX_CLANG_TIDY)
             set_target_properties(${EXENAME} PROPERTIES CXX_CLANG_TIDY
                 "${CLANG_TIDY_EXE};-warnings-as-errors=*;-header-filter=.*")

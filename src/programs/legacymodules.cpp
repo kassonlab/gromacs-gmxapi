@@ -1,7 +1,7 @@
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
- * Copyright (c) 2012,2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
+ * Copyright (c) 2012,2013,2014,2015,2016,2017,2018,2019, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -47,16 +47,19 @@
 #include "gromacs/commandline/cmdlinemodulemanager.h"
 #include "gromacs/commandline/cmdlineoptionsmodule.h"
 #include "gromacs/gmxana/gmx_ana.h"
+#include "gromacs/gmxpreprocess/editconf.h"
 #include "gromacs/gmxpreprocess/genconf.h"
+#include "gromacs/gmxpreprocess/genion.h"
+#include "gromacs/gmxpreprocess/genrestr.h"
 #include "gromacs/gmxpreprocess/grompp.h"
-#include "gromacs/gmxpreprocess/insert-molecules.h"
+#include "gromacs/gmxpreprocess/insert_molecules.h"
 #include "gromacs/gmxpreprocess/pdb2gmx.h"
 #include "gromacs/gmxpreprocess/solvate.h"
 #include "gromacs/gmxpreprocess/x2top.h"
 #include "gromacs/tools/check.h"
 #include "gromacs/tools/convert_tpr.h"
 #include "gromacs/tools/dump.h"
-#include "gromacs/tools/report-methods.h"
+#include "gromacs/tools/report_methods.h"
 
 #include "mdrun/mdrun_main.h"
 #include "view/view.h"
@@ -169,11 +172,12 @@ void registerObsoleteTool(gmx::CommandLineModuleManager *manager,
 
 void registerLegacyModules(gmx::CommandLineModuleManager *manager)
 {
-    // Modules from this directory (were in src/kernel/).
     registerModule(manager, &gmx_check, "check",
                    "Check and compare files");
-    registerModule(manager, &gmx_dump, "dump",
-                   "Make binary files human readable");
+    gmx::ICommandLineOptionsModule::registerModuleFactory(
+            manager, gmx::DumpInfo::name,
+            gmx::DumpInfo::shortDescription,
+            &gmx::DumpInfo::create);
     registerModule(manager, &gmx_grompp, "grompp",
                    "Make a run input file");
     registerModule(manager, &gmx_convert_tpr, "convert-tpr",
@@ -214,7 +218,7 @@ void registerLegacyModules(gmx::CommandLineModuleManager *manager)
                    "Multiply a conformation in 'random' orientations");
     registerModule(manager, &gmx_genion, "genion",
                    "Generate monoatomic ions on energetically favorable positions");
-    registerModule(manager, &gmx_genpr, "genrestr",
+    registerModule(manager, &gmx_genrestr, "genrestr",
                    "Generate position restraints or distance restraints for index groups");
     registerModule(manager, &gmx_make_edi, "make_edi",
                    "Generate input files for essential dynamics sampling");
@@ -231,8 +235,6 @@ void registerLegacyModules(gmx::CommandLineModuleManager *manager)
     registerModule(manager, &gmx_xpm2ps, "xpm2ps",
                    "Convert XPM (XPixelMap) matrices to postscript or XPM");
 
-    registerModule(manager, &gmx_anadock, "anadock",
-                   "Cluster structures from Autodock runs");
     registerModule(manager, &gmx_anaeig, "anaeig",
                    "Analyze eigenvectors/normal modes");
     registerModule(manager, &gmx_analyze, "analyze",
@@ -278,8 +280,6 @@ void registerLegacyModules(gmx::CommandLineModuleManager *manager)
                    "Analyze density of states and properties based on that");
     registerModule(manager, &gmx_dyecoupl, "dyecoupl",
                    "Extract dye dynamics from trajectories");
-    registerModule(manager, &gmx_dyndom, "dyndom",
-                   "Interpolate and extrapolate structure rotations");
     registerModule(manager, &gmx_enemat, "enemat",
                    "Extract an energy matrix from an energy file");
     registerModule(manager, &gmx_energy, "energy",
@@ -304,8 +304,6 @@ void registerLegacyModules(gmx::CommandLineModuleManager *manager)
                    "Calculate residue contact maps");
     registerModule(manager, &gmx_mindist, "mindist",
                    "Calculate the minimum distance between two groups");
-    registerModule(manager, &gmx_morph, "morph",
-                   "Interpolate linearly between conformations");
     registerModule(manager, &gmx_msd, "msd",
                    "Calculates mean square displacements");
     registerModule(manager, &gmx_nmeig, "nmeig",
@@ -418,10 +416,8 @@ void registerLegacyModules(gmx::CommandLineModuleManager *manager)
             manager->addModuleGroup("Tools");
         group.addModule("analyze");
         group.addModule("awh");
-        group.addModule("dyndom");
         group.addModule("filter");
         group.addModule("lie");
-        group.addModule("morph");
         group.addModule("pme_error");
         group.addModule("sham");
         group.addModule("spatial");
@@ -475,7 +471,6 @@ void registerLegacyModules(gmx::CommandLineModuleManager *manager)
     {
         gmx::CommandLineModuleGroup group =
             manager->addModuleGroup("Structural properties");
-        group.addModule("anadock");
         group.addModule("bundle");
         group.addModule("clustsize");
         group.addModule("disre");

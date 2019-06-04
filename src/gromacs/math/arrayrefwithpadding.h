@@ -1,7 +1,7 @@
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
- * Copyright (c) 2018, by the GROMACS development team, led by
+ * Copyright (c) 2018,2019, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -91,15 +91,6 @@ class ArrayRefWithPadding
         ArrayRefWithPadding()
             : begin_(nullptr), end_(nullptr), paddedEnd_(nullptr) {}
         /*! \brief
-         * Constructs an empty reference.
-         *
-         * This is provided for convenience, such that EmptyArrayRef can be
-         * used to initialize any ArrayRefWithPadding, without specifying the template
-         * type.  It is not explicit to enable that usage.
-         */
-        ArrayRefWithPadding(const EmptyArrayRef & /*unused*/)
-            : begin_(nullptr), end_(nullptr), paddedEnd_(nullptr) {}
-        /*! \brief
          * Constructs a reference to a particular range.
          *
          * \param[in] begin        Pointer to the beginning of a range.
@@ -120,6 +111,16 @@ class ArrayRefWithPadding
         //! Move constructor
         ArrayRefWithPadding(ArrayRefWithPadding &&o) noexcept
             : begin_(std::move(o.begin_)), end_(std::move(o.end_)), paddedEnd_(std::move(o.paddedEnd_)) {}
+        //! Convenience overload constructor to make an ArrayRefWithPadding<const T> from a non-const one.
+        template<typename U,
+                 typename = typename std::enable_if<
+                         std::is_same<value_type,
+                                      const typename std::remove_reference<U>::type::value_type>::value>::type>
+        ArrayRefWithPadding(U &&o)
+        {
+            auto constArrayRefWithPadding = o.constArrayRefWithPadding();
+            this->swap(constArrayRefWithPadding);
+        }
         //! Copy assignment operator
         ArrayRefWithPadding &operator=(ArrayRefWithPadding const &o)
         {
@@ -168,6 +169,11 @@ class ArrayRefWithPadding
         {
             return {begin_, paddedEnd_};
         }
+        //! Returns an identical ArrayRefWithPadding that refers to const elements.
+        ArrayRefWithPadding<const T> constArrayRefWithPadding() const
+        {
+            return {begin_, end_, paddedEnd_};
+        }
         /*! \brief
          * Swaps referenced memory with the other object.
          *
@@ -178,6 +184,7 @@ class ArrayRefWithPadding
         {
             std::swap(begin_, other.begin_);
             std::swap(end_, other.end_);
+            std::swap(paddedEnd_, other.paddedEnd_);
         }
 
     private:

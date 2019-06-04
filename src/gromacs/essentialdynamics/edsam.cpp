@@ -3,7 +3,7 @@
  *
  * Copyright (c) 1991-2000, University of Groningen, The Netherlands.
  * Copyright (c) 2001-2004, The GROMACS development team.
- * Copyright (c) 2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
+ * Copyright (c) 2013,2014,2015,2016,2017,2018,2019, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -43,8 +43,9 @@
 #include <cstring>
 #include <ctime>
 
+#include <memory>
+
 #include "gromacs/commandline/filenm.h"
-#include "gromacs/compat/make_unique.h"
 #include "gromacs/domdec/domdec_struct.h"
 #include "gromacs/fileio/gmxfio.h"
 #include "gromacs/fileio/xvgr.h"
@@ -58,9 +59,9 @@
 #include "gromacs/mdlib/broadcaststructs.h"
 #include "gromacs/mdlib/constr.h"
 #include "gromacs/mdlib/groupcoord.h"
-#include "gromacs/mdlib/mdrun.h"
-#include "gromacs/mdlib/sim_util.h"
+#include "gromacs/mdlib/stat.h"
 #include "gromacs/mdlib/update.h"
+#include "gromacs/mdrunutility/handlerestart.h"
 #include "gromacs/mdtypes/commrec.h"
 #include "gromacs/mdtypes/edsamhistory.h"
 #include "gromacs/mdtypes/inputrec.h"
@@ -1120,15 +1121,15 @@ static void get_flood_energies(t_edpar *edi, real Vfl[], int nnames)
  * gmx make_edi can be used to create an .edi input file.
  */
 static std::unique_ptr<gmx::EssentialDynamics> ed_open(
-        int                     natoms,
-        ObservablesHistory     *oh,
-        const char             *ediFileName,
-        const char             *edoFileName,
-        gmx_bool                bAppend,
-        const gmx_output_env_t *oenv,
-        const t_commrec        *cr)
+        int                         natoms,
+        ObservablesHistory         *oh,
+        const char                 *ediFileName,
+        const char                 *edoFileName,
+        const gmx::StartingBehavior startingBehavior,
+        const gmx_output_env_t     *oenv,
+        const t_commrec            *cr)
 {
-    auto        edHandle = gmx::compat::make_unique<gmx::EssentialDynamics>();
+    auto        edHandle = std::make_unique<gmx::EssentialDynamics>();
     auto        ed       = edHandle->getLegacyED();
     /* We want to perform ED (this switch might later be upgraded to EssentialDynamicsType::Flooding) */
     ed->eEDtype = EssentialDynamicsType::EDSampling;
@@ -1138,7 +1139,7 @@ static std::unique_ptr<gmx::EssentialDynamics> ed_open(
         // If we start from a checkpoint file, we already have an edsamHistory struct
         if (oh->edsamHistory == nullptr)
         {
-            oh->edsamHistory = gmx::compat::make_unique<edsamhistory_t>(edsamhistory_t {});
+            oh->edsamHistory = std::make_unique<edsamhistory_t>(edsamhistory_t {});
         }
         edsamhistory_t *EDstate = oh->edsamHistory.get();
 
@@ -1157,7 +1158,7 @@ static std::unique_ptr<gmx::EssentialDynamics> ed_open(
         init_edsamstate(*ed, EDstate);
 
         /* The master opens the ED output file */
-        if (bAppend)
+        if (startingBehavior == gmx::StartingBehavior::RestartWithAppending)
         {
             ed->edo = gmx_fio_fopen(edoFileName, "a+");
         }
@@ -2361,7 +2362,7 @@ static void crosscheck_edi_file_vs_checkpoint(const gmx_edsam &ed, edsamhistory_
         }
     }
 
-    if (static_cast<int>(ed.edpar.size()) != EDstate->nED)
+    if (gmx::ssize(ed.edpar) != EDstate->nED)
     {
         gmx_fatal(FARGS, "The number of essential dynamics / flooding groups is not consistent.\n"
                   "There are %d ED groups in the .cpt file, but %zu in the .edi file!\n"
@@ -2644,17 +2645,17 @@ static void write_edo_legend(gmx_edsam * ed, int nED, const gmx_output_env_t *oe
 /* Init routine for ED and flooding. Calls init_edi in a loop for every .edi-cycle
  * contained in the input file, creates a NULL terminated list of t_edpar structures */
 std::unique_ptr<gmx::EssentialDynamics> init_edsam(
-        const gmx::MDLogger    &mdlog,
-        const char             *ediFileName,
-        const char             *edoFileName,
-        const gmx_mtop_t       *mtop,
-        const t_inputrec       *ir,
-        const t_commrec        *cr,
-        gmx::Constraints       *constr,
-        const t_state          *globalState,
-        ObservablesHistory     *oh,
-        const gmx_output_env_t *oenv,
-        gmx_bool                bAppend)
+        const gmx::MDLogger        &mdlog,
+        const char                 *ediFileName,
+        const char                 *edoFileName,
+        const gmx_mtop_t           *mtop,
+        const t_inputrec           *ir,
+        const t_commrec            *cr,
+        gmx::Constraints           *constr,
+        const t_state              *globalState,
+        ObservablesHistory         *oh,
+        const gmx_output_env_t     *oenv,
+        const gmx::StartingBehavior startingBehavior)
 {
     int      i, avindex;
     rvec    *x_pbc  = nullptr;                    /* positions of the whole MD system with pbc removed  */
@@ -2681,7 +2682,7 @@ std::unique_ptr<gmx::EssentialDynamics> init_edsam(
                    "gmx grompp and the related .mdp options may change also.");
 
     /* Open input and output files, allocate space for ED data structure */
-    auto edHandle = ed_open(mtop->natoms, oh, ediFileName, edoFileName, bAppend, oenv, cr);
+    auto edHandle = ed_open(mtop->natoms, oh, ediFileName, edoFileName, startingBehavior, oenv, cr);
     auto ed       = edHandle->getLegacyED();
     GMX_RELEASE_ASSERT(constr != nullptr, "Must have valid constraints object");
     constr->saveEdsamPointer(ed);

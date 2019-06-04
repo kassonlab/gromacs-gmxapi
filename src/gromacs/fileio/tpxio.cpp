@@ -3,7 +3,7 @@
  *
  * Copyright (c) 1991-2000, University of Groningen, The Netherlands.
  * Copyright (c) 2001-2004, The GROMACS development team.
- * Copyright (c) 2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
+ * Copyright (c) 2013,2014,2015,2016,2017,2018,2019, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -45,19 +45,19 @@
 #include <cstring>
 
 #include <algorithm>
+#include <memory>
 #include <vector>
 
-#include "gromacs/compat/make_unique.h"
 #include "gromacs/fileio/filetypes.h"
 #include "gromacs/fileio/gmxfio.h"
-#include "gromacs/fileio/gmxfio-xdr.h"
+#include "gromacs/fileio/gmxfio_xdr.h"
 #include "gromacs/math/units.h"
 #include "gromacs/math/vec.h"
-#include "gromacs/mdtypes/awh-history.h"
-#include "gromacs/mdtypes/awh-params.h"
+#include "gromacs/mdtypes/awh_history.h"
+#include "gromacs/mdtypes/awh_params.h"
 #include "gromacs/mdtypes/inputrec.h"
 #include "gromacs/mdtypes/md_enums.h"
-#include "gromacs/mdtypes/pull-params.h"
+#include "gromacs/mdtypes/pull_params.h"
 #include "gromacs/mdtypes/state.h"
 #include "gromacs/pbcutil/boxutilities.h"
 #include "gromacs/pbcutil/pbc.h"
@@ -2190,16 +2190,19 @@ static void do_atom(t_fileio *fio, t_atom *atom, gmx_bool bRead)
     }
 }
 
-static void do_grps(t_fileio *fio, int ngrp, t_grps grps[], gmx_bool bRead)
+static void do_grps(t_fileio                       *fio,
+                    gmx::ArrayRef<AtomGroupIndices> grps,
+                    gmx_bool                        bRead)
 {
-    for (int j = 0; j < ngrp; j++)
+    for (auto &group : grps)
     {
-        gmx_fio_do_int(fio, grps[j].nr);
+        int size = group.size();
+        gmx_fio_do_int(fio, size);
         if (bRead)
         {
-            snew(grps[j].nm_ind, grps[j].nr);
+            group.resize(size);
         }
-        gmx_fio_ndo_int(fio, grps[j].nm_ind, grps[j].nr);
+        gmx_fio_ndo_int(fio, group.data(), size);
     }
 }
 
@@ -2292,35 +2295,28 @@ static void do_atoms(t_fileio *fio, t_atoms *atoms, gmx_bool bRead, t_symtab *sy
     do_resinfo(fio, atoms->nres, atoms->resinfo, bRead, symtab, file_version);
 }
 
-static void do_groups(t_fileio *fio, gmx_groups_t *groups,
+static void do_groups(t_fileio *fio, SimulationGroups *groups,
                       gmx_bool bRead, t_symtab *symtab)
 {
-    int      g;
-
-    do_grps(fio, egcNR, groups->grps, bRead);
-    gmx_fio_do_int(fio, groups->ngrpname);
+    do_grps(fio, groups->groups, bRead);
+    int numberOfGroupNames = groups->groupNames.size();
+    gmx_fio_do_int(fio, numberOfGroupNames);
     if (bRead)
     {
-        snew(groups->grpname, groups->ngrpname);
+        groups->groupNames.resize(numberOfGroupNames);
     }
-    do_strstr(fio, groups->ngrpname, groups->grpname, bRead, symtab);
-    for (g = 0; g < egcNR; g++)
+    do_strstr(fio, numberOfGroupNames, groups->groupNames.data(), bRead, symtab);
+    for (auto group : gmx::keysOf(groups->groupNumbers))
     {
-        gmx_fio_do_int(fio, groups->ngrpnr[g]);
-        if (groups->ngrpnr[g] == 0)
+        int numberOfGroupNumbers = groups->numberOfGroupNumbers(group);
+        gmx_fio_do_int(fio, numberOfGroupNumbers);
+        if (numberOfGroupNumbers != 0)
         {
             if (bRead)
             {
-                groups->grpnr[g] = nullptr;
+                groups->groupNumbers[group].resize(numberOfGroupNumbers);
             }
-        }
-        else
-        {
-            if (bRead)
-            {
-                snew(groups->grpnr[g], groups->ngrpnr[g]);
-            }
-            gmx_fio_ndo_uchar(fio, groups->grpnr[g], groups->ngrpnr[g]);
+            gmx_fio_ndo_uchar(fio, groups->groupNumbers[group].data(), numberOfGroupNumbers);
         }
     }
 }
@@ -2544,7 +2540,7 @@ static void do_mtop(t_fileio *fio, gmx_mtop_t *mtop, gmx_bool bRead,
         {
             if (bRead)
             {
-                mtop->intermolecular_ilist = gmx::compat::make_unique<InteractionLists>();
+                mtop->intermolecular_ilist = std::make_unique<InteractionLists>();
             }
             do_ilists(fio, mtop->intermolecular_ilist.get(), bRead, file_version);
         }

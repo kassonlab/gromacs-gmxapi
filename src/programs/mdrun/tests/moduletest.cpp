@@ -1,7 +1,7 @@
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
- * Copyright (c) 2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
+ * Copyright (c) 2013,2014,2015,2016,2017,2018,2019, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -47,10 +47,12 @@
 
 #include <cstdio>
 
+#include "gromacs/gmxana/gmx_ana.h"
 #include "gromacs/gmxpreprocess/grompp.h"
 #include "gromacs/hardware/detecthardware.h"
 #include "gromacs/options/basicoptions.h"
 #include "gromacs/options/ioptionscontainer.h"
+#include "gromacs/tools/convert_tpr.h"
 #include "gromacs/utility/basedefinitions.h"
 #include "gromacs/utility/basenetwork.h"
 #include "gromacs/utility/gmxmpi.h"
@@ -92,10 +94,13 @@ GMX_TEST_OPTIONS(MdrunTestOptions, options)
 }       // namespace
 
 SimulationRunner::SimulationRunner(TestFileManager *fileManager) :
+    fullPrecisionTrajectoryFileName_(fileManager->getTemporaryFilePath(".trr")),
     mdpOutputFileName_(fileManager->getTemporaryFilePath("output.mdp")),
     tprFileName_(fileManager->getTemporaryFilePath(".tpr")),
     logFileName_(fileManager->getTemporaryFilePath(".log")),
     edrFileName_(fileManager->getTemporaryFilePath(".edr")),
+    mtxFileName_(fileManager->getTemporaryFilePath(".mtx")),
+
     nsteps_(-2),
     fileManager_(*fileManager)
 {
@@ -134,6 +139,14 @@ void
 SimulationRunner::useStringAsNdxFile(const char *ndxString)
 {
     gmx::TextWriter::writeFileFromString(ndxFileName_, ndxString);
+}
+
+void
+SimulationRunner::useTopG96AndNdxFromDatabase(const std::string &name)
+{
+    topFileName_ = gmx::test::TestFileManager::getInputFilePath(name + ".top");
+    groFileName_ = gmx::test::TestFileManager::getInputFilePath(name + ".g96");
+    ndxFileName_ = gmx::test::TestFileManager::getInputFilePath(name + ".ndx");
 }
 
 void
@@ -209,6 +222,42 @@ SimulationRunner::callGrompp()
 }
 
 int
+SimulationRunner::changeTprNsteps(int nsteps)
+{
+    CommandLine caller;
+    caller.append("convert-tpr");
+    caller.addOption("-nsteps", nsteps);
+    // Because the operation is to change the .tpr, we replace the
+    // file. TODO Do we need to delete an automatic backup?
+    caller.addOption("-s", tprFileName_);
+    caller.addOption("-o", tprFileName_);
+
+    return gmx_convert_tpr(caller.argc(), caller.argv());
+}
+
+int
+SimulationRunner::callNmeig()
+{
+    /* Conforming to style guide by not passing a non-const reference
+       to this function. Passing a non-const reference might make it
+       easier to write code that incorrectly re-uses callerRef after
+       the call to this function. */
+
+    CommandLine caller;
+    caller.append("nmeig");
+    caller.addOption("-s", tprFileName_);
+    caller.addOption("-f", mtxFileName_);
+    // Ignore the overall translation and rotation in the
+    // first six eigenvectors.
+    caller.addOption("-first", "7");
+    // No need to check more than a number of output values.
+    caller.addOption("-last", "50");
+    caller.addOption("-xvg", "none");
+
+    return gmx_nmeig(caller.argc(), caller.argv());
+}
+
+int
 SimulationRunner::callMdrun(const CommandLine &callerRef)
 {
     /* Conforming to style guide by not passing a non-const reference
@@ -223,6 +272,7 @@ SimulationRunner::callMdrun(const CommandLine &callerRef)
 
     caller.addOption("-g", logFileName_);
     caller.addOption("-e", edrFileName_);
+    caller.addOption("-mtx", mtxFileName_);
     caller.addOption("-o", fullPrecisionTrajectoryFileName_);
     caller.addOption("-x", reducedPrecisionTrajectoryFileName_);
 

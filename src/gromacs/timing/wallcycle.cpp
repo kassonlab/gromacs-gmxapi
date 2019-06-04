@@ -3,7 +3,7 @@
  *
  * Copyright (c) 1991-2000, University of Groningen, The Netherlands.
  * Copyright (c) 2001-2008, The GROMACS development team.
- * Copyright (c) 2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
+ * Copyright (c) 2013,2014,2015,2016,2017,2018,2019, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -133,6 +133,8 @@ static const char *wcsn[ewcsNR] =
     "Ewald F correction",
     "NB X buffer ops.",
     "NB F buffer ops.",
+    "Clear force buffer",
+    "Test subcounter",
 };
 
 /* PME GPU timing events' names - correspond to the enum in the gpu_timing.h */
@@ -205,9 +207,8 @@ gmx_wallcycle_t wallcycle_init(FILE *fplog, int resetstep, t_commrec gmx_unused 
     return wc;
 }
 
-/* TODO: Should be called from finish_run() or runner()
-   void wallcycle_destroy(gmx_wallcycle_t wc)
-   {
+void wallcycle_destroy(gmx_wallcycle_t wc)
+{
     if (wc == nullptr)
     {
         return;
@@ -226,8 +227,7 @@ gmx_wallcycle_t wallcycle_init(FILE *fplog, int resetstep, t_commrec gmx_unused 
         sfree(wc->wcsc);
     }
     sfree(wc);
-   }
- */
+}
 
 static void wallcycle_all_start(gmx_wallcycle_t wc, int ewc, gmx_cycles_t cycle)
 {
@@ -1073,7 +1073,7 @@ void wallcycle_print(FILE *fplog, const gmx::MDLogger &mdlog, int nnodes, int np
     {
         GMX_LOG(mdlog.warning).asParagraph().appendTextFormatted(
                 "NOTE: %d %% of the run time was spent communicating energies,\n"
-                "      you might want to use the -gcom option of mdrun\n",
+                "      you might want to increase some nst* mdp options\n",
                 gmx::roundToInt(100*cyc_sum[ewcMoveE]/tot));
     }
 }

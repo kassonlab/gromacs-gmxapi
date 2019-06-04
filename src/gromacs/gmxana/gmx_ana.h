@@ -3,7 +3,7 @@
  *
  * Copyright (c) 1991-2000, University of Groningen, The Netherlands.
  * Copyright (c) 2001-2008, The GROMACS development team.
- * Copyright (c) 2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
+ * Copyright (c) 2013,2014,2015,2016,2017,2018,2019, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -37,9 +37,6 @@
 
 #ifndef _gmx_ana_h
 #define _gmx_ana_h
-
-int
-gmx_anadock(int argc, char *argv[]);
 
 int
 gmx_analyze(int argc, char *argv[]);
@@ -102,12 +99,6 @@ int
 gmx_dyecoupl(int argc, char *argv[]);
 
 int
-gmx_dyndom(int argc, char *argv[]);
-
-int
-gmx_editconf(int argc, char *argv[]);
-
-int
 gmx_eneconv(int argc, char *argv[]);
 
 int
@@ -121,12 +112,6 @@ gmx_lie(int argc, char *argv[]);
 
 int
 gmx_filter(int argc, char *argv[]);
-
-int
-gmx_genion(int argc, char *argv[]);
-
-int
-gmx_genpr(int argc, char *argv[]);
 
 int
 gmx_gyrate(int argc, char *argv[]);
@@ -160,9 +145,6 @@ gmx_mk_angndx(int argc, char *argv[]);
 
 int
 gmx_msd(int argc, char *argv[]);
-
-int
-gmx_morph(int argc, char *argv[]);
 
 int
 gmx_nmeig(int argc, char *argv[]);
