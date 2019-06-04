@@ -10,6 +10,101 @@ Installation guide
 
 .. highlight:: bash
 
+gmxapi and Python package
+-------------------------
+
+This copy of |Gromacs| is derived from the
+`sandbox-gmxapi <https://github.com/kassonlab/gromacs-gmxapi/tree/kassonLabFork>`_
+branch of the primary
+|Gromacs| `repository <https://gerrit.gromacs.org/gromacs.git>`_.
+This section of the documentation supplements the standard |Gromacs| installation
+instructions to describe access to Python-driven features targeted for a future
+|Gromacs| release. For details, see the ``python_packaging`` directory in the
+source tree.
+
+The following instructions assume the ``bash`` shell and
+
+::
+
+    SOURCE=$PWD/gromacs-gmxapi
+
+Get the fork
+^^^^^^^^^^^^
+
+::
+
+    git clone https://gerrit.gromacs.org/gromacs.git -b sandbox-gmxapi --single-branch $SOURCE
+
+or
+
+::
+
+    git clone https://github.com/kassonlab/gromacs-gmxapi.git $SOURCE
+    cd $SOURCE
+    git checkout kassonLabFork
+
+Build and install GROMACS
+^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Refer to additional instructions below, but be sure to
+enable the gmxapi library with the ``-DGMXAPI=ON`` argument.
+
+::
+
+    mkdir build
+    cd build
+    cmake .. --DGMX_THREAD_MPI=ON -DGMXAPI=ON
+    make -j10 install
+    cd ..
+
+After installing |Gromacs|, be sure to "source" the GMXRC. E.g. if you used
+``-DCMAKE_INSTALL_PREFIX=/usr/local/gromacs`` as a CMake argument to configure
+the install location, in a ``bash`` shell run ``source /usr/local/gromacs/bin/GMXRC``
+before proceeding.
+
+Build and install the gmxapi Python package
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Assuming ``python`` and ``pip`` are from a Python 3 installation::
+
+    cd $SOURCE/python_packaging
+    pip install -r src/requirements.txt
+    (cd src && pip install .)
+
+For more detailed instructions, refer to the ``README.md`` file in the ``python_packaging``
+directory.
+
+Refer to ``python_packaging/examples`` or run ``pydoc gmxapi`` for usage.
+
+Build and install the sample_restraint package
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+This is the sample source tree for an MD restraint plug-in.
+
+::
+
+    cd sample_restraint
+    mkdir build
+    cd build
+    cmake ..
+    make -j10 install
+    cd ..
+
+Explore the example notebook
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Make sure a recent version of the jupyter notebook server is available::
+
+    pip install --upgrade jupyter
+
+::
+
+    cd $SOURCE/python_packaging/sample_restraint/examples
+    jupyter notebook
+
+and look at ``example.ipynb``
+
+
 Introduction to building |Gromacs|
 ----------------------------------
 

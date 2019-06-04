@@ -8,6 +8,11 @@ code review server. The latest version can be obtained via
 
   git clone https://gerrit.gromacs.org/gromacs.git -b sandbox-gmxapi --single-branch
 
+For more information, refer to python_packaging/README.md, docs/install-guide,
+and Redmine issue https://redmine.gromacs.org/issues/2045
+or email info@gmxapi.org. Developers may also consider the git commit history
+and Gerrit issues tagged with the topic "gmxapi".
+
 When the functionality is integrated, then this branch will no longer
 be useful and will be removed from the gerrit server.  If there is no
 activity in twelve months, then the core GROMACS team will deem it
