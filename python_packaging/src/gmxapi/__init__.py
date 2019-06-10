@@ -90,44 +90,35 @@ Proxies
 * Handle()
 
 """
-from gmxapi import _logging
 
 __all__ = ['commandline_operation',
            'concatenate_lists',
-           'context',
            'exceptions',
            'function_wrapper',
            'logger',
            'make_operation',
            'mdrun',
            'ndarray',
-           'operation',
            'read_tpr',
-           'version',
-           'workflow',
            '__version__']
 
 import collections
-import os
-from typing import TypeVar
+import typing
 
-import gmxapi._logging
-from . import version
+import gmxapi.exceptions as exceptions
 from ._logging import logger
 
-from . import datamodel
-from . import context
-from . import datamodel
-from . import exceptions
-from . import workflow
-from . import fileio
-from . fileio import *
-
-
+from .datamodel import ndarray, NDArray
+from .fileio import *
+from .operation import InputCollectionDescription
 from .operation import computed_result, function_wrapper, make_operation
 from .commandline import commandline_operation
-from .datamodel import ndarray, NDArray
+# TODO: decide where this lives
+from .operation import subgraph
+# TODO: decide where this lives
+from .operation import while_loop
 from .version import __version__
+
 
 #
 # class SimulationOperation(object):
@@ -156,6 +147,7 @@ def mdrun(input=None):
         "test_particle_insertion," "legacy_simulation" (do_md), or "simulation"
         composition (which may be leap-frog, vv, and other algorithms)
     """
+    import gmxapi.workflow as workflow
     return workflow.from_tpr(input)
 
 
@@ -209,7 +201,7 @@ def join_arrays(*, front: NDArray = (), back: NDArray = ()) -> NDArray:
     return new_list
 
 
-Scalar = TypeVar('Scalar')
+Scalar = typing.TypeVar('Scalar')
 
 
 def concatenate_lists(sublists: list = ()):
@@ -346,13 +338,6 @@ def logical_not(value: bool):
     # within those Context implementations could be simplified.
     operation = function_wrapper(output={'data': bool})(lambda data=bool(): not bool(data))
     return operation(data=value).output.data
-
-
-# TODO: decide where this lives
-from .operation import subgraph
-
-# TODO: decide where this lives
-from .operation import while_loop
 
 
 def File(suffix=''):
