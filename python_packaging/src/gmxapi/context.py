@@ -19,8 +19,8 @@ from gmxapi import logger as root_logger
 import gmxapi._gmxapi as _gmxapi
 
 # Module-level logger
-logger = root_logger.getChild(__name__)
-logger.info('Importing gmxapi.context')
+logger = root_logger.getChild('context')
+logger.info('Importing {}'.format(__name__))
 
 
 def _load_tpr(self, element):

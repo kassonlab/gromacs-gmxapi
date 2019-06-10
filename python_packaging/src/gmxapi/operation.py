@@ -66,8 +66,8 @@ from gmxapi import logger as root_logger
 from gmxapi.datamodel import *
 
 # Initialize module-level logger
-logger = root_logger.getChild(__name__)
-logger.info('Importing gmxapi.operation')
+logger = root_logger.getChild('operation')
+logger.info('Importing {}'.format(__name__))
 
 
 def computed_result(function):
@@ -1885,11 +1885,11 @@ def make_operation(implementation=None, input: dict = None, output: dict = None,
     # we use a protocol mapping named operations to importable code.
     if hasattr(implementation, '__module__') and hasattr(implementation, '__name__'):
         try:
-            module = importlib.util.resolve_name(name=implementation.__module__,
-                                                 package=None)
-            spec = importlib.util.find_spec(module)
+            module_name = importlib.util.resolve_name(name=implementation.__module__,
+                                                      package=None)
+            spec = importlib.util.find_spec(module_name)
         except ValueError:
-            module = None
+            module_name = None
             spec = None
     else:
         raise exceptions.ValueError(
@@ -1899,33 +1899,50 @@ def make_operation(implementation=None, input: dict = None, output: dict = None,
         raise exceptions.UsageError('make_operation can only produce Operations from importable Python code.')
     else:
         name = implementation.__name__
-        module = spec.loader.exec_module(module)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
         assert hasattr(module, name)
 
     logger.info('Generating factory for {} from {}'.format(name, spec))
 
     # Define and dynamically execute a wrapper definition.
-    source = ['def wrapper(output, {}):',
+    # TODO: Remove the need for key word signature inspection and get rid of this `compile()`
+    # This is confusing and way too hard to debug.
+    input_param_text = ''
+    input_arg_text = ''
+    if input is not None:
+        input_param_text = ', '.join([': '.join((key, value.__name__)) for key, value in input.items()])
+        input_param_text += ', '
+        input_arg_text = ', '.join(['='.join((key, key)) for key in input.keys()])
+    input_param_text += 'output=None'
+    source = ['def wrapper({}):',
               '    obj = implementation({})',
-              '    for out in output:',
+              '    for out, _ in output.items():',
               '        setattr(output, out, getattr(obj, out))',
               ''
               ]
-    source[0] = source[0].format()
-    source[1] = source[1].format()
-    compile(source=source, filename=spec, mode='exec')
-
-    # TODO: Use `input` kwarg
-    # to define a InputCollectionDescription and generate documentation for the factory.
-    # We may want to just compile() a new code object.
-    def wrapper(output, **kwargs):
-        obj = implementation(**kwargs)
-        for out in output:
-            setattr(output, out, getattr(obj, out))
+    source[0] = source[0].format(input_param_text)
+    source[1] = source[1].format(input_arg_text)
+    code_object = compile(source='\n'.join(source), filename='<gmxapi dynamic>', mode='exec')
+    # Pass a namespace providing "implementation" and receiving the definition of "wrapper"
+    locals_container = {'implementation': implementation}
+    exec(code_object, locals_container, locals_container)
+    wrapper = locals_container['wrapper']
 
     factory = function_wrapper(output=output)(wrapper)
 
-    return factory
+    def helper(*args, context=None, **kwargs):
+        # This operation factory is specialized for the default package Context.
+        if context is None:
+            context = current_context()
+        else:
+            raise exceptions.ApiError('Non-default context handling not implemented.')
+        handle = None
+        return handle
+
+    helper.__doc__ = docstring
+
+    return helper
 
 
 class GraphVariableDescriptor(object):

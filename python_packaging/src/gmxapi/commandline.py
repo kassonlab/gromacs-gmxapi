@@ -47,8 +47,8 @@ from gmxapi.datamodel import NDArray
 from gmxapi.operation import Future, OutputCollectionDescription
 
 # Module-level logger
-logger = root_logger.getChild(__name__)
-logger.info('Importing gmxapi.commandline_operation')
+logger = root_logger.getChild('commandline')
+logger.info('Importing {}'.format(__name__))
 
 
 # Create an Operation that consumes a list and a boolean to produce a string and an integer.
