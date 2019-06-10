@@ -7,10 +7,16 @@
 # and run pytest in the tests directory.
 
 import logging
+import os
 
-import gmxapi as gmx
 import pytest
 from tests.conftest import withmpi_only
+import gmxapi as gmx
+from gmxapi.data import tpr_filename
+from gmxapi.context import ParallelArrayContext
+from gmxapi.workflow import WorkElement, from_tpr
+from gmxapi import version as gmx_version
+
 
 logging.getLogger().setLevel(logging.DEBUG)
 # create console handler
@@ -32,15 +38,11 @@ def test_imports():
 
 @pytest.mark.usefixtures("cleandir")
 def test_harmonic_potential():
-    import gmxapi as gmx
-    import os
-    from gmxapi.data import tpr_filename
-
     print("Testing plugin potential with input file {}".format(os.path.abspath(tpr_filename)))
 
-    md = gmx.workflow.from_tpr(tpr_filename, append_output=False)
+    md = from_tpr(tpr_filename, append_output=False)
 
-    context = gmx.context.ParallelArrayContext(md)
+    context = ParallelArrayContext(md)
     with context as session:
         session.run()
 
@@ -49,9 +51,9 @@ def test_harmonic_potential():
     params = {'sites': [1, 4],
               'R0': 2.0,
               'k': 10000.0}
-    potential_element = gmx.workflow.WorkElement(namespace="myplugin",
-                                                 operation="create_restraint",
-                                                 params=params)
+    potential_element = WorkElement(namespace="myplugin",
+                                    operation="create_restraint",
+                                    params=params)
     # Note that we could flexibly capture accessor methods as workflow elements, too. Maybe we can
     # hide the extra Python bindings by letting myplugin.HarmonicRestraint automatically convert
     # to a WorkElement when add_dependency is called on it.
@@ -78,14 +80,10 @@ def test_ensemble_potential_nompi():
 
     Still requires ParallelArrayContext.
     """
-    import gmxapi as gmx
-    import os
-    from gmxapi.data import tpr_filename
-
     print("Testing plugin potential with input file {}".format(os.path.abspath(tpr_filename)))
 
     assert gmx.version.api_is_at_least(0,0,5)
-    md = gmx.workflow.from_tpr([tpr_filename], append_output=False)
+    md = from_tpr([tpr_filename], append_output=False)
 
     # Create a WorkElement for the potential
     #potential = gmx.core.TestModule()
@@ -100,16 +98,16 @@ def test_ensemble_potential_nompi():
               'nwindows': 4,
               'k': 10000.,
               'sigma': 1.}
-    potential = gmx.workflow.WorkElement(namespace="myplugin",
-                                         operation="ensemble_restraint",
-                                         params=params)
+    potential = WorkElement(namespace="myplugin",
+                            operation="ensemble_restraint",
+                            params=params)
     # Note that we could flexibly capture accessor methods as workflow elements, too. Maybe we can
     # hide the extra Python bindings by letting myplugin.HarmonicRestraint automatically convert
     # to a WorkElement when add_dependency is called on it.
     potential.name = "ensemble_restraint"
     md.add_dependency(potential)
 
-    context = gmx.context.ParallelArrayContext(md)
+    context = ParallelArrayContext(md)
 
     with context as session:
         session.run()
@@ -118,9 +116,6 @@ def test_ensemble_potential_nompi():
 @withmpi_only
 @pytest.mark.usefixtures("cleandir")
 def test_ensemble_potential_withmpi():
-    import os
-    import shutil
-
     from mpi4py import MPI
     rank = MPI.COMM_WORLD.Get_rank()
 
@@ -128,11 +123,10 @@ def test_ensemble_potential_withmpi():
     os.mkdir(rank_dir)
 
     # In MPI, this never makes it to grompp. We should get rid of this...
-    from gmxapi.data import tpr_filename
     logger.info("Testing plugin potential with input file {}".format(os.path.abspath(tpr_filename)))
 
-    assert gmx.version.api_is_at_least(0,0,5)
-    md = gmx.workflow.from_tpr([tpr_filename, tpr_filename], append_output=False)
+    assert gmx_version.api_is_at_least(0,0,5)
+    md = from_tpr([tpr_filename, tpr_filename], append_output=False)
 
     # Create a WorkElement for the potential
     #potential = gmx.core.TestModule()
@@ -148,9 +142,9 @@ def test_ensemble_potential_withmpi():
               'k': 10000.,
               'sigma': 1.}
 
-    potential = gmx.workflow.WorkElement(namespace="myplugin",
-                                         operation="ensemble_restraint",
-                                         params=params)
+    potential = WorkElement(namespace="myplugin",
+                            operation="ensemble_restraint",
+                            params=params)
     # Note that we could flexibly capture accessor methods as workflow elements, too. Maybe we can
     # hide the extra Python bindings by letting myplugin.HarmonicRestraint automatically convert
     # to a WorkElement when add_dependency is called on it.
@@ -158,6 +152,6 @@ def test_ensemble_potential_withmpi():
     before = md.workspec.elements[md.name]
     md.add_dependency(potential)
 
-    context = gmx.context.ParallelArrayContext(md)
+    context = ParallelArrayContext(md)
     with context as session:
         session.run()
