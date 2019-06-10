@@ -59,16 +59,16 @@ jobs:
         - docker build -t ci-$MATRIX --build-arg REF=$FORKPOINT -f python_packaging/docker/ci.dockerfile python_packaging
       script:
         - docker run --rm ci-$MATRIX run_pytest
-        - docker run --rm ci-$MATRIX run_pytest_mpi
         - docker run --rm ci-$MATRIX integrationtest
+        - docker run --rm ci-$MATRIX integrationtest_mpi
       after_success:
         - |
           if [ "$TRAVIS_PULL_REQUEST" = "false" ]; then
+            docker tag ci-$MATRIX gmxapi/ci-$MATRIX:latest
             docker tag ci-$MATRIX gmxapi/ci-$MATRIX:$REF
             docker tag ci-$MATRIX gmxapi/ci-$MATRIX:`git show -s --pretty=format:"%h"`
             docker login -u="$DOCKER_USERNAME" -p="$DOCKER_PASSWORD"
-            docker push gmxapi/ci-$MATRIX:$REF
-            docker push gmxapi/ci-$MATRIX:`git show -s --pretty=format:"%h"`
+            docker push gmxapi/ci-$MATRIX
           fi
 
 # At some point, we should test more types of interactions between components, such as both static and dynamically
