@@ -25,11 +25,11 @@ Command line examples assume the `bash <https://www.gnu.org/software/bash/>`_ sh
 .. note:: Regarding multiple GROMACS installations:
     Many GROMACS users switch between multiple GROMACS installations on the same
     computer using an HPC module system and/or a GMXRC configuration script.
-    For the equivalent sort of environment switching with the ``gmxapi`` Python package,
-    we recommend installing it in a different
+    For the equivalent sort of environment switching with the ``gmx`` Python package,
+    we recommend installing ``gmx`` in a different
     `Python virtual environment <https://www.google.com/search?q=python+virtual+environment>`_
     for each GROMACS installation.
-    Once built, a particular copy of the ``gmxapi`` Python package always refers to the
+    Once built, a particular copy of the ``gmx`` Python package always refers to the
     same GROMACS installation.
 
 .. contents:: Contents
@@ -53,32 +53,24 @@ Requirements
 ``gmxapi`` comes in three parts:
 
 * GROMACS gmxapi library for C++
-* This Python package, supporting Python 3.5 and higher
+* This Python package
 * MD restraint plugins and sample gmxapi client code
 
 Build system requirements
 -------------------------
 
-gmxapi can be built for Python 3.5 and higher.
+The preferred installation method is via `CMake <https://cmake.org/>`_.
 
-You will need a C++ 14 compatible compiler and a reasonably up-to-date version
+You will need a C++ 11 compatible compiler and a reasonably up-to-date version
 of CMake.
 Full gmxapi functionality may also require an MPI compiler (e.g. ``mpicc``).
 
 The Python package requires a GROMACS installation.
-Build and install
-`GROMACS <http://manual.gromacs.org/documentation/current/install-guide/index.html>`_
-before proceeding. Be sure to configure CMake with the ``GMXAPI=ON`` option.
-
+Build and install `GROMACS <http://www.gromacs.org>`_
+before proceeding.
 Then, "source" the GMXRC file from the GROMACS installation as you normally would
 before using GROMACS, or note its installation location so that you can pass it
 to the build configuration.
-
-..  note::
-
-    If you are using a managed computing resource, such as a research HPC cluster,
-    GROMACS may already be installed, but you will need GROMACS 2019 or later, and
-    it must be configured with ``GMXAPI=ON``.
 
 Important: To build a module that can be imported by Python, you need a Python
 installation that includes the Python headers. Unfortunately, it is not always
@@ -106,19 +98,11 @@ For full functionality, you should also have ``mpi4py`` and ``numpy``.
 
 The easiest way to make sure you have the requirements installed, first update
 ``pip``, then use the ``requirements.txt`` file provided with the repository.
-File paths in this section are relative to the root directory of your local copy
-of the GROMACS source.
-
 ::
 
     python -m pip install --upgrade pip
     pip install --upgrade setuptools
-    pip install -r python_packaging/src/requirements.txt
-
-If building documentation or running tests,
-``pip install -r python_packaging/requirements-docs.txt`` or
-``pip install -r python_packaging/requirements-test.txt``,
-respectively, or see below.
+    pip install -r requirements.txt
 
 .. _build_docs:
 
@@ -146,10 +130,11 @@ You can probably install both with ``pip``::
 
     pip install pytest numpy
 
-To test the full functionality also requires an MPI parallel environment.
-You will need the ``mpi4py`` Python package and an MPI launcher
-(such as ``mpiexec``, ``mpirun``, a launcher provided by your HPC queuing system,
-or whatever is provided by your favorite MPI package for your operating system).
+Full functionality requires MPI to test. You will need the ``mpi4py`` Python
+package and an MPI launcher
+(such as ``mpiexec``, ``mpirun``, or something provided by your HPC queuing system).
+
+.. seealso:: :ref:`testing`
 
 .. _mpi_requirements:
 
@@ -207,27 +192,20 @@ Recommended installation
 Locate or install GROMACS
 ^^^^^^^^^^^^^^^^^^^^^^^^^
 
-You need a GROMACS installation that includes the gmxapi headers and library.
-If GROMACS 2020 or higher is already installed,
-*and* was configured with ``GMXAPI=ON`` at build time,
-you can just source the GMXRC
-(so that the Python package knows where to find GROMACS)
-and skip to the next section.
+If GROMACS 2019 or higher is already installed, source the GMXRC and skip to the
+next section.
 
 Otherwise, install a supported version of GROMACS. For instance, clone one of
 the two following ``git`` repositories.
 
-..  rubric:: Official GROMACS release branch
-
-::
+Official GROMACS release branch::
 
     git clone https://github.com/gromacs/gromacs.git gromacs
     cd gromacs
+    git checkout release-2019
 
-..  rubric:: The Kasson Lab GROMACS fork...
-
-... may have experimental features that have not yet appeared in an official GROMACS
-release.
+The Kasson Lab GROMACS fork may have experimental features that have not yet
+appeared in an official GROMACS release.
 
 ::
 
@@ -236,20 +214,17 @@ release.
     # for that absolute latest code, check out the "development branch" (optional)
     git checkout devel
 
-..  todo:: Update w.r.t. https://github.com/kassonlab/gmxapi/issues/188
-
 Configure and build GROMACS. Install into a ``gromacs-gmxapi`` directory in your
-home directory (or wherever you prefer, using ``CMAKE_INSTALL_PREFIX``).
+home directory.
 
 ::
 
     mkdir build
     cd build
-    cmake ../gromacs -DCMAKE_CXX_COMPILER=`which g++` \
-                     -DCMAKE_C_COMPILER=`which gcc` \
-                     -DCMAKE_INSTALL_PREFIX=$HOME/gromacs-gmxapi \
-                     -DGMX_THREAD_MPI=ON \
-                     -DGMXAPI=ON
+    cmake ../gromacs -DGMX_THREAD_MPI=ON \
+                     -DCMAKE_CXX_COMPILER=`which g++`
+                     -DCMAKE_C_COMPILER=`which gcc`
+                     -DCMAKE_INSTALL_PREFIX=$HOME/gromacs-gmxapi
     make -j8 && make install
 
 .. note::
@@ -258,10 +233,8 @@ home directory (or wherever you prefer, using ``CMAKE_INSTALL_PREFIX``).
     (using more CPU *and memory*).
     Adjust according to your computing resources.
 
-Set the environment variables for the GROMACS installation so that the gmxapi
-headers and library can be found when building the Python package.
-If you installed to a ``gromacs-gmxapi`` directory in your home directory as
-above and you use the ``bash`` shell, do::
+Set the environment variables for the GROMACS installation.
+::
 
     source $HOME/gromacs-gmxapi/bin/GMXRC
 
@@ -272,7 +245,7 @@ We recommend installing the Python package in a virtual environment.
 If not installing in a virtual environment, you may not be able to install
 necessary prerequisites (e.g. if you are not an administrator of the system you are on).
 
-Create a Python 3 virtual environment.
+Create a Python virtual environment.
 
 For Python 3, use the ``venv`` module.
 Depending on your computing environment, the Python 3 interpreter may be accessed
@@ -280,15 +253,14 @@ with the command ``python`` or ``python3``. Use ``python --version`` and
 ``python3 --version`` to figure out which you need to use. The following assumes
 the Python 3 interpreter is accessed with ``python3``.
 
-..  note::
-
-    After activating the venv, ``python`` and ``pip`` are sufficient. (The '3'
-    suffix will no longer be necessary and will be omitted in the rest of this
-    document.)
-
 ::
 
-    python3 -m venv $HOME/myvenv
+    python -m venv $HOME/myvenv
+
+.. note::
+
+    The Python 3 executable may be named ``python3`` instead of ``python``.
+    E.g. run ``python3 -m venv $HOME/myvenv``
 
 Activate the virtual environment. Your shell prompt will probably be updated with the name of the environment you
 created to make it more obvious.
@@ -303,10 +275,8 @@ environment is active. The prompt is omitted from the remainging examples, but
 the remaining examples assume the virtualenv is still active.
 (Don't do it now, but you can deactivate the environment by running ``deactivate``.)
 
-Install some dependencies. For MPI, we use mpi4py.
-Make sure it is using the same MPI installation that we are building
+Install some dependencies. For MPI, we use mpi4py. Make sure it is using the same MPI installation that we are building
 GROMACS against and building with compatible compilers.
-
 ::
 
     python -m pip install --upgrade pip setuptools
@@ -315,14 +285,15 @@ GROMACS against and building with compatible compilers.
 Build and install
 ^^^^^^^^^^^^^^^^^
 
-Get a copy of `the source code <https://github.com/gromacs/gromacs>`_,
+Get a copy of `the source code <https://github.com/kassonlab/gromacs-gmxapi>`_,
 if you haven't already.
 The python package source code is in the GROMACS repository under
 ``python_packaging/src``
 
 
-You will need to install some additional dependencies.
-The :file:`requirements.txt` file is provided for convenience.
+You will need to install some additional dependencies. The :file:`requirements.txt`
+file is provided for convenience. Also, note that ``pip`` must be
+version 10.1 or higher.
 
 ::
 
@@ -363,8 +334,8 @@ Troubleshooting
 ===============
 
 Couldn't find ``gmxapi``? If you don't want to "source" your ``GMXRC`` file, you
-can tell the package where to find a gmxapi compatible GROMACS installation with
-``gmxapi_DIR``. E.g. ``gmxapi_DIR=/path/to/gromacs pip install .``
+can tell ``cmake`` where to find a gmxapi compatible GROMACS installation with
+``gmxapi_DIR``. E.g. ``gmxapi_DIR=/path/to/gromacs cmake``...
 
 Before updating the ``gmxapi`` package it is generally a good idea to remove the
 previous installation and to start with a fresh build directory. You should be
@@ -393,9 +364,10 @@ This could be because
 * or if ``gmxapi_DIR`` (or ``GROMACS_DIR``) is not a path containing directories
   like ``bin`` and ``share``.
 
-If you are not a system administrator you are encouraged to install in a Python
-virtual environment, created with virtualenv or Conda.
-Otherwise, you will need to specify the ``--user`` flag to ``pip``.
+If you are not a system administrator you are encouraged to install in a Python virtual environment,
+created with virtualenv or Conda.
+Otherwise, you will need to specify the ``--user`` flag to ``pip`` or ``-DGMXAPI_USER_INSTALL=ON`` to CMake to
+install to your home directory.
 
 Two of the easiest problems to run into are incompatible compilers and
 incompatible Python. Try to make sure that you use the same C and C++

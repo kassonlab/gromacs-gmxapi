@@ -45,10 +45,13 @@
 
 #include <memory>
 
+#include "pybind11/pybind11.h"
+
 #include "gmxapi/status.h"
 #include "gmxapi/version.h"
 
-#include "pybind11/pybind11.h"
+#include "data.h"
+
 
 namespace py = pybind11;
 
@@ -89,5 +92,6 @@ PYBIND11_MODULE(_gmxapi, m){
     // Get bindings exported by the various components.
     export_context(m);
     export_system(m);
+    export_tprfile(m);
 
 } // end pybind11 module

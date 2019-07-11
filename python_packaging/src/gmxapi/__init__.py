@@ -32,14 +32,94 @@
 # To help us fund GROMACS development, we humbly ask that you cite
 # the research papers on the package. Check out http://www.gromacs.org.
 
-"""gmxapi Python package for GROMACS."""
+"""gmxapi Python package for GROMACS.
 
-__all__ = ['commandline_operation', 'exceptions', 'logger', 'operation']
+This package provides Python access to GROMACS molecular simulation tools.
+Operations can be connected flexibly to allow high performance simulation and
+analysis with complex control and data flows. Users can define new operations
+in C++ or Python with the same tool kit used to implement this package.
 
-import os
+Simulation Operations
+---------------------
 
-from gmxapi import exceptions
-from gmxapi import operation
-from gmxapi._logging import logger
-from gmxapi.commandline import commandline_operation
-from gmxapi import _gmxapi
+* mdrun()
+* modify_input()
+* read_tpr()
+
+Data flow operations
+--------------------
+
+* logical_and()
+* logical_or()
+* logical_not()
+* reduce()
+* scatter()
+* gather()
+* subgraph()
+* while_loop()
+
+Extension
+---------
+
+* commandline_wrapper()
+* make_operation()
+* function_wrapper()
+
+Data
+----
+
+Basic Data Types
+~~~~~~~~~~~~~~~~
+
+* Integer
+* Float
+* Boolean
+
+Containers
+~~~~~~~~~~
+
+* NDArray
+* String
+* AssociativeArray
+
+Proxies
+-------
+
+* File()
+* Future()
+* Handle()
+
+"""
+
+__all__ = ['commandline_operation',
+           'concatenate_lists',
+           'function_wrapper',
+           'gather',
+           'join_arrays',
+           'logger',
+           'logical_not',
+           'make_constant',
+           'make_operation',
+           'mdrun',
+           'ndarray',
+           'scatter',
+           'subgraph',
+           'while_loop',
+           '__version__']
+
+from ._logging import logger
+from .version import __version__
+
+# Import utilities
+from .operation import computed_result, function_wrapper, make_operation
+# Import public types
+from .datamodel import NDArray
+# Import the public operations
+from .datamodel import ndarray
+from .operation import concatenate_lists, gather, join_arrays, logical_not, make_constant, scatter
+from .commandline import commandline_operation
+from .simulation import mdrun, read_tpr
+# TODO: decide where this lives
+from .operation import subgraph
+# TODO: decide where this lives
+from .operation import while_loop
