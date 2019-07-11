@@ -10,7 +10,6 @@ import logging
 import os
 
 import gmxapi as gmx
-from gmxapi.data import tpr_filename
 from gmxapi.simulation.context import ParallelArrayContext
 from gmxapi.simulation.workflow import WorkElement, from_tpr
 from gmxapi import version as gmx_version
@@ -78,7 +77,7 @@ def test_ensemble_potential_nompi(tpr_filename):
     """
     print("Testing plugin potential with input file {}".format(os.path.abspath(tpr_filename)))
 
-    assert gmx.version.api_is_at_least(0,0,5)
+    assert gmx.version.api_is_at_least(0, 0, 5)
     md = from_tpr([tpr_filename], append_output=False)
 
     # Create a WorkElement for the potential
@@ -87,7 +86,7 @@ def test_ensemble_potential_nompi(tpr_filename):
               'binWidth': 0.1,
               'min_dist': 0.,
               'max_dist': 10.,
-              'experimental': [1.]*10,
+              'experimental': [1.] * 10,
               'nsamples': 1,
               'sample_period': 0.001,
               'nwindows': 4,
@@ -121,7 +120,7 @@ def test_ensemble_potential_withmpi(tpr_filename):
 
     logger.info("Testing plugin potential with input file {}".format(os.path.abspath(tpr_filename)))
 
-    assert gmx_version.api_is_at_least(0,0,5)
+    assert gmx_version.api_is_at_least(0, 0, 5)
     md = from_tpr([tpr_filename, tpr_filename], append_output=False)
 
     # Create a WorkElement for the potential
@@ -130,7 +129,7 @@ def test_ensemble_potential_withmpi(tpr_filename):
               'binWidth': 0.1,
               'min_dist': 0.,
               'max_dist': 10.,
-              'experimental': [0.5]*10,
+              'experimental': [0.5] * 10,
               'nsamples': 1,
               'sample_period': 0.001,
               'nwindows': 4,
