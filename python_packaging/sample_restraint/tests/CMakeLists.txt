@@ -27,7 +27,18 @@ if(DOWNLOAD_GOOGLETEST)
                      EXCLUDE_FROM_ALL)
     add_library(GTest::Main ALIAS gtest_main)
 else()
-    find_package(GTest REQUIRED)
+    if(GMXAPI_EXTENSION_MASTER_PROJECT)
+        find_package(GTest REQUIRED)
+    else()
+        if(TARGET gtest_main)
+            add_library(GTest::Main ALIAS gtest_main)
+        else()
+            find_package(GTest)
+        endif()
+        if(NOT TARGET GTest::Main)
+            message(FATAL_ERROR "GTest::Main target should have been supplied by the parent project.")
+        endif()
+    endif()
 endif() # DOWNLOAD_GOOGLETEST
 
 #
@@ -59,25 +70,9 @@ gtest_add_tests(TARGET library-test
                 TEST_LIST BasicPlugin)
 
 target_include_directories(library-test PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
-target_link_libraries(library-test Gromacs::gmxapi gtest_main)
+target_link_libraries(library-test Gromacs::gmxapi GTest::Main)
 
 set_tests_properties(${BasicPlugin} PROPERTIES
-                     COMPILE_DEFINITIONS "${GMOCK_COMPILE_DEFINITIONS}"
-                     COMPILE_FLAGS "${GMOCK_COMPILE_FLAGS}")
-
-
-# Test the C++ code implementing the basic harmonic potential.
-add_executable(harmonic-test test_harmonic.cpp)
-gtest_add_tests(TARGET harmonic-test
-                TEST_LIST HarmonicPotentialPlugin)
-
-target_include_directories(harmonic-test PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
-
-set_target_properties(harmonic-test PROPERTIES SKIP_BUILD_RPATH FALSE)
-target_link_libraries(harmonic-test harmonicpotential Gromacs::gmxapi
-                      gtest_main)
-
-set_tests_properties(${HarmonicPotentialPlugin} PROPERTIES
                      COMPILE_DEFINITIONS "${GMOCK_COMPILE_DEFINITIONS}"
                      COMPILE_FLAGS "${GMOCK_COMPILE_FLAGS}")
 
@@ -90,7 +85,7 @@ target_include_directories(histogram-test PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 
 set_target_properties(histogram-test PROPERTIES SKIP_BUILD_RPATH FALSE)
 target_link_libraries(histogram-test ensemblepotential Gromacs::gmxapi
-                      gtest_main)
+                      GTest::Main)
 
 set_tests_properties(${EnsembleHistogramPotentialPlugin} PROPERTIES
                      COMPILE_DEFINITIONS "${GMOCK_COMPILE_DEFINITIONS}"

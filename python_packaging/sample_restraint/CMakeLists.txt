@@ -22,9 +22,9 @@ endif()
 # would only be available to this project with some additional management by
 # the parent project CMake configuration.
 # Also reference https://redmine.gromacs.org/issues/2896
-set(GMXAPI_USE_BUNDLED_PYBIND OFF CACHE BOOL
+set(GMXAPI_EXTENSION_USE_BUNDLED_PYBIND OFF CACHE BOOL
     "Use pybind11 headers bundled with this repository. If OFF, CMake does `find_package(pybind11)`.")
-if(GMXAPI_USE_BUNDLED_PYBIND)
+if(GMXAPI_EXTENSION_USE_BUNDLED_PYBIND)
     add_subdirectory(external/pybind)
 else()
     # If configuring as part of the GROMACS project, pybind11 2.2 has already been found.
@@ -54,7 +54,7 @@ else()
     endif()
 endif()
 
-# This project requires a GROMACS supporting gmxapi 0.0.7 or higher. It should
+# This project requires a GROMACS supporting gmxapi 0.0.8 or higher. It should
 # be sufficient to source the GMXRC, but you can also set the GROMACS_DIR or
 # gmxapi_DIR environment variable to help CMake find the GROMACS installation.
 
@@ -71,48 +71,49 @@ list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 # Assuming GROMACS is in our path or that we have set either the gmxapi_DIR or GROMACS_DIR environment variables,
 # this will find the CMake configuration for the GROMACS libraries we need and define the CMake library objects
 # Gromacs::gmxapi
-find_package(gmxapi
-             0.0.7 REQUIRED CONFIG
-             PATHS "$ENV{GROMACS_DIR}"
-             )
+if(GMXAPI_EXTENSION_MASTER_PROJECT)
+    find_package(gmxapi
+                 0.0.8 REQUIRED CONFIG
+                 PATHS "$ENV{GROMACS_DIR}"
+                 )
 
-if(gmxapi_FOUND)
-    message("gmxapi found")
-endif()
-message("Found gmxapi version ${gmxapi_VERSION_MAJOR}.${gmxapi_VERSION_MINOR}.${gmxapi_VERSION_PATCH}")
-
-
-######################################################
-# The following is boiler-plate recommended by GROMACS
-######################################################
-# In principle, this could be deduced from GROMACS_IS_DOUBLE returned by
-# find_package(GROMACS) based on the suffix alone, but it is clearer that the
-# user explicitly sets what they want to get, and then need to provide a suffix
-# to match.
-option(GMX_DOUBLE "Use double precision" OFF)
-set(GMX_SUFFIX "" CACHE STRING "Suffix for the GROMACS installation to use (empty for default)")
-
-# This does not allow for a non-suffixed double-precision libgromacs, but
-# that should be rare enough for demonstration purposes.
-if (GMX_DOUBLE AND NOT GMX_SUFFIX)
-    set(GROMACS_SUFFIX "_d")
-else()
-    set(GROMACS_SUFFIX ${GMX_SUFFIX})
+    message(STATUS "Found gmxapi version ${gmxapi_VERSION_MAJOR}.${gmxapi_VERSION_MINOR}.${gmxapi_VERSION_PATCH}")
 endif()
 
-find_package(GROMACS REQUIRED)
-gromacs_check_double(GMX_DOUBLE)
-gromacs_check_compiler(CXX)
-include_directories(${GROMACS_INCLUDE_DIRS})
-add_definitions(${GROMACS_DEFINITIONS})
+if(GMXAPI_EXTENSION_MASTER_PROJECT)
+    ######################################################
+    # The following is boiler-plate recommended by GROMACS
+    ######################################################
+    # In principle, this could be deduced from GROMACS_IS_DOUBLE returned by
+    # find_package(GROMACS) based on the suffix alone, but it is clearer that the
+    # user explicitly sets what they want to get, and then need to provide a suffix
+    # to match.
+    option(GMX_DOUBLE "Use double precision" OFF)
+    set(GMX_SUFFIX "" CACHE STRING "Suffix for the GROMACS installation to use (empty for default)")
 
-# Use static linking on MSVC
-if (CMAKE_GENERATOR MATCHES "Visual Studio")
-    string(REPLACE /MD /MT CMAKE_C_FLAGS_RELEASE ${CMAKE_C_FLAGS_RELEASE})
-    set(CMAKE_C_FLAGS_RELEASE ${CMAKE_C_FLAGS_RELEASE} CACHE STRING "" FORCE)
-    string(REPLACE /MD /MT CMAKE_C_FLAGS_DEBUG ${CMAKE_C_FLAGS_DEBUG})
-    set(CMAKE_C_FLAGS_DEBUG ${CMAKE_C_FLAGS_DEBUG} CACHE STRING "" FORCE)
+    # This does not allow for a non-suffixed double-precision libgromacs, but
+    # that should be rare enough for demonstration purposes.
+    if (GMX_DOUBLE AND NOT GMX_SUFFIX)
+        set(GROMACS_SUFFIX "_d")
+    else()
+        set(GROMACS_SUFFIX ${GMX_SUFFIX})
+    endif()
+
+    find_package(GROMACS REQUIRED)
+    gromacs_check_double(GMX_DOUBLE)
+    gromacs_check_compiler(CXX)
+    include_directories(${GROMACS_INCLUDE_DIRS})
+    add_definitions(${GROMACS_DEFINITIONS})
+
+    # Use static linking on MSVC
+    if (CMAKE_GENERATOR MATCHES "Visual Studio")
+        string(REPLACE /MD /MT CMAKE_C_FLAGS_RELEASE ${CMAKE_C_FLAGS_RELEASE})
+        set(CMAKE_C_FLAGS_RELEASE ${CMAKE_C_FLAGS_RELEASE} CACHE STRING "" FORCE)
+        string(REPLACE /MD /MT CMAKE_C_FLAGS_DEBUG ${CMAKE_C_FLAGS_DEBUG})
+        set(CMAKE_C_FLAGS_DEBUG ${CMAKE_C_FLAGS_DEBUG} CACHE STRING "" FORCE)
+    endif()
 endif()
+
 ########################################################
 
 # Stuff for our plugin:
@@ -197,7 +198,8 @@ add_subdirectory(docs)
 
 
 # Process CMake configuration for Python and C++ tests.
-if(BUILD_TESTING)
+# TODO: get GTest::Main target to work under GROMACS repository umbrella.
+if(GMXAPI_EXTENSION_MASTER_PROJECT)
     include(GoogleTest)
     add_subdirectory(tests)
 endif()

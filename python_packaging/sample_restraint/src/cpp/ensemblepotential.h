@@ -1,7 +1,3 @@
-//
-// Created by Eric Irrgang on 2/26/18.
-//
-
 #ifndef HARMONICRESTRAINT_ENSEMBLEPOTENTIAL_H
 #define HARMONICRESTRAINT_ENSEMBLEPOTENTIAL_H
 
@@ -17,30 +13,32 @@
  * The ``CMakeLists.txt`` file will need to be updated if you add additional source files, and
  * ``src/pythonmodule/export_plugin.cpp`` will need to be updated if you add or change the name of
  * potentials.
+ *
+ * \author M. Eric Irrgang <ericirrgang@gmail.com>
  */
 
-#include <array>
-#include <memory>
-#include <mutex>
 #include <vector>
+#include <array>
+#include <mutex>
 
 #include "gmxapi/gromacsfwd.h"
-#include "gmxapi/session.h"
-#include "gmxapi/md/mdmodule.h"
 
 #include "gromacs/restraint/restraintpotential.h"
 #include "gromacs/utility/real.h"
 
+#include "restraint.h"
 #include "sessionresources.h"
 
 namespace plugin
 {
 
-// Histogram for a single restrained pair.
-using PairHist = std::vector<double>;
-
+/*!
+ * \brief Structure for input and state.
+ */
 struct ensemble_input_param_type
 {
+    // Inputs
+
     /// distance histogram parameters
     size_t nBins{0};
     double binWidth{0.};
@@ -50,7 +48,7 @@ struct ensemble_input_param_type
     double maxDist{0};
 
     /// Experimental reference distribution.
-    PairHist experimental{};
+    std::vector<double> experimental{};
 
     /// Number of samples to store during each window.
     unsigned int nSamples{0};
@@ -64,12 +62,23 @@ struct ensemble_input_param_type
     /// Smoothing factor: width of Gaussian interpolation for histogram
     double sigma{0};
 
-};
+    // State data
 
-// \todo We should be able to automate a lot of the parameter setting stuff
-// by having the developer specify a map of parameter names and the corresponding type, but that could get tricky.
-// The statically compiled fast parameter structure would be generated with a recursive variadic template
-// the way a tuple is. ref https://eli.thegreenplace.net/2014/variadic-templates-in-c/
+    /// Smoothed historic distribution for this restraint. An element of the array of restraints in this simulation.
+    std::vector<double> histogram;
+
+    unsigned int currentSample{0};
+    double nextSampleTime;
+
+    /// Accumulated list of samples during a new window.
+    std::vector<double> distanceSamples;
+
+    size_t currentWindow{0};
+    double windowStartTime{0};
+    double nextWindowUpdateTime;
+    /// The history of nwindows histograms for this restraint.
+    std::vector<plugin::Matrix<double>> windows{};
+};
 
 std::unique_ptr<ensemble_input_param_type>
 makeEnsembleParams(size_t nbins,
@@ -97,13 +106,13 @@ makeEnsembleParams(size_t nbins,
  * the difference between the sampled and experimental histograms. At the beginning of the window, this
  * difference is found and a Gaussian blur is applied.
  */
-class EnsembleHarmonic
+class EnsemblePotential
 {
     public:
         using input_param_type = ensemble_input_param_type;
 
         /* No default constructor. Parameters must be provided. */
-//        EnsembleHarmonic();
+        EnsemblePotential() = delete;
 
         /*!
          * \brief Constructor called by the wrapper code to produce a new instance.
@@ -113,7 +122,7 @@ class EnsembleHarmonic
          *
          * \param params
          */
-        explicit EnsembleHarmonic(const input_param_type& params);
+        explicit EnsemblePotential(const input_param_type& params);
 
         /*!
          * \brief Deprecated constructor taking a parameter list.
@@ -129,16 +138,16 @@ class EnsembleHarmonic
          * \param k
          * \param sigma
          */
-        EnsembleHarmonic(size_t nbins,
-                         double binWidth,
-                         double minDist,
-                         double maxDist,
-                         PairHist experimental,
-                         unsigned int nSamples,
-                         double samplePeriod,
-                         unsigned int nWindows,
-                         double k,
-                         double sigma);
+        EnsemblePotential(size_t nbins,
+                          double binWidth,
+                          double minDist,
+                          double maxDist,
+                          const std::vector<double>& experimental,
+                          unsigned int nSamples,
+                          double samplePeriod,
+                          unsigned int nWindows,
+                          double k,
+                          double sigma);
 
         /*!
          * \brief Evaluates the pair restraint potential.
@@ -153,9 +162,6 @@ class EnsembleHarmonic
          * \param t current simulation time (ps).
          * \return container for force and potential energy data.
          */
-        // Implementation note for the future: If dispatching this virtual function is not fast
-        // enough, the compiler may be able to better optimize a free
-        // function that receives the current restraint as an argument.
         gmx::PotentialPointData calculate(gmx::Vector v,
                                           gmx::Vector v0,
                                           gmx_unused double t);
@@ -174,146 +180,18 @@ class EnsembleHarmonic
         void callback(gmx::Vector v,
                       gmx::Vector v0,
                       double t,
-                      const EnsembleResources& resources);
+                      const Resources& resources);
 
     private:
-        /// Width of bins (distance) in histogram
-        size_t nBins_;
-        double binWidth_;
-
-        /// Flat-bottom potential boundaries.
-        double minDist_;
-        double maxDist_;
-        /// Smoothed historic distribution for this restraint. An element of the array of restraints in this simulation.
-        // Was `hij` in earlier code.
-        PairHist histogram_;
-        PairHist experimental_;
-
-        /// Number of samples to store during each window.
-        unsigned int nSamples_;
-        unsigned int currentSample_;
-        double samplePeriod_;
-        double nextSampleTime_;
-        /// Accumulated list of samples during a new window.
-        std::vector<double> distanceSamples_;
-
-        /// Number of windows to use for smoothing histogram updates.
-        size_t nWindows_;
-        size_t currentWindow_;
-        double windowStartTime_;
-        double nextWindowUpdateTime_;
-        /// The history of nwindows histograms for this restraint.
-        std::vector<std::unique_ptr<plugin::Matrix<double>>> windows_;
-
-        /// Harmonic force coefficient
-        double k_;
-        /// Smoothing factor: width of Gaussian interpolation for histogram
-        double sigma_;
-};
-
-/*!
- * \brief Use EnsembleHarmonic to implement a RestraintPotential
- *
- * This is boiler plate that will be templated and moved.
- */
-class EnsembleRestraint : public ::gmx::IRestraintPotential, private EnsembleHarmonic
-{
-    public:
-        using EnsembleHarmonic::input_param_type;
-
-        EnsembleRestraint(std::vector<int> sites,
-                          const input_param_type& params,
-                          std::shared_ptr<EnsembleResources> resources
-        ) :
-            EnsembleHarmonic(params),
-            sites_{std::move(sites)},
-            resources_{std::move(resources)}
-        {}
-
-        ~EnsembleRestraint() override = default;
-
-        /*!
-         * \brief Implement required interface of gmx::IRestraintPotential
-         *
-         * \return list of configured site indices.
-         *
-         * \todo remove to template header
-         * \todo abstraction of site references
-         */
-        std::vector<int> sites() const override
-        {
-            return sites_;
-        }
-
-        /*!
-         * \brief Implement the interface gmx::IRestraintPotential
-         *
-         * Dispatch to calculate() method.
-         *
-         * \param r1 coordinate of first site
-         * \param r2 reference coordinate (second site)
-         * \param t simulation time
-         * \return calculated force and energy
-         *
-         * \todo remove to template header.
-         */
-        gmx::PotentialPointData evaluate(gmx::Vector r1,
-                                         gmx::Vector r2,
-                                         double t) override
-        {
-            return calculate(r1,
-                             r2,
-                             t);
-        };
-
-        /*!
-         * \brief An update function to be called on the simulation master rank/thread periodically by the Restraint framework.
-         *
-         * Implements optional override of gmx::IRestraintPotential::update
-         *
-         * This boilerplate will disappear into the Restraint template in an upcoming gmxapi release.
-         */
-        void update(gmx::Vector v,
-                    gmx::Vector v0,
-                    double t) override
-        {
-            // Todo: use a callback period to mostly bypass this and avoid excessive mutex locking.
-            callback(v,
-                     v0,
-                     t,
-                     *resources_);
-        };
-
-        /*!
-         * \brief Implement the binding protocol that allows access to Session resources.
-         *
-         * The client receives a non-owning pointer to the session and cannot extent the life of the session. In
-         * the future we can use a more formal handle mechanism.
-         *
-         * \param session pointer to the current session
-         */
-        void bindSession(gmxapi::SessionResources* session) override
-        {
-            resources_->setSession(session);
-        }
-
-        void setResources(std::unique_ptr<EnsembleResources>&& resources)
-        {
-            resources_ = std::move(resources);
-        }
-
-    private:
-        std::vector<int> sites_;
-//        double callbackPeriod_;
-//        double nextCallback_;
-        std::shared_ptr<EnsembleResources> resources_;
+        /// Aggregate data structure holding object state.
+        input_param_type state_;
 };
 
 
 // Important: Just declare the template instantiation here for client code.
 // We will explicitly instantiate a definition in the .cpp file where the input_param_type is defined.
 extern template
-class RestraintModule<EnsembleRestraint>;
+class RestraintModule<Restraint<EnsemblePotential>>;
 
 } // end namespace plugin
 
