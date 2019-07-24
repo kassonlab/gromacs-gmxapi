@@ -2,9 +2,10 @@
 Implementation overview
 =======================
 
-The primary user-facing component is the ``gmx`` :doc:`Python module <python>`, which is implemented
-in pure Python for consistency, transparency, and maintainability. It's purpose is to
-provide an idiomatic and stable interface to the API functionality.
+The primary user-facing component is the ``gmxapi``
+:doc:`Python module <../userguide/pythonreference>`,
+which is implemented in pure Python for consistency, transparency, and maintainability.
+It's purpose is to provide an idiomatic and stable interface to the API functionality.
 
 Where functionality and behavior should mirror that of the C++ API, the Python module refers to the
 sub-package ``gmx.core``, which is a C++ extension that serves as a minimal wrapper to ``libgmxapi``.

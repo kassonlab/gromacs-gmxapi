@@ -134,8 +134,6 @@ Full functionality requires MPI to test. You will need the ``mpi4py`` Python
 package and an MPI launcher
 (such as ``mpiexec``, ``mpirun``, or something provided by your HPC queuing system).
 
-.. seealso:: :ref:`testing`
-
 .. _mpi_requirements:
 
 MPI requirements

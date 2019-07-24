@@ -2077,14 +2077,15 @@ def function_wrapper(output: dict = None):
     The new function returns an object with an `output` attribute containing the named outputs.
 
     Example:
-        @function_wrapper(output={'spam': str, 'foo': str})
-        def myfunc(parameter: str = None, output=None):
-            output.spam = parameter
-            output.foo = parameter + ' ' + parameter
 
-        operation1 = myfunc(parameter='spam spam')
-        assert operation1.output.spam.result() == 'spam spam'
-        assert operation1.output.foo.result() == 'spam spam spam spam'
+        >>> @function_wrapper(output={'spam': str, 'foo': str})
+        ... def myfunc(parameter: str = None, output=None):
+        ...    output.spam = parameter
+        ...    output.foo = parameter + ' ' + parameter
+        ...
+        >>> operation1 = myfunc(parameter='spam spam')
+        >>> assert operation1.output.spam.result() == 'spam spam'
+        >>> assert operation1.output.foo.result() == 'spam spam spam spam'
 
     If 'output' is provided to the wrapper, a data structure will be passed to
     the wrapped functions with the named attributes so that the function can easily
@@ -2263,9 +2264,9 @@ def make_operation(implementation=None, input: dict = None, output: dict = None,
     (respectively) to Python data types.
 
     Example:
-        my_operation = make_operation(MyOperation, input={...}, output={...})
+            my_operation = make_operation(MyOperation, input={...}, output={...})
 
-    Can also be used as a parameterized class decorator.
+    Can also be used as a parameterized class decorator::
 
         @make_operation(input={...}, output={...})
         class MyOperation(object):

@@ -39,56 +39,6 @@ Operations can be connected flexibly to allow high performance simulation and
 analysis with complex control and data flows. Users can define new operations
 in C++ or Python with the same tool kit used to implement this package.
 
-Simulation Operations
----------------------
-
-* mdrun()
-* modify_input()
-* read_tpr()
-
-Data flow operations
---------------------
-
-* logical_and()
-* logical_or()
-* logical_not()
-* reduce()
-* scatter()
-* gather()
-* subgraph()
-* while_loop()
-
-Extension
----------
-
-* commandline_wrapper()
-* make_operation()
-* function_wrapper()
-
-Data
-----
-
-Basic Data Types
-~~~~~~~~~~~~~~~~
-
-* Integer
-* Float
-* Boolean
-
-Containers
-~~~~~~~~~~
-
-* NDArray
-* String
-* AssociativeArray
-
-Proxies
--------
-
-* File()
-* Future()
-* Handle()
-
 """
 
 __all__ = ['commandline_operation',
