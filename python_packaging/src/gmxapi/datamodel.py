@@ -300,6 +300,7 @@ def ndarray(data=None):
     """Create an NDArray object from the provided iterable.
 
     Arguments:
+
         data: object supporting sequence, buffer, or Array Interface protocol
         shape: integer tuple specifying the size of each of one or more dimensions
         dtype: data type understood by gmxapi
