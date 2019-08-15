@@ -674,7 +674,9 @@ class Publisher(ProxyDataDescriptor):
         resource_manager.set_result(name=self._name, value=value, member=client_id)
 
     def __repr__(self):
-        return 'Publisher(name={}, dtype={})'.format(self._name, self._dtype.__qualname__)
+        return '{}(name={}, dtype={})'.format(self.__class__.__name__,
+                                              self._name,
+                                              self._dtype.__qualname__)
 
 
 def define_publishing_data_proxy(output_description) -> typing.Type[DataProxyBase]:
