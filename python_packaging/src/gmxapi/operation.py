@@ -77,7 +77,7 @@ class ResultDescription:
 
     def __init__(self, dtype=None, width=1):
         assert isinstance(dtype, type)
-        assert issubclass(dtype, valid_result_types)
+        assert issubclass(dtype, gmx.abc.valid_result_types)
         assert isinstance(width, int)
         self._dtype = dtype
         self._width = width
@@ -151,7 +151,7 @@ class OutputData(object):
         self._data = [None] * self._description.width
 
 
-class EnsembleDataSource(object):
+class EnsembleDataSource(gmx.abc.EnsembleDataSource):
     """A single source of data with ensemble data flow annotations.
 
     Note that data sources may be Futures.
@@ -169,14 +169,6 @@ class EnsembleDataSource(object):
         for protocol in protocols:
             if hasattr(self.source, protocol):
                 getattr(self.source, protocol)()
-
-
-ResultTypeVar = typing.TypeVar('ResultTypeVar', *(str, bool, int, float, dict, datamodel.NDArray))
-valid_result_types = ResultTypeVar.__constraints__
-
-SourceTypeVar = typing.TypeVar('SourceTypeVar',
-                               *(str, bool, int, float, dict, datamodel.NDArray, EnsembleDataSource))
-valid_source_types = SourceTypeVar.__constraints__
 
 
 class DataSourceCollection(collections.OrderedDict):
@@ -205,7 +197,7 @@ class DataSourceCollection(collections.OrderedDict):
             # Preprocessed input should be self-describing gmxapi data types. Structured
             # input must be recursively (depth-first) converted to gmxapi data types.
             # TODO: Handle gmxapi Futures stored as dictionary elements!
-            if not isinstance(value, valid_source_types):
+            if not isinstance(value, gmx.abc.valid_source_types):
                 if isinstance(value, collections.abc.Iterable):
                     # Iterables here are treated as arrays, but we do not have a robust typing system.
                     # Warning: In the initial implementation, the iterable may contain Future objects.
@@ -219,10 +211,10 @@ class DataSourceCollection(collections.OrderedDict):
             named_data.append((name, value))
         super().__init__(named_data)
 
-    def __setitem__(self, key: str, value: SourceTypeVar) -> None:
+    def __setitem__(self, key: str, value: gmx.abc.SourceTypeVar) -> None:
         if not isinstance(key, str):
             raise exceptions.TypeError('Data must be named with str type.')
-        if not isinstance(value, valid_source_types):
+        if not isinstance(value, gmx.abc.valid_source_types):
             if isinstance(value, collections.abc.Iterable):
                 # Iterables here are treated as arrays, but we do not have a robust typing system.
                 # Warning: In the initial implementation, the iterable may contain Future objects.
@@ -314,7 +306,7 @@ class OutputCollectionDescription(collections.OrderedDict):
             # Multidimensional outputs are explicitly NDArray
             if issubclass(flavor, (list, tuple)):
                 flavor = datamodel.NDArray
-            assert issubclass(flavor, valid_result_types)
+            assert issubclass(flavor, gmx.abc.valid_result_types)
             outputs.append((name, flavor))
         super().__init__(outputs)
 
@@ -356,7 +348,7 @@ class InputCollectionDescription(collections.OrderedDict):
                 if dtype != datamodel.NDArray:
                     raise exceptions.UsageError(
                         'Cannot accept input type {}. Sequence type inputs must use NDArray.'.format(param))
-            assert issubclass(dtype, valid_result_types)
+            assert issubclass(dtype, gmx.abc.valid_result_types)
             if hasattr(param, 'kind'):
                 disallowed = any([param.kind == param.POSITIONAL_ONLY,
                                   param.kind == param.VAR_POSITIONAL,
@@ -469,13 +461,13 @@ class ProxyDataDescriptor(object):
     __init__ explicitly: super().__init__(self, name, dtype)
     """
 
-    def __init__(self, name: str, dtype: ResultTypeVar = None):
+    def __init__(self, name: str, dtype: gmx.abc.ResultTypeVar = None):
         self._name = name
         # TODO: We should not allow dtype==None, but we currently have a weak data
         #  model that does not allow good support of structured Futures.
         if dtype is not None:
             assert isinstance(dtype, type)
-            assert issubclass(dtype, valid_result_types)
+            assert issubclass(dtype, gmx.abc.valid_result_types)
         self._dtype = dtype
 
 
@@ -1285,7 +1277,7 @@ class SinkTerminal(object):
             else:
                 # With a single data source, we need data to be in the source or have a default
                 assert name in data_source_collection
-                assert issubclass(sink_dtype, valid_result_types)
+                assert issubclass(sink_dtype, gmx.abc.valid_result_types)
                 source = data_source_collection[name]
                 if isinstance(source, sink_dtype):
                     continue
@@ -2217,7 +2209,7 @@ def function_wrapper(output: dict = None):
                 Overrides OperationDetailsBase.publishing_data_proxy() to provide an
                 implementation for the bound operation.
                 """
-                assert isinstance(instance, SourceResource)
+                assert isinstance(instance, ResourceManager)
                 return self._publishing_data_proxy_type(instance=instance, client_id=client_id)
 
             def output_data_proxy(self, instance: SourceResource) -> _output_data_proxy_type:

@@ -57,6 +57,7 @@ from ._logging import logger
 from .version import __version__
 
 # Import utilities
+import gmxapi.abc as abc
 from .operation import computed_result, function_wrapper
 # Import public types
 from .datamodel import NDArray

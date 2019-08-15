@@ -34,6 +34,7 @@
 
 """gmxapi data types and interfaces.
 """
+import gmxapi
 
 __all__ = ['ndarray', 'NDArray']
 
@@ -42,7 +43,7 @@ import collections
 from gmxapi import exceptions
 
 
-class NDArray(collections.abc.Sequence):
+class NDArray(gmxapi.abc.NDArray):
     """N-Dimensional array type.
     """
 
