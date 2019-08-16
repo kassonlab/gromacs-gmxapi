@@ -975,16 +975,6 @@ class OperationDetailsBase(abc.ABC):
         ...
 
     @abc.abstractmethod
-    def make_datastore(self, ensemble_width: int) -> typing.Mapping[str, OutputData]:
-        """Create a container to hold the resources for this operation node.
-
-        Used internally by the resource manager when setting up the node.
-        Evolution of the C++ framework for creating the Operation SessionResources
-        object will inform the future of this and the resource_director method.
-        """
-        ...
-
-    @abc.abstractmethod
     def __call__(self, resources: Resources):
         """Execute the operation with provided resources.
 
@@ -1531,7 +1521,8 @@ class ResourceManager(SourceResource):
         self.ensemble_width = self._input_edge.sink_terminal.ensemble_width
         self._operation = operation
 
-        self._data = self._operation.make_datastore(self.ensemble_width)
+        self._data = _make_datastore(output_description=operation.output_description(),
+                                     ensemble_width=self.ensemble_width)
 
         # We store a rereference to the publishing context manager implementation
         # in a data structure that can only produce one per Python interpreter
@@ -2090,6 +2081,25 @@ class OperationDirector(object):
         return handle
 
 
+def _make_datastore(output_description: OutputCollectionDescription, ensemble_width: int):
+    """Create the data store for an operation with the described output.
+
+    Create a container to hold the resources for an operation node.
+    Used internally by the resource manager when setting up the node.
+    Evolution of the C++ framework for creating the Operation SessionResources
+    object will inform the future of this and the resource_director method, but
+    this data store is how the Context manages output data sources for resources
+    that it manages.
+    """
+
+    datastore = collections.OrderedDict()
+    for name, dtype in output_description.items():
+        assert isinstance(dtype, type)
+        result_description = ResultDescription(dtype, width=ensemble_width)
+        datastore[name] = OutputData(name=name, description=result_description)
+    return datastore
+
+
 # TODO: For outputs, distinguish between "results" and "events".
 #  Both are published to the resource manager in the same way, but the relationship
 #  with subscribers is potentially different.
@@ -2160,24 +2170,6 @@ def function_wrapper(output: dict = None):
             _output_description = _runner.output_description
             _output_data_proxy_type = define_output_data_proxy(_output_description)
             _publishing_data_proxy_type = define_publishing_data_proxy(_output_description)
-
-            # TODO: This is a Context detail.
-            def make_datastore(self, ensemble_width: int):
-                """Create a container to hold the resources for this operation node.
-
-                Overrides OperationDetailsBase.make_datastore() to provide an
-                implementation for the bound operation.
-
-                Used internally by the resource manager when setting up the node.
-                Evolution of the C++ framework for creating the Operation SessionResources
-                object will inform the future of this and the resource_director method.
-                """
-                datastore = {}
-                for name, dtype in self.output_description().items():
-                    assert isinstance(dtype, type)
-                    result_description = ResultDescription(dtype, width=ensemble_width)
-                    datastore[name] = OutputData(name=name, description=result_description)
-                return datastore
 
             @classmethod
             def signature(cls) -> InputCollectionDescription:
