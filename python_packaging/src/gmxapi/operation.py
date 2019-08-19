@@ -1497,16 +1497,24 @@ class ResourceManager(SourceResource):
         # ref: https://docs.python.org/3/library/contextlib.html#contextlib.contextmanager
         try:
             if not self._done[ensemble_member]:
-                resource = self._operation.publishing_data_proxy(instance=weakref.proxy(self),
-                                                                 client_id=ensemble_member)
+                resource = self.__publishing_data_proxy(instance=weakref.proxy(self),
+                                                        client_id=ensemble_member)
                 yield resource
         except Exception as e:
-            message = 'Uncaught {} while providing output-publishing resources for {}.'.format(repr(e), self._operation)
+            message = 'Uncaught {} while providing output-publishing resources for {}.'
+            message.format(repr(e), self.operation_id)
             raise exceptions.ApiError(message) from e
         finally:
             self._done[ensemble_member] = True
 
-    def __init__(self, *, source: DataEdge, operation: OperationDetailsBase):
+    def __init__(self, *, source: DataEdge,
+                 operation_id,
+                 output_description,
+                 output_data_proxy,
+                 publishing_data_proxy,
+                 resource_factory,
+                 runner,
+                 output_context: 'Context'):
         """Initialize a resource manager for the inputs and outputs of an operation.
 
         Arguments:
@@ -1519,9 +1527,23 @@ class ResourceManager(SourceResource):
         # TODO: validate input_fingerprint as its interface becomes clear.
         self._input_edge = source
         self.ensemble_width = self._input_edge.sink_terminal.ensemble_width
-        self._operation = operation
 
-        self._data = _make_datastore(output_description=operation.output_description(),
+        # TODO: clean up defaults and checks.
+        self.operation_id = operation_id
+        self._output_context = output_context
+        assert self._output_context is not None
+        self._output_data_proxy = output_data_proxy
+        assert self._output_data_proxy is not None
+        self._output_description = output_description
+        assert self._output_description is not None
+        self.__publishing_data_proxy = publishing_data_proxy
+        assert self.__publishing_data_proxy is not None
+        self._runner = runner
+        assert self._runner is not None
+        self._resource_factory = resource_factory
+        assert self._resource_factory is not None
+
+        self._data = _make_datastore(output_description=self._output_description,
                                      ensemble_width=self.ensemble_width)
 
         # We store a rereference to the publishing context manager implementation
@@ -1624,8 +1646,8 @@ class ResourceManager(SourceResource):
                             # resources = resource_builder.build()
                             # runner = runner_builder.build()
                             # runner(resources)
-                            resources = self._operation.resource_director(input=input, output=output)
-                            self._operation(resources)
+                            resources = self._resource_factory(input=input, output=output)
+                            self._runner(resources)
 
     def future(self, name: str, description: ResultDescription):
         """Retrieve a Future for a named output.
@@ -1650,7 +1672,7 @@ class ResourceManager(SourceResource):
 
     def data(self) -> DataProxyBase:
         """Get an adapter to the output resources to access results."""
-        return self._operation.output_data_proxy(self)
+        return self._output_data_proxy(self)
 
     @contextmanager
     def local_input(self, member: int = None):
@@ -1912,13 +1934,6 @@ class NodeBuilder(abc.ABC):
         assert callable(factory)
         ...
 
-    @abc.abstractmethod
-    def add_operation_details(self, operation: typing.Type['OperationDetailsBase']):
-        # TODO: This can be decomposed into the appropriate set of factory functions
-        #  as they become clear.
-        assert hasattr(operation, '_input_signature_description')
-        assert hasattr(operation, 'make_uid')
-
 
 class Context(abc.ABC):
     """API Context.
@@ -1931,7 +1946,17 @@ class Context(abc.ABC):
     """
 
     @abc.abstractmethod
-    def node_builder(self, label=None) -> NodeBuilder:
+    def node_builder(self, *, operation,
+                     label: typing.Optional[str] = None) -> NodeBuilder:
+        """Get a builder for a new work graph node.
+
+        Nodes are elements of computational work, with resources and execution
+        managed by the Context. The Context handles parallelism resources, data
+        placement, work scheduling, and data flow / execution dependencies.
+
+        This method is used by Operation director code and helper functions to
+        add work to the graph.
+        """
         ...
 
 
@@ -1943,17 +1968,17 @@ class Context(abc.ABC):
 class ModuleNodeBuilder(NodeBuilder):
     """Builder for work nodes in gmxapi.operation.ModuleContext."""
 
-    def __init__(self, context: 'ModuleContext', label=None):
+    def __init__(self,
+                 context: 'ModuleContext',
+                 operation: typing.Type['OperationDetailsBase'],
+                 label: typing.Optional[str] = None):
         self.context = context
         self.label = label
-        self.operation_details = None
-        self.sources = DataSourceCollection()
-
-    def add_operation_details(self, operation: typing.Type['OperationDetailsBase']):
-        # TODO: This can be decomposed into the appropriate set of factory functions as they become clear.
-        assert hasattr(operation, 'signature')
-        assert hasattr(operation, 'make_uid')
+        if not issubclass(operation, OperationDetailsBase):
+            error = '{} must be initialized with an OperationDetails instance.'
+            raise exceptions.ValueError(error.format(__class__.__qualname__))
         self.operation_details = operation
+        self.sources = DataSourceCollection()
 
     def add_input(self, name, source):
         # TODO: We can move some input checking here as the data model matures.
@@ -1978,7 +2003,15 @@ class ModuleNodeBuilder(NodeBuilder):
         uid = self.operation_details.make_uid(edge)
         # TODO: ResourceManager should fetch the relevant factories from the Context
         #  instead of getting an OperationDetails instance.
-        manager = ResourceManager(source=edge, operation=self.operation_details())
+        operation = self.operation_details()
+        manager = ResourceManager(output_context=self.context,
+                                  source=edge,
+                                  operation_id=uid,
+                                  output_data_proxy=operation.output_data_proxy,
+                                  output_description=operation.output_description(),
+                                  publishing_data_proxy=operation.publishing_data_proxy,
+                                  resource_factory=self.resource_factory,
+                                  runner=operation)
         self.context.work_graph[uid] = manager
         handle = OperationHandle(self.context.work_graph[uid])
         handle.node_uid = uid
@@ -1996,7 +2029,7 @@ class ModuleContext(Context):
         self.operations = dict()
         self.labels = dict()
 
-    def node_builder(self, label=None) -> NodeBuilder:
+    def node_builder(self, operation, label=None) -> NodeBuilder:
         """Get a builder for a new work node to add an operation in this context."""
         if label is not None:
             if label in self.labels:
@@ -2005,7 +2038,7 @@ class ModuleContext(Context):
                 # The builder should update the labeled node when it is done.
                 self.labels[label] = None
 
-        return ModuleNodeBuilder(context=weakref.proxy(self), label=label)
+        return ModuleNodeBuilder(context=weakref.proxy(self), operation=operation, label=label)
 
 
 # Context stack.
@@ -2051,8 +2084,6 @@ class OperationDirector(object):
                  label=None,
                  **kwargs):
         self.operation_details = operation_details
-        if not isinstance(context, Context):
-            raise exceptions.UsageError('Client context must be provided when adding an operation.')
         self.context = weakref.proxy(context)
         self.args = args
         self.kwargs = kwargs
@@ -2060,23 +2091,12 @@ class OperationDirector(object):
 
     def __call__(self) -> AbstractOperation:
         cls = self.operation_details
-        try:
-            context = self.context
-        except ReferenceError as e:
-            context = None
-        if context is None:
-            # Bug: This should not be possible.
-            raise exceptions.ProtocolError('Operation director could not access its context.')
-        builder = context.node_builder(label=self.label)
-        # TODO: Figure out what interface really needs to be passed and enforce it.
-        # Currently this class uses OperationDetailsBase.signature and .resource_director.
-        # Ref Node_builder subclasses for additional required interface.
-        builder.add_operation_details(cls)
+        builder = self.context.node_builder(operation=cls, label=self.label)
 
+        builder.add_resource_factory(cls.resource_director)
         data_source_collection = cls.signature().bind(*self.args, **self.kwargs)
         for name, source in data_source_collection.items():
             builder.add_input(name, source)
-        builder.add_resource_factory(cls.resource_director)
         handle = builder.build()
         return handle
 
@@ -2151,8 +2171,6 @@ def function_wrapper(output: dict = None):
         # exists between a fused operation and a more basic operation. Probably it amounts
         # to aspects related to interaction with the Context that get combined in a fused
         # operation, such as the resource director, builder, etc.
-        # Note that a ResourceManager holds a reference to an instance of OperationDetails,
-        # though input signature needs to be well-defined at the type level.
         class OperationDetails(OperationDetailsBase):
             # Warning: function.__qualname__ is not rigorous since function may be in a local scope.
             # TODO: Improve base identifier.
@@ -2461,18 +2479,21 @@ class GraphMeta(type):
 
 
 class SubgraphNodeBuilder(NodeBuilder):
-    def __init__(self, context: 'SubgraphContext', label=None):
+
+    def __init__(self,
+                 context: 'SubgraphContext',
+                 operation: typing.Type['OperationDetailsBase'],
+                 label: typing.Optional[str] = None):
         self.context = context
         self.label = label
-        self.operation_details = None
-        # self.input_sink = SinkTerminal(operation._input_signature_description)
+        if not issubclass(operation, OperationDetailsBase):
+            error = '{} must be initialized with an OperationDetails instance.'
+            raise exceptions.ValueError(error.format(__class__.__qualname__))
+        self.operation_details = operation
         self.sources = DataSourceCollection()
 
     def add_resource_factory(self, factory):
-        self.factory = factory
-
-    def add_operation_details(self, operation: typing.Type['OperationDetailsBase']):
-        self.operation_details = operation
+        self.resource_factory = factory
 
     def add_input(self, name: str, source):
         # Inspect inputs.
@@ -2517,7 +2538,15 @@ class SubgraphNodeBuilder(NodeBuilder):
         uid = self.operation_details.make_uid(edge)
         # TODO: ResourceManager should fetch the relevant factories from the Context
         #  instead of getting an OperationDetails instance.
-        manager = ResourceManager(source=edge, operation=self.operation_details())
+        operation = self.operation_details()
+        manager = ResourceManager(source=edge,
+                                  operation_id=uid,
+                                  output_context=self.context,
+                                  output_description=operation.output_description(),
+                                  output_data_proxy=operation.output_data_proxy,
+                                  publishing_data_proxy=operation.publishing_data_proxy,
+                                  resource_factory=self.resource_factory,
+                                  runner=operation)
         self.context.work_graph[uid] = manager
         handle = OperationHandle(self.context.work_graph[uid])
         handle.node_uid = uid
@@ -2537,7 +2566,7 @@ class SubgraphContext(Context):
         self.resetters = set()
         self.work_graph = collections.OrderedDict()
 
-    def node_builder(self, label=None) -> NodeBuilder:
+    def node_builder(self, operation, label=None) -> NodeBuilder:
         if label is not None:
             if label in self.labels:
                 raise exceptions.ValueError('Label {} is already in use.'.format(label))
@@ -2545,7 +2574,7 @@ class SubgraphContext(Context):
                 # The builder should update the labeled node when it is done.
                 self.labels[label] = None
 
-        return SubgraphNodeBuilder(context=weakref.proxy(self), label=label)
+        return SubgraphNodeBuilder(context=weakref.proxy(self), operation=operation, label=label)
 
     def add_resetter(self, function):
         assert callable(function)
