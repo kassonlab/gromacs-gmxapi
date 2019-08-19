@@ -1707,7 +1707,7 @@ class ResourceManager(SourceResource):
             for item in value_list:
                 assert not hasattr(item, 'result')
 
-        input_pack = collections.namedtuple('InputPack', ('kwargs'))(kwargs)
+        input_pack = InputPack(kwargs=kwargs)
 
         # Prepare input data structure
         # Note: we use 'yield' instead of 'return' for the protocol expected by
@@ -1933,6 +1933,23 @@ class NodeBuilder(abc.ABC):
         # implements the operation.
         assert callable(factory)
         ...
+
+
+class InputPack(object):
+    """Input container for data sources provided to resource factories.
+
+    When gmxapi.operation Contexts provide run time inputs to operations,
+    instances of this class are provided to the operation's registered
+    Resource factory.
+
+    Attributes:
+        kwargs (dict): collection of named data sources.
+    """
+    def __init__(self, kwargs: typing.Mapping[str, SourceTypeVar]):
+        self.kwargs = kwargs
+
+
+OperationDescription = typing.Union[OperationDetailsBase, str]
 
 
 class Context(abc.ABC):
