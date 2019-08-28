@@ -51,6 +51,7 @@ __all__ = ['commandline_operation',
            'ndarray',
            'subgraph',
            'while_loop',
+           'NDArray',
            '__version__']
 
 from ._logging import logger

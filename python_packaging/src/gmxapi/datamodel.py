@@ -81,7 +81,6 @@ class NDArray(gmxapi.abc.NDArray):
         return len(self._values)
 
 
-
 def ndarray(data=None, shape=None, dtype=None):
     """Create an NDArray object from the provided iterable.
 

@@ -56,7 +56,6 @@ __all__ = ['computed_result',
 import abc
 import collections
 import functools
-import importlib.util
 import inspect
 import typing
 import weakref
@@ -66,6 +65,7 @@ import gmxapi as gmx
 from gmxapi import datamodel
 from gmxapi import exceptions
 from gmxapi import logger as root_logger
+from gmxapi.abc import OperationImplementation, _Context, ResultTypeVar, SourceTypeVar
 
 # Initialize module-level logger
 logger = root_logger.getChild('operation')
@@ -418,7 +418,7 @@ class InputCollectionDescription(collections.OrderedDict):
 
         This is a helper function to allow calling code to characterize the
         arguments in a Python function call with hints from the factory that is
-        initializing an operation. Its most useful functionality is to allow a
+        initializing an operation. Its most useful functionality is to  allows a
         factory to accept positional arguments where named inputs are usually
         required. It also allows data sources to participate in multiple
         DataSourceCollections with minimal constraints.
@@ -461,7 +461,7 @@ class ProxyDataDescriptor(object):
     __init__ explicitly: super().__init__(self, name, dtype)
     """
 
-    def __init__(self, name: str, dtype: gmx.abc.ResultTypeVar = None):
+    def __init__(self, name: str, dtype: ResultTypeVar = None):
         self._name = name
         # TODO: We should not allow dtype==None, but we currently have a weak data
         #  model that does not allow good support of structured Futures.
@@ -688,7 +688,16 @@ def define_publishing_data_proxy(output_description) -> typing.Type[DataProxyBas
     return PublishingDataProxy
 
 
-class SourceResource(abc.ABC):
+# get symbols we can use to annotate input and output types more specifically.
+_OutputDataProxyType = typing.TypeVar('_OutputDataProxyType', bound=DataProxyBase)
+_PublishingDataProxyType = typing.TypeVar('_PublishingDataProxyType', bound=DataProxyBase)
+
+
+class _Resources(typing.Generic[_PublishingDataProxyType]):
+    pass
+
+
+class SourceResource(typing.Generic[_OutputDataProxyType, _PublishingDataProxyType]):
     """Resource Manager for a data provider.
 
     Supports Future instances in a particular context.
@@ -697,11 +706,9 @@ class SourceResource(abc.ABC):
     # Note: ResourceManager members not yet included:
     # future(), _data, set_result.
 
-    OutputDataProxyType = typing.TypeVar('OutputDataProxyType', bound=DataProxyBase)
-
     # This might not belong here. Maybe separate out for a OperationHandleManager?
     @abc.abstractmethod
-    def data(self) -> OutputDataProxyType:
+    def data(self) -> _OutputDataProxyType:
         """Get the output data proxy."""
         # Warning: this should probably be renamed, but "output_data_proxy" is already
         # a member in at least one derived class.
@@ -712,7 +719,7 @@ class SourceResource(abc.ABC):
         return False
 
     @abc.abstractmethod
-    def get(self, name: str) -> OutputData:
+    def get(self, name: str) -> 'OutputData':
         ...
 
     @abc.abstractmethod
@@ -734,8 +741,19 @@ class SourceResource(abc.ABC):
         """Ensemble width of the managed resources."""
         ...
 
+    @abc.abstractmethod
+    def future(self, name: str, description: ResultDescription) -> 'Future':
+        """Get a Future handle for managed data.
 
-class StaticSourceManager(SourceResource):
+        Resource managers owned by subclasses of gmx.operation.Context provide
+        this method to get references to output data.
+
+        In addition to the interface described by gmx.abc.Future, returned objects
+        provide the interface described by gmx.operation.Future.
+        """
+
+
+class StaticSourceManager(SourceResource[_OutputDataProxyType, _PublishingDataProxyType]):
     """Provide the resource manager interface for local static data.
 
     Allow data transformations on the proxied resource.
@@ -749,7 +767,6 @@ class StaticSourceManager(SourceResource):
     argument will be an iterable when proxied_data represents an ensemble,
     or an object of the same type as proxied_data otherwise.
     """
-    OutputDataProxyType = typing.TypeVar('OutputDataProxyType', bound=DataProxyBase)
 
     def __init__(self, *, name: str, proxied_data, width: int, function: typing.Callable):
         assert not isinstance(proxied_data, Future)
@@ -805,7 +822,7 @@ class StaticSourceManager(SourceResource):
         assert self._data.name == name
         return self._data
 
-    def data(self) -> OutputDataProxyType:
+    def data(self) -> _OutputDataProxyType:
         return self.output_data_proxy(self)
 
     def width(self) -> int:
@@ -819,8 +836,11 @@ class StaticSourceManager(SourceResource):
     def reset(self):
         pass
 
+    def future(self, name: str, description: ResultDescription) -> 'Future':
+        return Future(self, name, description=description)
 
-class ProxyResourceManager(SourceResource):
+
+class ProxyResourceManager(SourceResource[_OutputDataProxyType, _PublishingDataProxyType]):
     """Act as a resource manager for data managed by another resource manager.
 
     Allow data transformations on the proxied resource.
@@ -876,13 +896,19 @@ class ProxyResourceManager(SourceResource):
         self._result = self._proxied_future.result()
         self._done = True
 
-    def data(self) -> DataProxyBase:
+    def data(self) -> _OutputDataProxyType:
         raise exceptions.ApiError('ProxyResourceManager cannot yet manage a full OutputDataProxy.')
 
+    def future(self, name: str, description: ResultDescription):
+        return Future(self, name, description=description)
 
-class AbstractOperation(abc.ABC):
-    """Client interface to an operation instance (graph node)."""
-    OutputDataProxyType = typing.TypeVar('OutputDataProxyType', bound=DataProxyBase)
+
+class AbstractOperation(typing.Generic[_OutputDataProxyType]):
+    """Client interface to an operation instance (graph node).
+
+    Note that this is a generic abstract class. Subclasses should provide a
+    class subscript to help static type checkers.
+    """
 
     @abc.abstractmethod
     def run(self):
@@ -894,7 +920,7 @@ class AbstractOperation(abc.ABC):
 
     @property
     @abc.abstractmethod
-    def output(self) -> OutputDataProxyType:
+    def output(self) -> _OutputDataProxyType:
         """Get a proxy collection to the output of the operation.
 
         Developer note: The 'output' property exists to isolate the namespace of
@@ -906,7 +932,7 @@ class AbstractOperation(abc.ABC):
         ...
 
 
-class OperationDetailsBase(abc.ABC):
+class OperationDetailsBase(OperationImplementation):
     """Abstract base class for Operation details in this module's Python Context.
 
     Provides necessary interface for use with gmxapi.operation.ResourceManager.
@@ -933,13 +959,6 @@ class OperationDetailsBase(abc.ABC):
     functions. However, an instance should be tied to a specific ResourceManager and
     Context, so weak references to these would be reasonable.
     """
-    # get symbols we can use to annotate input and output types more specifically.
-    Resources = typing.TypeVar('Resources')
-    # Having two TypeVars here probably has no semantic effect here, but it improves
-    # readability, and allows for cleaner migration if we want to use stronger typing
-    # or generics in the future.
-    OutputDataProxyType = typing.TypeVar('OutputDataProxyType', bound=DataProxyBase)
-    PublishingDataProxyType = typing.TypeVar('PublishingDataProxyType', bound=DataProxyBase)
 
     @classmethod
     @abc.abstractmethod
@@ -963,19 +982,23 @@ class OperationDetailsBase(abc.ABC):
         ...
 
     @abc.abstractmethod
-    def publishing_data_proxy(self, *, instance: SourceResource, client_id) -> PublishingDataProxyType:
+    def publishing_data_proxy(self, *,
+                              instance: SourceResource[typing.Any, _PublishingDataProxyType],
+                              client_id) -> _PublishingDataProxyType:
         """Factory for Operation output publishing resources.
 
         Used internally when the operation is run with resources provided by instance."""
         ...
 
     @abc.abstractmethod
-    def output_data_proxy(self, instance: SourceResource) -> OutputDataProxyType:
+    def output_data_proxy(self,
+                          instance: SourceResource[_OutputDataProxyType, typing.Any]
+                          ) -> _OutputDataProxyType:
         """Get an object that can provide Futures for output data managed by instance."""
         ...
 
     @abc.abstractmethod
-    def __call__(self, resources: Resources):
+    def __call__(self, resources: _Resources):
         """Execute the operation with provided resources.
 
         Resources are prepared in an execution context with aid of resource_director()
@@ -1017,7 +1040,7 @@ class OperationDetailsBase(abc.ABC):
 
     @classmethod
     @abc.abstractmethod
-    def resource_director(cls, *, input, output: PublishingDataProxyType) -> Resources:
+    def resource_director(cls, *, input, output: _PublishingDataProxyType) -> _Resources[_PublishingDataProxyType]:
         """a Director factory that helps build the Session Resources for the function.
 
         The Session launcher provides the director with all of the resources previously
@@ -1030,6 +1053,7 @@ class OperationDetailsBase(abc.ABC):
         """
         ...
 
+    # TODO: Don't run the director. Just return the correct callable.
     @classmethod
     def operation_director(cls, *args, context: 'Context', label=None, **kwargs) -> AbstractOperation:
         """Dispatching Director for adding a work node.
@@ -1082,7 +1106,7 @@ class OperationDetailsBase(abc.ABC):
 #         """Recreate the Operation at the consuming end of the DataEdge."""
 
 
-class Future(object):
+class Future(typing.Generic[ResultTypeVar]):
     """gmxapi data handle.
 
     Future is currently more than a Future right now. (should be corrected / clarified.)
@@ -1165,14 +1189,13 @@ class Future(object):
                                          width=description.width,
                                          function=lambda value, key=item:
                                          [subscriptable[key] for subscriptable in value])
-        future = Future(proxy, self.name, description=description)
-        return future
+        return proxy.future(self.name, description=description)
 
 
 class OutputDescriptor(ProxyDataDescriptor):
     """Read-only data descriptor for proxied output access.
 
-    Knows how to get a Future from a ResourceManager instance.
+    Knows how to get a Future from the resource manager.
     """
     # TODO: Reconcile the internal implementation details with the visibility and
     #  usages of this class.
@@ -1181,10 +1204,8 @@ class OutputDescriptor(ProxyDataDescriptor):
         if proxy is None:
             # Access through class attribute of owner class
             return self
-        if not isinstance(proxy._resource_instance, ResourceManager):
-            raise exceptions.ApiError(
-                'Data descriptor implementation assumes availability of a ResourceManager instance.')
         result_description = ResultDescription(dtype=self._dtype, width=proxy.ensemble_width)
+
         return proxy._resource_instance.future(name=self._name, description=result_description)
 
 
@@ -1234,7 +1255,6 @@ class SinkTerminal(object):
         Resolve data sources and input description to determine connectability,
         topology, and any necessary implicit data transformations.
 
-        :param data_source_collection: Collection of offered input data.
         :param input_collection_description: Available inputs for Operation
         :return: Fully formed description of the Sink terminal for a data edge to be created.
 
@@ -1516,11 +1536,6 @@ class ResourceManager(SourceResource):
                  runner,
                  output_context: 'Context'):
         """Initialize a resource manager for the inputs and outputs of an operation.
-
-        Arguments:
-            operation : implementation details for a Python callable
-            input_fingerprint : Uniquely identifiable input data description
-
         """
         # Note: This implementation assumes there is one ResourceManager instance per data source,
         # so we only stash the inputs and dependency information for a single set of resources.
@@ -1530,8 +1545,14 @@ class ResourceManager(SourceResource):
 
         # TODO: clean up defaults and checks.
         self.operation_id = operation_id
-        self._output_context = output_context
+
+        if isinstance(output_context, Context):
+            self._output_context = output_context
+        else:
+            message = 'Provide an instance of gmxapi.operation.Context for output_context'
+            raise exceptions.UsageError(message)
         assert self._output_context is not None
+
         self._output_data_proxy = output_data_proxy
         assert self._output_data_proxy is not None
         self._output_description = output_description
@@ -1830,8 +1851,8 @@ def wrapped_function_runner(function, output_description: OutputCollectionDescri
                                     output_description=OutputCollectionDescription(data=return_type))
 
 
-class OperationHandle(AbstractOperation):
-    """Dynamically defined Operation handle.
+class OperationHandle(AbstractOperation[_OutputDataProxyType]):
+    """Generic Operation handle for dynamically defined operations.
 
     Define a gmxapi Operation for the functionality being wrapped by the enclosing code.
 
@@ -1842,7 +1863,7 @@ class OperationHandle(AbstractOperation):
     data flow for output Futures, which may depend on the execution context.
     """
 
-    def __init__(self, resource_manager: SourceResource):
+    def __init__(self, resource_manager: SourceResource[_OutputDataProxyType, typing.Any]):
         """Initialization defines the unique input requirements of a work graph node.
 
         Initialization parameters map to the parameters of the wrapped function with
@@ -1865,7 +1886,7 @@ class OperationHandle(AbstractOperation):
         self.node_uid = None
 
     @property
-    def output(self) -> DataProxyBase:
+    def output(self) -> _OutputDataProxyType:
         # TODO: We can configure `output` as a data descriptor
         #  instead of a property so that we can get more information
         #  from the class attribute before creating an instance of OperationDetails.OutputDataProxy.
@@ -1916,7 +1937,12 @@ class OperationPlaceholder(AbstractOperation):
 
 
 class NodeBuilder(abc.ABC):
-    """Add an operation node to be managed by a Context."""
+    """Add an operation node to be managed by a Context.
+
+    The NodeBuilder interface implies minimal internal logic, and instead
+    specifies the set of information that must or may be provided to construct
+    a node.
+    """
 
     @abc.abstractmethod
     def build(self) -> AbstractOperation:
@@ -1963,7 +1989,7 @@ class Context(abc.ABC):
     """
 
     @abc.abstractmethod
-    def node_builder(self, *, operation,
+    def node_builder(self, *, operation: OperationDescription,
                      label: typing.Optional[str] = None) -> NodeBuilder:
         """Get a builder for a new work graph node.
 
@@ -2030,7 +2056,7 @@ class ModuleNodeBuilder(NodeBuilder):
                                   resource_factory=self.resource_factory,
                                   runner=operation)
         self.context.work_graph[uid] = manager
-        handle = OperationHandle(self.context.work_graph[uid])
+        handle = OperationHandle[operation.output_data_proxy](self.context.work_graph[uid])
         handle.node_uid = uid
         return handle
 
@@ -2046,7 +2072,7 @@ class ModuleContext(Context):
         self.operations = dict()
         self.labels = dict()
 
-    def node_builder(self, operation, label=None) -> NodeBuilder:
+    def node_builder(self, operation: typing.Type[OperationDetailsBase], label=None) -> NodeBuilder:
         """Get a builder for a new work node to add an operation in this context."""
         if label is not None:
             if label in self.labels:
@@ -2141,6 +2167,8 @@ def _make_datastore(output_description: OutputCollectionDescription, ensemble_wi
 #  Both are published to the resource manager in the same way, but the relationship
 #  with subscribers is potentially different.
 def function_wrapper(output: dict = None):
+    # Suppress warnings in the example code.
+    # noinspection PyUnresolvedReferences
     """Generate a decorator for wrapped functions with signature manipulation.
 
     New function accepts the same arguments, with additional arguments required by
@@ -2163,7 +2191,15 @@ def function_wrapper(output: dict = None):
     the wrapped functions with the named attributes so that the function can easily
     publish multiple named results. Otherwise, the `output` of the generated operation
     will just capture the return value of the wrapped function.
+
+    .. todo:: gmxapi typing stub file(s).
+              The way this wrapper uses parameter annotations is not completely
+              compatible with static type checking (PEP 484). If we decide to
+              keep the convenience functionality by which operation details are
+              inferred from parameter annotations, we should provide a separate
+              stub file (.pyi) to support static type checking of the API.
     """
+
     if output is not None and not isinstance(output, collections.abc.Mapping):
         raise exceptions.TypeError('If provided, `output` argument must be a mapping of data names to types.')
 
@@ -2205,6 +2241,19 @@ def function_wrapper(output: dict = None):
             _output_description = _runner.output_description
             _output_data_proxy_type = define_output_data_proxy(_output_description)
             _publishing_data_proxy_type = define_publishing_data_proxy(_output_description)
+            _SourceResource = SourceResource[_output_data_proxy_type, _publishing_data_proxy_type]
+
+            @classmethod
+            def name(cls) -> str:
+                return cls.__basename.split('.')[-1]
+
+            @classmethod
+            def namespace(cls) -> str:
+                return cls.__basename.rstrip('.' + cls.name())
+
+            @classmethod
+            def director(cls, context: _Context) -> gmx.abc.OperationDirector['OperationDetails', _Context]:
+                return cls.operation_director
 
             @classmethod
             def signature(cls) -> InputCollectionDescription:
@@ -2225,10 +2274,10 @@ def function_wrapper(output: dict = None):
                 """
                 return self._output_description
 
-            def publishing_data_proxy(self,
-                                      *,
-                                      instance: SourceResource,
-                                      client_id: int) -> _publishing_data_proxy_type:
+            def publishing_data_proxy(self, *,
+                                      instance: _SourceResource,
+                                      client_id: int
+                                      ) -> _publishing_data_proxy_type:
                 """Factory for Operation output publishing resources.
 
                 Used internally when the operation is run with resources provided by instance.
@@ -2239,8 +2288,8 @@ def function_wrapper(output: dict = None):
                 assert isinstance(instance, ResourceManager)
                 return self._publishing_data_proxy_type(instance=instance, client_id=client_id)
 
-            def output_data_proxy(self, instance: SourceResource) -> _output_data_proxy_type:
-                assert isinstance(instance, SourceResource)
+            def output_data_proxy(self, instance: _SourceResource) -> _output_data_proxy_type:
+                assert isinstance(instance, ResourceManager)
                 return self._output_data_proxy_type(instance=instance)
 
             def __call__(self, resources: PyFunctionRunnerResources):
@@ -2291,11 +2340,8 @@ def function_wrapper(output: dict = None):
                 return uid
 
             @classmethod
-            def resource_director(cls,
-                                  *,
-                                  input=None,
-                                  output: _publishing_data_proxy_type = None
-                                  ) -> PyFunctionRunnerResources:
+            def resource_director(cls, *, input=None,
+                                  output: _publishing_data_proxy_type = None) -> PyFunctionRunnerResources:
                 """a Director factory that helps build the Session Resources for the function.
 
                 The Session launcher provides the director with all of the resources previously
@@ -2545,7 +2591,7 @@ class SubgraphNodeBuilder(NodeBuilder):
         if self.operation_details is None:
             raise exceptions.UsageError('Missing details needed for operation node.')
 
-        input_sink = SinkTerminal(self.operation_details._input_signature_description)
+        input_sink = SinkTerminal(self.operation_details.signature())
         input_sink.update(self.sources)
         edge = DataEdge(self.sources, input_sink)
         # TODO: Fingerprinting: Each operation instance has unique output based on the unique input.
@@ -2568,7 +2614,7 @@ class SubgraphNodeBuilder(NodeBuilder):
         handle = OperationHandle(self.context.work_graph[uid])
         handle.node_uid = uid
         # handle = OperationPlaceholder()
-        return handle
+        return typing.cast(OperationPlaceholder, handle)
 
 
 class SubgraphContext(Context):
@@ -2583,7 +2629,7 @@ class SubgraphContext(Context):
         self.resetters = set()
         self.work_graph = collections.OrderedDict()
 
-    def node_builder(self, operation, label=None) -> NodeBuilder:
+    def node_builder(self, operation: typing.Type[OperationDetailsBase], label=None) -> NodeBuilder:
         if label is not None:
             if label in self.labels:
                 raise exceptions.ValueError('Label {} is already in use.'.format(label))
@@ -2607,8 +2653,8 @@ class Subgraph(object, metaclass=GraphMeta):
         >>> class MySubgraph(Subgraph, variables={'int_with_default': 1, 'boolData': bool}): pass
         ...
 
-    Keyword Args:
-        variables: Mapping to declare the types of variables with optional default values.
+    The key word *variables* is used in the class declaration to map the types
+    of subgraph Variables with (optional) default values.
 
     Execution model:
         Subgraph execution must follow a well-defined protocol in order to sensibly
@@ -2963,13 +3009,14 @@ def join_arrays(*, front: datamodel.NDArray = (), back: datamodel.NDArray = ()) 
     assert isinstance(back, datamodel.NDArray)
     new_list = list(front._values)
     new_list.extend(back._values)
-    return new_list
+    return datamodel.NDArray(new_list)
 
 
+# TODO: Constrain
 Scalar = typing.TypeVar('Scalar')
 
 
-def concatenate_lists(sublists: list = ()) -> Future:
+def concatenate_lists(sublists: list = ()) -> Future[gmx.datamodel.NDArray]:
     """Combine data sources into a single list.
 
     A trivial data flow restructuring operation.
@@ -2979,7 +3026,10 @@ def concatenate_lists(sublists: list = ()) -> Future:
     if len(sublists) == 0:
         return datamodel.ndarray([])
     else:
-        return join_arrays(front=sublists[0], back=concatenate_lists(sublists[1:]))
+        # TODO: Fix the data model so that this can type-check properly.
+        return join_arrays(front=sublists[0],
+                           back=typing.cast(datamodel.NDArray,
+                                            concatenate_lists(sublists[1:])))
 
 
 def make_constant(value: Scalar) -> Future:
@@ -2999,7 +3049,7 @@ def make_constant(value: Scalar) -> Future:
     return future
 
 
-def logical_not(value: bool):
+def logical_not(value: bool) -> Future:
     """Boolean negation.
 
     If the argument is a gmxapi compatible Data or Future object, a new View or

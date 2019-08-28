@@ -41,8 +41,8 @@ import inspect
 import typing
 
 import gmxapi
-import gmxapi.fileio
 import gmxapi.operation as _op
+from . import fileio
 
 
 class OutputDataProxy(_op.DataProxyBase, descriptors={'parameters': _op.OutputDescriptor('parameters', dict)}):
@@ -85,7 +85,7 @@ class ResourceManager(gmxapi.operation.ResourceManager):
 class Resources(object):
     """Input and output run-time resources for a ReadTpr operation."""
     def __init__(self, tpr_filename, publisher: PublishingDataProxy):
-        self.tpr_object = gmxapi.fileio.TprFile(filename=tpr_filename, mode='r')
+        self.tpr_object = fileio.TprFile(filename=tpr_filename, mode='r')
         self.output = publisher
 
     def filename(self):
