@@ -43,82 +43,23 @@
 
 #include "densityfitting.h"
 
-#include "gromacs/mdtypes/iforceprovider.h"
+#include "gromacs/mdrunutility/mdmodulenotification.h"
 #include "gromacs/mdtypes/imdmodule.h"
-#include "gromacs/mdtypes/imdoutputprovider.h"
-#include "gromacs/mdtypes/imdpoptionprovider.h"
-#include "gromacs/options/basicoptions.h"
-#include "gromacs/options/optionsection.h"
 #include "gromacs/utility/keyvaluetreebuilder.h"
-#include "gromacs/utility/keyvaluetreetransform.h"
-#include "gromacs/utility/stringutil.h"
 
 #include "densityfittingforceprovider.h"
-#include "densityfittingparameters.h"
+#include "densityfittingoptions.h"
+#include "densityfittingoutputprovider.h"
+
 
 namespace gmx
 {
 
+class IMdpOptionProvider;
+class DensityFittingForceProvider;
+
 namespace
 {
-
-/*! \internal
- * \brief Input data storage for density fitting
- */
-class DensityFittingOptions : public IMdpOptionProvider
-{
-    public:
-        DensityFittingOptions()
-        { }
-
-        //! From IMdpOptionProvider
-        void initMdpTransform(IKeyValueTreeTransformRules * /*transform*/ ) override
-        {}
-
-        /*! \brief
-         * Build mdp parameters for density fitting to be output after pre-processing.
-         * \param[in, out] builder the builder for the mdp options output KV-tree.
-         * \note This should be symmetrical to option initialization without
-         *       employing manual prefixing with the section name string once
-         *       the legacy code blocking this design is removed.
-         */
-        void buildMdpOutput(KeyValueTreeObjectBuilder *builder) const override
-        {
-            builder->addValue<bool>(inputSectionName_ + "-" + c_activeTag_,
-                                    active_);
-        }
-
-        /*! \brief
-         * Connect option name and data.
-         */
-        void initMdpOptions(IOptionsContainerWithSections *options) override
-        {
-            auto section = options->addSection(OptionSection(inputSectionName_.c_str()));
-            section.addOption(
-                    BooleanOption(c_activeTag_.c_str()).store(&active_));
-        }
-
-        //! Report if this set of options is active
-        bool active() const
-        {
-            return active_;
-        }
-
-        //! Process input options to parameters, including input file reading.
-        DensityFittingParameters buildParameters()
-        {
-            // read map to mrc-header and data vector
-            // convert mrcheader and data vector to grid data
-            return {};
-        }
-
-    private:
-        //! The name of the density-fitting module
-        const std::string     inputSectionName_ = "density-guided-simulation";
-
-        const std::string     c_activeTag_             = "active";
-        bool                  active_                  = false;
-};
 
 /*! \internal
  * \brief Density fitting
@@ -126,11 +67,46 @@ class DensityFittingOptions : public IMdpOptionProvider
  * Class that implements the density fitting forces and potential
  * \note the virial calculation is not yet implemented
  */
-class DensityFitting final : public IMDModule,
-                             public IMDOutputProvider
+class DensityFitting final : public IMDModule
 {
     public:
-        DensityFitting() = default;
+        /*! \brief Construct the density fitting module.
+         *
+         * \param[in] notifier allows the module to subscribe to notifications from MdModules.
+         *
+         * The density fitting code subscribes to these notifications:
+         *   - setting atom group indices in the densityFittingOptions_ by
+         *     taking a parmeter const IndexGroupsAndNames &
+         *   - storing its internal parameters in a tpr file by writing to a
+         *     key-value-tree during pre-processing by a function taking a
+         *     KeyValueTreeObjectBuilder as parameter
+         *   - reading its internal parameters from a key-value-tree during
+         *     simulation setup by taking a const KeyValueTreeObject & parameter
+         */
+        explicit DensityFitting(MdModulesNotifier *notifier)
+        {
+            // Callbacks for several kinds of MdModuleNotification are created
+            // and subscribed, and will be dispatched correctly at run time
+            // based on the type of the parameter required by the lambda.
+
+            // Setting atom group indices
+            const auto setFitGroupIndicesFunction = [this](const IndexGroupsAndNames &indexGroupsAndNames) {
+                    densityFittingOptions_.setFitGroupIndices(indexGroupsAndNames);
+                };
+            notifier->notifier_.subscribe(setFitGroupIndicesFunction);
+
+            // Writing internal parameters during pre-processing
+            const auto writeInternalParametersFunction = [this](KeyValueTreeObjectBuilder treeBuilder) {
+                    densityFittingOptions_.writeInternalParametersToKvt(treeBuilder);
+                };
+            notifier->notifier_.subscribe(writeInternalParametersFunction);
+
+            // Reading internal parameters during simulation setup
+            const auto readInternalParametersFunction = [this](const KeyValueTreeObject &tree) {
+                    densityFittingOptions_.readInternalParametersFromKvt(tree);
+                };
+            notifier->notifier_.subscribe(readInternalParametersFunction);
+        }
 
         //! From IMDModule; this class provides the mdpOptions itself
         IMdpOptionProvider *mdpOptionProvider() override { return &densityFittingOptions_; }
@@ -147,28 +123,24 @@ class DensityFitting final : public IMDModule,
         }
 
         //! This MDModule provides its own output
-        IMDOutputProvider *outputProvider() override { return this; }
-
-        //! Initialize output
-        void initOutput(FILE * /*fplog*/, int /*nfile*/, const t_filenm /*fnm*/[],
-                        bool /*bAppendFiles*/, const gmx_output_env_t * /*oenv*/) override
-        {}
-
-        //! Finalizes output from a simulation run.
-        void finishOutput() override {}
+        IMDOutputProvider *outputProvider() override { return &densityFittingOutputProvider_; }
 
     private:
+        //! The output provider
+        DensityFittingOutputProvider                 densityFittingOutputProvider_;
         //! The options provided for density fitting
-        DensityFittingOptions densityFittingOptions_;
+        DensityFittingOptions                        densityFittingOptions_;
         //! Object that evaluates the forces
         std::unique_ptr<DensityFittingForceProvider> forceProvider_;
 };
 
 }   // namespace
 
-std::unique_ptr<IMDModule> createDensityFittingModule()
+std::unique_ptr<IMDModule> DensityFittingModuleInfo::create(MdModulesNotifier * notifier)
 {
-    return std::unique_ptr<IMDModule>(new DensityFitting());
+    return std::make_unique<DensityFitting>(notifier);
 }
+
+const std::string DensityFittingModuleInfo::name_ = "density-guided-simulation";
 
 } // namespace gmx

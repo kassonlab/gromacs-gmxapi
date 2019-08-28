@@ -91,7 +91,7 @@ createMinimalTrajectoryFrameWriter(const std::string         &filename,
                                        selection,
                                        filename,
                                        topology.hasTopology() ? topology.copyAtoms() : nullptr,
-                                       std::move(requirements));
+                                       requirements);
 }
 /*! \libinternal \brief
  * Helper class for tests that need an initialized selection.
@@ -193,7 +193,7 @@ class ModuleTest : public gmx::test::CommandLineTestBase,
          * \param[in] requirements Requirements for adding to the object.
          * \returns The newly created object.
          */
-        const TrajectoryFrameWriterPointer
+        TrajectoryFrameWriterPointer
         runTest(const char *filename, const OutputRequirements &requirements)
         {
             return createMinimalTrajectoryFrameWriter(filename,

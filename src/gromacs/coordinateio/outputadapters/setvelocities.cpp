@@ -32,8 +32,8 @@
  * To help us fund GROMACS development, we humbly ask that you cite
  * the research papers on the package. Check out http://www.gromacs.org.
  */
-/*!\file
- * \internal
+/*!\internal
+ * \file
  * \brief
  * Implements SetVelocities class.
  *
@@ -54,7 +54,7 @@ namespace gmx
 void
 SetVelocities::checkAbilityDependencies(unsigned long abilities) const
 {
-    if ((abilities & convertFlag(moduleRequirements_)) == 0u)
+    if ((abilities & convertFlag(moduleRequirements_)) == 0U)
     {
         std::string errorMessage = "Output file type does not support writing velocities. "
             "Only GRO, TRR and TNG support this output.";

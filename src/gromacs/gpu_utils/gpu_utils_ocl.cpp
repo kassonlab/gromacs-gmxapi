@@ -149,7 +149,7 @@ static bool isDeviceSane(const gmx_device_info_t *devInfo,
 {
     cl_context_properties properties[] = {
         CL_CONTEXT_PLATFORM,
-        (cl_context_properties) devInfo->ocl_gpu_id.ocl_platform_id,
+        reinterpret_cast<cl_context_properties>(devInfo->ocl_gpu_id.ocl_platform_id),
         0
     };
     // uncrustify spacing
@@ -286,7 +286,7 @@ static int checkGpu(size_t                   deviceId,
     return egpuCompatible;
 }
 
-} // namespace
+} // namespace gmx
 
 /*! \brief Returns an ocl_vendor_id_t value corresponding to the input OpenCL vendor name.
  *
@@ -316,9 +316,7 @@ static ocl_vendor_id_t get_vendor_id(char *vendor_name)
     return OCL_VENDOR_UNKNOWN;
 }
 
-
-//! This function is documented in the header file
-bool canDetectGpus(std::string *errorMessage)
+bool isGpuDetectionFunctional(std::string *errorMessage)
 {
     cl_uint numPlatforms;
     cl_int  status       = clGetPlatformIDs(0, nullptr, &numPlatforms);
@@ -345,7 +343,6 @@ bool canDetectGpus(std::string *errorMessage)
     return foundPlatform;
 }
 
-//! This function is documented in the header file
 void findGpus(gmx_gpu_info_t *gpu_info)
 {
     cl_uint         ocl_platform_count;
@@ -518,7 +515,6 @@ void findGpus(gmx_gpu_info_t *gpu_info)
     sfree(ocl_platform_ids);
 }
 
-//! This function is documented in the header file
 void get_gpu_device_info_string(char *s, const gmx_gpu_info_t &gpu_info, int index)
 {
     assert(s);
@@ -548,22 +544,7 @@ void get_gpu_device_info_string(char *s, const gmx_gpu_info_t &gpu_info, int ind
     }
 }
 
-bool areAllGpuDevicesFromAmd(const gmx_gpu_info_t &gpuInfo)
-{
-    bool result = true;
-    for (int i = 0; i < gpuInfo.n_dev; ++i)
-    {
-        if ((gpuInfo.gpu_dev[i].stat == egpuCompatible) &&
-            (gpuInfo.gpu_dev[i].vendor_e != OCL_VENDOR_AMD))
-        {
-            result = false;
-            break;
-        }
-    }
-    return result;
-}
 
-//! This function is documented in the header file
 void init_gpu(const gmx_device_info_t *deviceInfo)
 {
     assert(deviceInfo);
@@ -586,7 +567,6 @@ void init_gpu(const gmx_device_info_t *deviceInfo)
     }
 }
 
-//! This function is documented in the header file
 gmx_device_info_t *getDeviceInfo(const gmx_gpu_info_t &gpu_info,
                                  int                   deviceId)
 {
@@ -597,7 +577,6 @@ gmx_device_info_t *getDeviceInfo(const gmx_gpu_info_t &gpu_info,
     return &gpu_info.gpu_dev[deviceId];
 }
 
-//! This function is documented in the header file
 size_t sizeof_gpu_dev_info()
 {
     return sizeof(gmx_device_info_t);

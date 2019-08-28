@@ -48,12 +48,12 @@
 
 namespace gmx
 {
-class DensityFittingParameters;
+struct DensityFittingParameters;
 
 class DensityFittingForceProvider final : public IForceProvider
 {
     public:
-        DensityFittingForceProvider(const DensityFittingParameters &paramters);
+        DensityFittingForceProvider(const DensityFittingParameters &parameters);
         void calculateForces(const ForceProviderInput &forceProviderInput,
                              ForceProviderOutput      *forceProviderOutput) override;
 

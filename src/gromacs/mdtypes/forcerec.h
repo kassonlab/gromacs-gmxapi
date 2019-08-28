@@ -156,10 +156,6 @@ struct t_forcerec { // NOLINT (clang-analyzer-optin.performance.Padding)
      */
     real rlist = 0;
 
-    /* Parameters for generalized reaction field */
-    real zsquare = 0;
-    real temp    = 0;
-
     /* Charge sum and dipole for topology A/B ([0]/[1]) for Ewald corrections */
     double qsum[2]   = { 0 };
     double q2sum[2]  = { 0 };
@@ -224,9 +220,9 @@ struct t_forcerec { // NOLINT (clang-analyzer-optin.performance.Padding)
      * PPPM/PME/Ewald/posres/ForceProviders
      */
     /* True when we have contributions that are directly added to the virial */
-    gmx_bool                 haveDirectVirialContributions = FALSE;
-    /* TODO: Replace the pointer by an object once we got rid of C */
-    std::vector<gmx::RVec>  *forceBufferForDirectVirialContributions = nullptr;
+    bool                   haveDirectVirialContributions = false;
+    /* Force buffer for force computation with direct virial contributions */
+    std::vector<gmx::RVec> forceBufferForDirectVirialContributions;
 
     /* Data for PPPM/PME/Ewald */
     struct gmx_pme_t *pmedata                = nullptr;
@@ -235,8 +231,8 @@ struct t_forcerec { // NOLINT (clang-analyzer-optin.performance.Padding)
     /* PME/Ewald stuff */
     struct gmx_ewald_tab_t *ewald_table = nullptr;
 
-    /* Shift force array for computing the virial */
-    rvec *fshift = nullptr;
+    /* Shift force array for computing the virial, size SHIFTS */
+    std::vector<gmx::RVec> shiftForces;
 
     /* Non bonded Parameter lists */
     int      ntype        = 0; /* Number of atom types */

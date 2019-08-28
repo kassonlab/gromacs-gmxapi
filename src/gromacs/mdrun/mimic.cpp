@@ -133,20 +133,20 @@
 #include "gromacs/utility/real.h"
 #include "gromacs/utility/smalloc.h"
 
+#include "legacysimulator.h"
 #include "replicaexchange.h"
 #include "shellfc.h"
-#include "simulator.h"
 
 using gmx::SimulationSignaller;
 
-void gmx::Simulator::do_mimic()
+void gmx::LegacySimulator::do_mimic()
 {
     t_inputrec              *ir   = inputrec;
     int64_t                  step, step_rel;
     double                   t, lam0[efptNR];
     bool                     isLastStep               = false;
     bool                     doFreeEnergyPerturbation = false;
-    int                      force_flags;
+    unsigned int             force_flags;
     tensor                   force_vir, shake_vir, total_vir, pres;
     rvec                     mu_tot;
     gmx_localtop_t           top;
@@ -225,18 +225,10 @@ void gmx::Simulator::do_mimic()
     top_global->intermolecularExclusionGroup = genQmmmIndices(*top_global);
 
     initialize_lambdas(fplog, *ir, MASTER(cr), &state_global->fep_state, state_global->lambda, lam0);
-    init_nrnb(nrnb);
 
     gmx_mdoutf        *outf = init_mdoutf(fplog, nfile, fnm, mdrunOptions, cr, outputProvider, ir, top_global, oenv, wcycle,
                                           StartingBehavior::NewSimulation);
     gmx::EnergyOutput  energyOutput(mdoutf_get_fp_ene(outf), top_global, ir, pull_work, mdoutf_get_fp_dhdl(outf), true);
-
-    /* Kinetic energy data */
-    std::unique_ptr<gmx_ekindata_t> eKinData = std::make_unique<gmx_ekindata_t>();
-    gmx_ekindata_t                 *ekind    = eKinData.get();
-    init_ekindata(fplog, top_global, &(ir->opts), ekind);
-    /* Copy the cos acceleration to the groups struct */
-    ekind->cosacc.cos_accel = ir->cos_accel;
 
     gstat = global_stat_init(ir);
 
@@ -306,18 +298,20 @@ void gmx::Simulator::do_mimic()
     }
 
     {
-        int    cglo_flags = (CGLO_INITIALIZATION | CGLO_GSTAT |
+        int    cglo_flags = (CGLO_GSTAT |
                              (shouldCheckNumberOfBondedInteractions ?
                               CGLO_CHECK_NUMBER_OF_BONDED_INTERACTIONS : 0));
         bool   bSumEkinhOld = false;
         t_vcm *vcm          = nullptr;
-        compute_globals(fplog, gstat, cr, ir, fr, ekind, state, mdatoms, nrnb, vcm,
+        compute_globals(gstat, cr, ir, fr, ekind,
+                        state->x.rvec_array(), state->v.rvec_array(), state->box, state->lambda[efptVDW],
+                        mdatoms, nrnb, vcm,
                         nullptr, enerd, force_vir, shake_vir, total_vir, pres, mu_tot,
                         constr, &nullSignaller, state->box,
                         &totalNumberOfBondedInteractions, &bSumEkinhOld, cglo_flags);
     }
     checkNumberOfBondedInteractions(mdlog, cr, totalNumberOfBondedInteractions,
-                                    top_global, &top, state,
+                                    top_global, &top, state->x.rvec_array(), state->box,
                                     &shouldCheckNumberOfBondedInteractions);
 
     if (MASTER(cr))
@@ -434,7 +428,13 @@ void gmx::Simulator::do_mimic()
                                 enforcedRotation, step,
                                 ir, imdSession, pull_work, bNS, force_flags, &top,
                                 constr, enerd, fcd,
-                                state, f.arrayRefWithPadding(), force_vir, mdatoms,
+                                state->natoms,
+                                state->x.arrayRefWithPadding(),
+                                state->v.arrayRefWithPadding(),
+                                state->box,
+                                state->lambda,
+                                &state->hist,
+                                f.arrayRefWithPadding(), force_vir, mdatoms,
                                 nrnb, wcycle, graph,
                                 shellfc, fr, ppForceWorkload, t, mu_tot,
                                 vsite,
@@ -509,7 +509,9 @@ void gmx::Simulator::do_mimic()
             t_vcm              *vcm              = nullptr;
             SimulationSignaller signaller(&signals, cr, ms, doInterSimSignal, doIntraSimSignal);
 
-            compute_globals(fplog, gstat, cr, ir, fr, ekind, state, mdatoms, nrnb, vcm,
+            compute_globals(gstat, cr, ir, fr, ekind,
+                            state->x.rvec_array(), state->v.rvec_array(), state->box, state->lambda[efptVDW],
+                            mdatoms, nrnb, vcm,
                             wcycle, enerd, nullptr, nullptr, nullptr, nullptr, mu_tot,
                             constr, &signaller,
                             state->box,
@@ -518,7 +520,7 @@ void gmx::Simulator::do_mimic()
                             | (shouldCheckNumberOfBondedInteractions ? CGLO_CHECK_NUMBER_OF_BONDED_INTERACTIONS : 0)
                             );
             checkNumberOfBondedInteractions(mdlog, cr, totalNumberOfBondedInteractions,
-                                            top_global, &top, state,
+                                            top_global, &top, state->x.rvec_array(), state->box,
                                             &shouldCheckNumberOfBondedInteractions);
         }
 

@@ -45,6 +45,7 @@
 namespace gmx
 {
 class MDModules;
+struct MdModulesNotifier;
 }
 
 struct gmx_mtop_t;
@@ -123,12 +124,13 @@ void get_ir(const char *mdparin, const char *mdparout,
  * function is called. Also prints the input file back to mdparout.
  */
 
-void do_index(const char* mdparin,
-              const char *ndx,
-              gmx_mtop_t *mtop,
-              bool        bVerbose,
-              t_inputrec *ir,
-              warninp_t   wi);
+void do_index(const char                         * mdparin,
+              const char                          *ndx,
+              gmx_mtop_t                          *mtop,
+              bool                                 bVerbose,
+              const gmx::MdModulesNotifier        &notifier,
+              t_inputrec                          *ir,
+              warninp_t                            wi);
 /* Read the index file and assign grp numbers to atoms.
  */
 

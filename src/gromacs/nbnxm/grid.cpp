@@ -61,6 +61,7 @@
 #include "gromacs/simd/simd.h"
 #include "gromacs/simd/vector_operations.h"
 
+#include "boundingboxes.h"
 #include "gridsetdata.h"
 #include "pairlistparams.h"
 
@@ -98,16 +99,17 @@ static real gridAtomDensity(int        numAtoms,
 
     rvec_sub(upperCorner, lowerCorner, size);
 
-    return numAtoms/(size[XX]*size[YY]*size[ZZ]);
+    return static_cast<real>(numAtoms)/(size[XX]*size[YY]*size[ZZ]);
 }
 
-void Grid::setDimensions(const int           ddZone,
-                         const int           numAtoms,
-                         const rvec          lowerCorner,
-                         const rvec          upperCorner,
-                         real                atomDensity,
-                         const real          maxAtomGroupRadius,
-                         const bool          haveFep)
+void Grid::setDimensions(const int            ddZone,
+                         const int            numAtoms,
+                         const rvec           lowerCorner,
+                         const rvec           upperCorner,
+                         real                 atomDensity,
+                         const real           maxAtomGroupRadius,
+                         const bool           haveFep,
+                         gmx::PinningPolicy   pinningPolicy)
 {
     /* For the home zone we compute the density when not set (=-1) or when =0 */
     if (ddZone == 0 && atomDensity <= 0)
@@ -182,6 +184,8 @@ void Grid::setDimensions(const int           ddZone,
     /* We need one additional cell entry for particles moved by DD */
     cxy_na_.resize(numColumns() + 1);
     cxy_ind_.resize(numColumns() + 2);
+    changePinningPolicy(&cxy_na_, pinningPolicy);
+    changePinningPolicy(&cxy_ind_, pinningPolicy);
 
     /* Worst case scenario of 1 atom in each last cell */
     int maxNumCells;
@@ -940,6 +944,7 @@ void Grid::fillCell(GridSetData                    *gridSetData,
 #if NBNXN_SEARCH_SIMD4_FLOAT_X_BB
         if (nbat->XFormat == nbatXYZQ)
         {
+            GMX_ASSERT(bb_work_aligned != nullptr, "Must have valid aligned work structure");
             calc_bounding_box_xxxx_simd4(numAtoms, nbat->x().data() + atomStart*nbat->xstride,
                                          bb_work_aligned, pbb_ptr);
         }

@@ -73,6 +73,7 @@ struct NumPmeDomains;
 
 enum class GpuTaskCompletion;
 class PmeGpuProgram;
+class GpuEventSynchronizer;
 //! Convenience name.
 using PmeGpuProgramHandle = const PmeGpuProgram *;
 
@@ -223,7 +224,7 @@ void gmx_pme_send_parameters(const t_commrec *cr,
                              int maxshift_x, int maxshift_y);
 
 /*! \brief Send the coordinates to our PME-only node and request a PME calculation */
-void gmx_pme_send_coordinates(const t_commrec *cr, matrix box, rvec *x,
+void gmx_pme_send_coordinates(const t_commrec *cr, const matrix box, const rvec *x,
                               real lambda_q, real lambda_lj,
                               gmx_bool bEnerVir,
                               int64_t step, gmx_wallcycle *wcycle);
@@ -326,7 +327,7 @@ inline bool pme_gpu_task_enabled(const gmx_pme_t *pme)
  *
  * \param[in] pme            The PME structure.
  */
-GPU_FUNC_QUALIFIER void pme_gpu_reset_timings(const gmx_pme_t *GPU_FUNC_ARGUMENT(pme)) GPU_FUNC_TERM
+GPU_FUNC_QUALIFIER void pme_gpu_reset_timings(const gmx_pme_t *GPU_FUNC_ARGUMENT(pme)) GPU_FUNC_TERM;
 
 /*! \brief
  * Copies the PME GPU timings to the gmx_wallclock_gpu_pme_t structure (for log output). To be called at the run end.
@@ -335,7 +336,7 @@ GPU_FUNC_QUALIFIER void pme_gpu_reset_timings(const gmx_pme_t *GPU_FUNC_ARGUMENT
  * \param[in] timings           The gmx_wallclock_gpu_pme_t structure.
  */
 GPU_FUNC_QUALIFIER void pme_gpu_get_timings(const gmx_pme_t         *GPU_FUNC_ARGUMENT(pme),
-                                            gmx_wallclock_gpu_pme_t *GPU_FUNC_ARGUMENT(timings)) GPU_FUNC_TERM
+                                            gmx_wallclock_gpu_pme_t *GPU_FUNC_ARGUMENT(timings)) GPU_FUNC_TERM;
 
 /* The main PME GPU functions */
 
@@ -352,7 +353,7 @@ GPU_FUNC_QUALIFIER void pme_gpu_prepare_computation(gmx_pme_t      *GPU_FUNC_ARG
                                                     bool            GPU_FUNC_ARGUMENT(needToUpdateBox),
                                                     const matrix    GPU_FUNC_ARGUMENT(box),
                                                     gmx_wallcycle  *GPU_FUNC_ARGUMENT(wcycle),
-                                                    int             GPU_FUNC_ARGUMENT(flags)) GPU_FUNC_TERM
+                                                    int             GPU_FUNC_ARGUMENT(flags)) GPU_FUNC_TERM;
 
 /*! \brief
  * Launches first stage of PME on GPU - H2D input transfers, spreading kernel, and D2H grid transfer if needed.
@@ -363,7 +364,7 @@ GPU_FUNC_QUALIFIER void pme_gpu_prepare_computation(gmx_pme_t      *GPU_FUNC_ARG
  */
 GPU_FUNC_QUALIFIER void pme_gpu_launch_spread(gmx_pme_t      *GPU_FUNC_ARGUMENT(pme),
                                               const rvec     *GPU_FUNC_ARGUMENT(x),
-                                              gmx_wallcycle  *GPU_FUNC_ARGUMENT(wcycle)) GPU_FUNC_TERM
+                                              gmx_wallcycle  *GPU_FUNC_ARGUMENT(wcycle)) GPU_FUNC_TERM;
 
 /*! \brief
  * Launches middle stages of PME (FFT R2C, solving, FFT C2R) either on GPU or on CPU, depending on the run mode.
@@ -372,7 +373,7 @@ GPU_FUNC_QUALIFIER void pme_gpu_launch_spread(gmx_pme_t      *GPU_FUNC_ARGUMENT(
  * \param[in] wcycle            The wallclock counter.
  */
 GPU_FUNC_QUALIFIER void pme_gpu_launch_complex_transforms(gmx_pme_t       *GPU_FUNC_ARGUMENT(pme),
-                                                          gmx_wallcycle   *GPU_FUNC_ARGUMENT(wcycle)) GPU_FUNC_TERM
+                                                          gmx_wallcycle   *GPU_FUNC_ARGUMENT(wcycle)) GPU_FUNC_TERM;
 
 /*! \brief
  * Launches last stage of PME on GPU - force gathering and D2H force transfer.
@@ -382,10 +383,12 @@ GPU_FUNC_QUALIFIER void pme_gpu_launch_complex_transforms(gmx_pme_t       *GPU_F
  * \param[in]  forceTreatment    Tells how data should be treated. The gathering kernel either stores
  *                               the output reciprocal forces into the host array, or copies its contents to the GPU first
  *                               and accumulates. The reduction is non-atomic.
+ * \param[in]  useGpuFPmeReduction  Whether PME forces are reduced on GPU
  */
 GPU_FUNC_QUALIFIER void pme_gpu_launch_gather(const gmx_pme_t        *GPU_FUNC_ARGUMENT(pme),
                                               gmx_wallcycle          *GPU_FUNC_ARGUMENT(wcycle),
-                                              PmeForceOutputHandling  GPU_FUNC_ARGUMENT(forceTreatment)) GPU_FUNC_TERM
+                                              PmeForceOutputHandling  GPU_FUNC_ARGUMENT(forceTreatment),
+                                              bool                    GPU_FUNC_ARGUMENT(useGpuFPmeReduction)) GPU_FUNC_TERM;
 
 /*! \brief
  * Attempts to complete PME GPU tasks.
@@ -409,12 +412,12 @@ GPU_FUNC_QUALIFIER void pme_gpu_launch_gather(const gmx_pme_t        *GPU_FUNC_A
  * \returns                   True if the PME GPU tasks have completed
  */
 GPU_FUNC_QUALIFIER bool
-pme_gpu_try_finish_task(gmx_pme_t            *GPU_FUNC_ARGUMENT(pme),
-                        int                   GPU_FUNC_ARGUMENT(flags),
-                        gmx_wallcycle        *GPU_FUNC_ARGUMENT(wcycle),
-                        gmx::ForceWithVirial *GPU_FUNC_ARGUMENT(forceWithVirial),
-                        gmx_enerdata_t       *GPU_FUNC_ARGUMENT(enerd),
-                        GpuTaskCompletion     GPU_FUNC_ARGUMENT(completionKind)) GPU_FUNC_TERM_WITH_RETURN(false)
+    pme_gpu_try_finish_task(gmx_pme_t            *GPU_FUNC_ARGUMENT(pme),
+                            int                   GPU_FUNC_ARGUMENT(flags),
+                            gmx_wallcycle        *GPU_FUNC_ARGUMENT(wcycle),
+                            gmx::ForceWithVirial *GPU_FUNC_ARGUMENT(forceWithVirial),
+                            gmx_enerdata_t       *GPU_FUNC_ARGUMENT(enerd),
+                            GpuTaskCompletion     GPU_FUNC_ARGUMENT(completionKind)) GPU_FUNC_TERM_WITH_RETURN(false);
 
 /*! \brief
  * Blocks until PME GPU tasks are completed, and gets the output forces and virial/energy
@@ -426,13 +429,15 @@ pme_gpu_try_finish_task(gmx_pme_t            *GPU_FUNC_ARGUMENT(pme),
  * \param[in]  wcycle          The wallclock counter.
  * \param[out] forceWithVirial The output force and virial
  * \param[out] enerd           The output energies
+ * \param[in]  useGpuFPmeReduction  Whether PME forces are reduced on GPU
  */
 GPU_FUNC_QUALIFIER void
-pme_gpu_wait_and_reduce(gmx_pme_t            *GPU_FUNC_ARGUMENT(pme),
-                        int                   GPU_FUNC_ARGUMENT(flags),
-                        gmx_wallcycle        *GPU_FUNC_ARGUMENT(wcycle),
-                        gmx::ForceWithVirial *GPU_FUNC_ARGUMENT(forceWithVirial),
-                        gmx_enerdata_t       *GPU_FUNC_ARGUMENT(enerd)) GPU_FUNC_TERM
+    pme_gpu_wait_and_reduce(gmx_pme_t            *GPU_FUNC_ARGUMENT(pme),
+                            int                   GPU_FUNC_ARGUMENT(flags),
+                            gmx_wallcycle        *GPU_FUNC_ARGUMENT(wcycle),
+                            gmx::ForceWithVirial *GPU_FUNC_ARGUMENT(forceWithVirial),
+                            gmx_enerdata_t       *GPU_FUNC_ARGUMENT(enerd),
+                            bool                  GPU_FUNC_ARGUMENT(useGpuFPmeReduction)) GPU_FUNC_TERM;
 
 /*! \brief
  * The PME GPU reinitialization function that is called both at the end of any PME computation and on any load balancing.
@@ -448,9 +453,25 @@ pme_gpu_wait_and_reduce(gmx_pme_t            *GPU_FUNC_ARGUMENT(pme),
  * \param[in] wcycle         The wallclock counter.
  */
 GPU_FUNC_QUALIFIER void pme_gpu_reinit_computation(const gmx_pme_t *GPU_FUNC_ARGUMENT(pme),
-                                                   gmx_wallcycle   *GPU_FUNC_ARGUMENT(wcycle)) GPU_FUNC_TERM
+                                                   gmx_wallcycle   *GPU_FUNC_ARGUMENT(wcycle)) GPU_FUNC_TERM;
 
 
-/*! \brief Get pointer to device copy of coordinate data. */
-GPU_FUNC_QUALIFIER void *pme_gpu_get_device_x(const gmx_pme_t *GPU_FUNC_ARGUMENT(pme)) GPU_FUNC_TERM_WITH_RETURN(nullptr)
+/*! \brief Get pointer to device copy of coordinate data.
+ * \param[in] pme            The PME data structure.
+ * \returns                  Pointer to coordinate data
+ */
+GPU_FUNC_QUALIFIER void *pme_gpu_get_device_x(const gmx_pme_t *GPU_FUNC_ARGUMENT(pme)) GPU_FUNC_TERM_WITH_RETURN(nullptr);
+
+/*! \brief Get pointer to device copy of force data.
+ * \param[in] pme            The PME data structure.
+ * \returns                  Pointer to force data
+ */
+GPU_FUNC_QUALIFIER void *pme_gpu_get_device_f(const gmx_pme_t *GPU_FUNC_ARGUMENT(pme)) GPU_FUNC_TERM_WITH_RETURN(nullptr);
+
+/*! \brief Get pointer to the device synchronizer object that allows syncing on PME force calculation completion
+ * \param[in] pme            The PME data structure.
+ * \returns                  Pointer to sychronizer
+ */
+GPU_FUNC_QUALIFIER GpuEventSynchronizer *pme_gpu_get_f_ready_synchronizer(const gmx_pme_t *GPU_FUNC_ARGUMENT(pme)) GPU_FUNC_TERM_WITH_RETURN(nullptr);
+
 #endif

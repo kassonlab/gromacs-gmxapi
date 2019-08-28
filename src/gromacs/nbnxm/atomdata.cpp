@@ -1010,6 +1010,7 @@ void nbnxn_atomdata_copy_x_to_nbat_x(const Nbnxm::GridSet     &gridSet,
 {
     int gridBegin = 0;
     int gridEnd   = 0;
+
     switch (locality)
     {
         case Nbnxm::AtomLocality::All:
@@ -1407,7 +1408,7 @@ static void nbnxn_atomdata_add_nbat_f_to_f_stdreduce(nbnxn_atomdata_t *nbat,
                 int i1 = (b+1)*NBNXN_BUFFERFLAG_SIZE*nbat->fstride;
 
                 nfptr = 0;
-                for (int out = 1; out < gmx::ssize(nbat->out); out++)
+                for (gmx::index out = 1; out < gmx::ssize(nbat->out); out++)
                 {
                     if (bitmask_is_set(flags->flag[b], out))
                     {
@@ -1437,32 +1438,23 @@ static void nbnxn_atomdata_add_nbat_f_to_f_stdreduce(nbnxn_atomdata_t *nbat,
     }
 }
 
+
 /* Add the force array(s) from nbnxn_atomdata_t to f */
-void reduceForces(nbnxn_atomdata_t          *nbat,
-                  const Nbnxm::AtomLocality  locality,
-                  const Nbnxm::GridSet      &gridSet,
-                  rvec                      *f)
+template <bool  useGpu>
+void reduceForces(nbnxn_atomdata_t                *nbat,
+                  const Nbnxm::AtomLocality        locality,
+                  const Nbnxm::GridSet            &gridSet,
+                  rvec                            *f,
+                  void                            *pmeFDeviceBuffer,
+                  GpuEventSynchronizer            *pmeForcesReady,
+                  gmx_nbnxn_gpu_t                 *gpu_nbv,
+                  bool                             useGpuFPmeReduction,
+                  bool                             accumulateForce)
 {
     int a0 = 0;
     int na = 0;
-    switch (locality)
-    {
-        case Nbnxm::AtomLocality::All:
-            a0 = 0;
-            na = gridSet.numRealAtomsTotal();
-            break;
-        case Nbnxm::AtomLocality::Local:
-            a0 = 0;
-            na = gridSet.numRealAtomsLocal();
-            break;
-        case Nbnxm::AtomLocality::NonLocal:
-            a0 = gridSet.numRealAtomsLocal();
-            na = gridSet.numRealAtomsTotal() - gridSet.numRealAtomsLocal();
-            break;
-        case Nbnxm::AtomLocality::Count:
-            GMX_ASSERT(false, "Count is invalid locality specifier");
-            break;
-    }
+
+    nbnxn_get_atom_range(locality, gridSet, &a0, &na);
 
     if (na == 0)
     {
@@ -1470,46 +1462,80 @@ void reduceForces(nbnxn_atomdata_t          *nbat,
         return;
     }
 
-    int nth = gmx_omp_nthreads_get(emntNonbonded);
-
-    if (nbat->out.size() > 1)
+    if (useGpu)
     {
-        if (locality != Nbnxm::AtomLocality::All)
-        {
-            gmx_incons("add_f_to_f called with nout>1 and locality!=eatAll");
-        }
-
-        /* Reduce the force thread output buffers into buffer 0, before adding
-         * them to the, differently ordered, "real" force buffer.
-         */
-        if (nbat->bUseTreeReduce)
-        {
-            nbnxn_atomdata_add_nbat_f_to_f_treereduce(nbat, nth);
-        }
-        else
-        {
-            nbnxn_atomdata_add_nbat_f_to_f_stdreduce(nbat, nth);
-        }
+        Nbnxm::nbnxn_gpu_add_nbat_f_to_f(locality,
+                                         gpu_nbv,
+                                         pmeFDeviceBuffer,
+                                         pmeForcesReady,
+                                         a0, na,
+                                         useGpuFPmeReduction,
+                                         accumulateForce);
     }
-#pragma omp parallel for num_threads(nth) schedule(static)
-    for (int th = 0; th < nth; th++)
+    else
     {
-        try
+        int nth = gmx_omp_nthreads_get(emntNonbonded);
+
+        if (nbat->out.size() > 1)
         {
-            nbnxn_atomdata_add_nbat_f_to_f_part(gridSet, *nbat,
-                                                nbat->out[0],
-                                                a0 + ((th + 0)*na)/nth,
-                                                a0 + ((th + 1)*na)/nth,
-                                                f);
+            if (locality != Nbnxm::AtomLocality::All)
+            {
+                gmx_incons("add_f_to_f called with nout>1 and locality!=eatAll");
+            }
+
+            /* Reduce the force thread output buffers into buffer 0, before adding
+             * them to the, differently ordered, "real" force buffer.
+             */
+            if (nbat->bUseTreeReduce)
+            {
+                nbnxn_atomdata_add_nbat_f_to_f_treereduce(nbat, nth);
+            }
+            else
+            {
+                nbnxn_atomdata_add_nbat_f_to_f_stdreduce(nbat, nth);
+            }
         }
-        GMX_CATCH_ALL_AND_EXIT_WITH_FATAL_ERROR;
+#pragma omp parallel for num_threads(nth) schedule(static)
+        for (int th = 0; th < nth; th++)
+        {
+            try
+            {
+                nbnxn_atomdata_add_nbat_f_to_f_part(gridSet, *nbat,
+                                                    nbat->out[0],
+                                                    a0 + ((th + 0)*na)/nth,
+                                                    a0 + ((th + 1)*na)/nth,
+                                                    f);
+            }
+            GMX_CATCH_ALL_AND_EXIT_WITH_FATAL_ERROR;
+        }
     }
 }
+template
+void reduceForces<true>(nbnxn_atomdata_t             *nbat,
+                        const Nbnxm::AtomLocality     locality,
+                        const Nbnxm::GridSet         &gridSet,
+                        rvec                         *f,
+                        void                         *fpme,
+                        GpuEventSynchronizer         *pmeForcesReady,
+                        gmx_nbnxn_gpu_t              *gpu_nbv,
+                        bool                          useGpuFPmeReduction,
+                        bool                          accumulateForce);
 
-void nbnxn_atomdata_add_nbat_fshift_to_fshift(const nbnxn_atomdata_t *nbat,
-                                              rvec                   *fshift)
+template
+void reduceForces<false>(nbnxn_atomdata_t             *nbat,
+                         const Nbnxm::AtomLocality     locality,
+                         const Nbnxm::GridSet         &gridSet,
+                         rvec                         *f,
+                         void                         *fpme,
+                         GpuEventSynchronizer         *pmeForcesReady,
+                         gmx_nbnxn_gpu_t              *gpu_nbv,
+                         bool                          useGpuFPmeReduction,
+                         bool                          accumulateForce);
+
+void nbnxn_atomdata_add_nbat_fshift_to_fshift(const nbnxn_atomdata_t   &nbat,
+                                              gmx::ArrayRef<gmx::RVec>  fshift)
 {
-    gmx::ArrayRef<const nbnxn_atomdata_output_t> outputBuffers = nbat->out;
+    gmx::ArrayRef<const nbnxn_atomdata_output_t> outputBuffers = nbat.out;
 
     for (int s = 0; s < SHIFTS; s++)
     {
@@ -1521,6 +1547,32 @@ void nbnxn_atomdata_add_nbat_fshift_to_fshift(const nbnxn_atomdata_t *nbat,
             sum[YY] += out.fshift[s*DIM+YY];
             sum[ZZ] += out.fshift[s*DIM+ZZ];
         }
-        rvec_inc(fshift[s], sum);
+        fshift[s] += sum;
+    }
+}
+
+void nbnxn_get_atom_range(const Nbnxm::AtomLocality        atomLocality,
+                          const Nbnxm::GridSet            &gridSet,
+                          int                             *atomStart,
+                          int                             *nAtoms)
+{
+
+    switch (atomLocality)
+    {
+        case Nbnxm::AtomLocality::All:
+            *atomStart = 0;
+            *nAtoms    = gridSet.numRealAtomsTotal();
+            break;
+        case Nbnxm::AtomLocality::Local:
+            *atomStart = 0;
+            *nAtoms    = gridSet.numRealAtomsLocal();
+            break;
+        case Nbnxm::AtomLocality::NonLocal:
+            *atomStart = gridSet.numRealAtomsLocal();
+            *nAtoms    = gridSet.numRealAtomsTotal() - gridSet.numRealAtomsLocal();
+            break;
+        case Nbnxm::AtomLocality::Count:
+            GMX_ASSERT(false, "Count is invalid locality specifier");
+            break;
     }
 }

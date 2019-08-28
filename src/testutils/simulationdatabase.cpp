@@ -109,6 +109,15 @@ const MdpFileValues mdpFileValueDatabase_g
                            1, 2, 3, 4, 5, 6, 7, 8, 9
                        } }
     },
+    // Simple system with 2 nearby water molecules
+    {
+        "spc2", { { },
+                  {
+                      // TODO This test case is not currently used, so we
+                      // have not tested which rank counts work.
+                      1, 2, 3, 4, 5, 6, 7, 8, 9
+                  } }
+    },
     // Simple system with 216 water molecules, condensed phase
     {
         "spc216", { { },
@@ -240,7 +249,6 @@ const MdpFileValues mdpFileValueDatabase_g
                                   sc-alpha            = 0.5
                                   sc-r-power          = 6
                                   nstdhdl             = 4
-                                  init-lambda-state   = 3
                                   mass-lambdas        = 0.0 0.5 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0
                                   bonded-lambdas      = 0.0 0.0 0.0 0.5 1.0 1.0 1.0 1.0 1.0 1.0 1.0
                                   restraint-lambdas   = 0.0 0.0 0.0 0.0 0.0 0.5 1.0 1.0 1.0 1.0 1.0

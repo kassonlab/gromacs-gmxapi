@@ -153,15 +153,16 @@ int multisim_min(const gmx_multisim_t *ms, int nmin, int n)
 
 /* TODO Specialize this routine into init-time and loop-time versions?
    e.g. bReadEkin is only true when restoring from checkpoint */
-void compute_globals(FILE *fplog, gmx_global_stat *gstat, t_commrec *cr, t_inputrec *ir,
+void compute_globals(gmx_global_stat *gstat, t_commrec *cr, const t_inputrec *ir,
                      t_forcerec *fr, gmx_ekindata_t *ekind,
-                     t_state *state, t_mdatoms *mdatoms,
+                     const rvec *x, const rvec *v, const matrix box,
+                     real vdwLambda, const t_mdatoms *mdatoms,
                      t_nrnb *nrnb, t_vcm *vcm, gmx_wallcycle_t wcycle,
                      gmx_enerdata_t *enerd, tensor force_vir, tensor shake_vir, tensor total_vir,
                      tensor pres, rvec mu_tot, gmx::Constraints *constr,
                      gmx::SimulationSignaller *signalCoordinator,
-                     matrix box, int *totalNumberOfBondedInteractions,
-                     gmx_bool *bSumEkinhOld, int flags)
+                     const matrix lastbox, int *totalNumberOfBondedInteractions,
+                     gmx_bool *bSumEkinhOld, const int flags)
 {
     gmx_bool bEner, bPres, bTemp;
     gmx_bool bStopCM, bGStat,
@@ -202,15 +203,16 @@ void compute_globals(FILE *fplog, gmx_global_stat *gstat, t_commrec *cr, t_input
         }
         if (!bReadEkin)
         {
-            calc_ke_part(state, &(ir->opts), mdatoms, ekind, nrnb, bEkinAveVel);
+            calc_ke_part(
+                    x, v, box,
+                    &(ir->opts), mdatoms, ekind, nrnb, bEkinAveVel);
         }
     }
 
     /* Calculate center of mass velocity if necessary, also parallellized */
     if (bStopCM)
     {
-        calc_vcm_grp(0, mdatoms->homenr, mdatoms,
-                     state->x.rvec_array(), state->v.rvec_array(), vcm);
+        calc_vcm_grp(*mdatoms, x, v, vcm);
     }
 
     if (bTemp || bStopCM || bPres || bEner || bConstrain || bCheckNumberOfBondedInteractions)
@@ -239,23 +241,6 @@ void compute_globals(FILE *fplog, gmx_global_stat *gstat, t_commrec *cr, t_input
             signalCoordinator->finalizeSignals();
             *bSumEkinhOld = FALSE;
         }
-    }
-
-    /* Do center of mass motion removal */
-    if (bStopCM)
-    {
-        check_cm_grp(fplog, vcm, ir, 1);
-        /* At initialization, do not pass x with acceleration-correction mode
-         * to avoid (incorrect) correction of the initial coordinates.
-         */
-        rvec *xPtr = nullptr;
-        if (vcm->mode == ecmANGULAR || (vcm->mode == ecmLINEAR_ACCELERATION_CORRECTION && !(flags & CGLO_INITIALIZATION)))
-        {
-            xPtr = state->x.rvec_array();
-        }
-        do_stopcm_grp(*mdatoms,
-                      xPtr, state->v.rvec_array(), *vcm);
-        inc_nrnb(nrnb, eNR_STOPCM, mdatoms->homenr);
     }
 
     if (bEner)
@@ -290,7 +275,7 @@ void compute_globals(FILE *fplog, gmx_global_stat *gstat, t_commrec *cr, t_input
          * Use the box from last timestep since we already called update().
          */
 
-        enerd->term[F_PRES] = calc_pres(fr->ePBC, ir->nwall, box, ekind->ekin, total_vir, pres);
+        enerd->term[F_PRES] = calc_pres(fr->ePBC, ir->nwall, lastbox, ekind->ekin, total_vir, pres);
     }
 
     /* ##########  Long range energy information ###### */
@@ -302,7 +287,7 @@ void compute_globals(FILE *fplog, gmx_global_stat *gstat, t_commrec *cr, t_input
            total_vir and pres tensors */
 
         const DispersionCorrection::Correction correction =
-            fr->dispersionCorrection->calculate(box, state->lambda[efptVDW]);
+            fr->dispersionCorrection->calculate(lastbox, vdwLambda);
 
         if (bEner)
         {

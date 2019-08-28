@@ -547,7 +547,14 @@ void push_at (t_symtab *symtab, PreprocessingAtomTypes *at, PreprocessingBondAto
 
     if ((nr = at->atomTypeFromName(type)) != NOTSET)
     {
-        auto message = gmx::formatString("Overriding atomtype %s", type);
+        auto message = gmx::formatString
+                ("Atomtype %s was defined previously (e.g. in the forcefield files), "
+                "and has now been defined again. This could happen e.g. if you would "
+                "use a self-contained molecule .itp file that duplicates or replaces "
+                "the contents of the standard force-field files. You should check "
+                "the contents of your files and remove such repetition. If you know "
+                "you should override the previous definition, then you could choose "
+                "to suppress this warning with -maxwarn.", type);
         warning(wi, message);
         if ((nr = at->setType(nr, symtab, *atom, type, interactionType, batype_nr,
                               atomnr)) == NOTSET)
@@ -655,7 +662,13 @@ static void push_bondtype(InteractionsOfType              *bt,
                 else if (!haveWarned)
                 {
                     auto message = gmx::formatString
-                            ("Overriding %s parameters.%s",
+                            ("Bondtype %s was defined previously (e.g. in the forcefield files), "
+                            "and has now been defined again. This could happen e.g. if you would "
+                            "use a self-contained molecule .itp file that duplicates or replaces "
+                            "the contents of the standard force-field files. You should check "
+                            "the contents of your files and remove such repetition. If you know "
+                            "you should override the previous definition, then you could choose "
+                            "to suppress this warning with -maxwarn.%s",
                             interaction_function[ftype].longname,
                             (ftype == F_PDIHS) ?
                             "\nUse dihedraltype 9 to allow several multiplicity terms. Only consecutive "
@@ -1128,7 +1141,14 @@ void push_nbt(Directive d, t_nbparam **nbt, PreprocessingAtomTypes *atypes,
         }
         if (!bId)
         {
-            auto message = gmx::formatString("Overriding non-bonded parameters,");
+            auto message = gmx::formatString
+                    ("Non-bonded parameters were defined previously (e.g. in the forcefield files), "
+                    "and have now been defined again. This could happen e.g. if you would "
+                    "use a self-contained molecule .itp file that duplicates or replaces "
+                    "the contents of the standard force-field files. You should check "
+                    "the contents of your files and remove such repetition. If you know "
+                    "you should override the previous definitions, then you could choose "
+                    "to suppress this warning with -maxwarn.");
             warning(wi, message);
             fprintf(stderr, "  old:");
             for (i = 0; i < nrfp; i++)
@@ -1500,7 +1520,7 @@ static bool findIfAllNBAtomsMatch(gmx::ArrayRef<const int>      atomsFromParamet
     }
     else if (bB)
     {
-        for (int i = 0; i < atomsFromCurrentParameter.ssize(); i++)
+        for (gmx::index i = 0; i < atomsFromCurrentParameter.ssize(); i++)
         {
             if (at->atom[atomsFromCurrentParameter[i]].typeB != atomsFromParameterArray[i])
             {
@@ -1511,7 +1531,7 @@ static bool findIfAllNBAtomsMatch(gmx::ArrayRef<const int>      atomsFromParamet
     }
     else
     {
-        for (int i = 0; i < atomsFromCurrentParameter.ssize(); i++)
+        for (gmx::index i = 0; i < atomsFromCurrentParameter.ssize(); i++)
         {
             if (at->atom[atomsFromCurrentParameter[i]].type != atomsFromParameterArray[i])
             {
@@ -1726,7 +1746,7 @@ static bool findIfAllParameterAtomsMatch(gmx::ArrayRef<const int>      atomsFrom
     }
     else if (bB)
     {
-        for (int i = 0; i < atomsFromCurrentParameter.ssize(); i++)
+        for (gmx::index i = 0; i < atomsFromCurrentParameter.ssize(); i++)
         {
             if (atypes->bondAtomTypeFromAtomType(
                         at->atom[atomsFromCurrentParameter[i]].typeB) != atomsFromParameterArray[i])
@@ -1738,7 +1758,7 @@ static bool findIfAllParameterAtomsMatch(gmx::ArrayRef<const int>      atomsFrom
     }
     else
     {
-        for (int i = 0; i < atomsFromCurrentParameter.ssize(); i++)
+        for (gmx::index i = 0; i < atomsFromCurrentParameter.ssize(); i++)
         {
             if (atypes->bondAtomTypeFromAtomType(
                         at->atom[atomsFromCurrentParameter[i]].type) != atomsFromParameterArray[i])

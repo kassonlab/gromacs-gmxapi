@@ -59,8 +59,9 @@
 
 #include "gromacs/utility/basedefinitions.h"
 #include "gromacs/utility/classhelpers.h"
-#include "gromacs/utility/current_function.h"
 #include "gromacs/utility/gmxassert.h"
+
+#include "current_function.h"
 
 namespace gmx
 {
@@ -389,7 +390,7 @@ class GromacsException : public std::exception
  */
 template <class Exception, class Tag, class T>
 inline
-typename std::enable_if<std::is_base_of<GromacsException, Exception>::value, Exception>::type
+std::enable_if_t<std::is_base_of<GromacsException, Exception>::value, Exception>
 operator<<(Exception ex, const ExceptionInfo<Tag, T> &item)
 {
     ex.setInfo(item);

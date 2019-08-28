@@ -608,7 +608,7 @@ void berendsen_pcoupl(FILE *fplog, int64_t step,
         case epctSURFACETENSION:
             /* ir->ref_p[0/1] is the reference surface-tension times *
              * the number of surfaces                                */
-            if (ir->compress[ZZ][ZZ] != 0.0f)
+            if (ir->compress[ZZ][ZZ] != 0.0F)
             {
                 p_corr_z = dt/ir->tau_p*(ir->ref_p[ZZ][ZZ] - pres[ZZ][ZZ]);
             }
@@ -686,7 +686,7 @@ void berendsen_pscale(const t_inputrec *ir, const matrix mu,
                       t_nrnb *nrnb)
 {
     ivec   *nFreeze = ir->opts.nFreeze;
-    int     n, d;
+    int     d;
     int     nthreads gmx_unused;
 
 #ifndef __clang_analyzer__
@@ -695,7 +695,7 @@ void berendsen_pscale(const t_inputrec *ir, const matrix mu,
 
     /* Scale the positions */
 #pragma omp parallel for num_threads(nthreads) schedule(static)
-    for (n = start; n < start+nr_atoms; n++)
+    for (int n = start; n < start+nr_atoms; n++)
     {
         // Trivial OpenMP region that does not throw
         int g;

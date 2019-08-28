@@ -51,7 +51,6 @@ The framework ensures that an Operation instance is executed no more than once.
 
 __all__ = ['computed_result',
            'function_wrapper',
-           'make_operation'
            ]
 
 import abc
@@ -106,33 +105,31 @@ class OutputData(object):
 
     @property
     def name(self):
+        """The name of the published output."""
         return self._name
 
     # TODO: Change to regular member function and add ensemble member arg.
     @property
     def done(self):
+        """Ensemble completion status for this output."""
         return all(self._done)
 
-    # TODO: Change to regular member function and add ensemble member arg.
-    @property
-    def data(self):
+    def data(self, member: int = None):
+        """Access the raw data for localized output for the ensemble or the specified member."""
         if not self.done:
             raise exceptions.ApiError('Attempt to read before data has been published.')
         if self._data is None or None in self._data:
             raise exceptions.ApiError('Data marked "done" but contains null value.')
-        # For intuitive use in non-ensemble cases, we represent data as bare scalars
-        # when possible. It is easy to cast scalars to lists of length 1. In the future,
-        # we may distinguish between data of shape () and shape (1,), but we will need
-        # to be careful with semantics. We are already starting to adopt a rule-of-thumb
-        # that data objects assume the minimum dimensionality necessary unless told
-        # otherwise, and we could make that a hard rule if it doesn't make other things
-        # too difficult.
-        if self._description.width == 1:
-            return self._data[0]
+        if member is not None:
+            return self._data[member]
         else:
             return self._data
 
     def set(self, value, member: int):
+        """Set local data and mark as completed.
+
+        Used internally to maintain the data store.
+        """
         if self._description.dtype == datamodel.NDArray:
             self._data[member] = datamodel.ndarray(value)
         else:
@@ -140,6 +137,16 @@ class OutputData(object):
         self._done[member] = True
 
     def reset(self):
+        """Reinitialize the data store.
+
+        Note:
+            This is a workaround until the execution model is more developed.
+
+        Todo:
+            Remove this method when all operation handles provide factories to
+            reinstantiate on new Contexts and/or with new inputs.
+
+        """
         self._done = [False] * self._description.width
         self._data = [None] * self._description.width
 
@@ -149,7 +156,6 @@ class EnsembleDataSource(object):
 
     Note that data sources may be Futures.
     """
-
     def __init__(self, source=None, width=1, dtype=None):
         self.source = source
         self.width = width
@@ -201,9 +207,9 @@ class DataSourceCollection(collections.OrderedDict):
             # TODO: Handle gmxapi Futures stored as dictionary elements!
             if not isinstance(value, valid_source_types):
                 if isinstance(value, collections.abc.Iterable):
-                    # Note: Here we assume that iterables are arrays first and ensemble data if necessary.
-                    # Warning: the iterable may contain Future objects.
-                    # TODO: revisit as we sort out data shape and Future protocol.
+                    # Iterables here are treated as arrays, but we do not have a robust typing system.
+                    # Warning: In the initial implementation, the iterable may contain Future objects.
+                    # TODO: (#2993) Revisit as we sort out data shape and Future protocol.
                     value = datamodel.ndarray(value)
                 elif hasattr(value, 'result'):
                     # A Future object.
@@ -218,9 +224,9 @@ class DataSourceCollection(collections.OrderedDict):
             raise exceptions.TypeError('Data must be named with str type.')
         if not isinstance(value, valid_source_types):
             if isinstance(value, collections.abc.Iterable):
-                # Note: Here we assume that iterables are arrays first and ensemble data if necessary.
-                # Warning: the iterable may contain Future objects.
-                # TODO: revisit as we sort out data shape and Future protocol.
+                # Iterables here are treated as arrays, but we do not have a robust typing system.
+                # Warning: In the initial implementation, the iterable may contain Future objects.
+                # TODO: (#2993) Revisit as we sort out data shape and Future protocol.
                 value = datamodel.ndarray(value)
             elif hasattr(value, 'result'):
                 # A Future object.
@@ -255,18 +261,20 @@ def computed_result(function):
     functions may force immediate resolution of data dependencies and/or may
     be called more than once to satisfy dependent operation inputs.
     """
+
+    # Attempt to inspect function signature. Introspection can fail, so we catch
+    # the various exceptions. We re-raise as ApiError, indicating a bug, because
+    # we should do more to handle this intelligently and provide better user
+    # feedback.
+    # TODO: Figure out what to do with exceptions where this introspection
+    #  and rebinding won't work.
+    # ref: https://docs.python.org/3/library/inspect.html#introspecting-callables-with-the-signature-object
     try:
         sig = inspect.signature(function)
     except TypeError as T:
         raise exceptions.ApiError('Can not inspect type of provided function argument.') from T
     except ValueError as V:
         raise exceptions.ApiError('Can not inspect provided function signature.') from V
-
-    # Note: Introspection could fail.
-    # Note: ApiError indicates a bug because we should handle this more intelligently.
-    # TODO: Figure out what to do with exceptions where this introspection
-    #  and rebinding won't work.
-    # ref: https://docs.python.org/3/library/inspect.html#introspecting-callables-with-the-signature-object
 
     @functools.wraps(function)
     def new_function(*args, **kwargs):
@@ -418,7 +426,7 @@ class InputCollectionDescription(collections.OrderedDict):
 
         This is a helper function to allow calling code to characterize the
         arguments in a Python function call with hints from the factory that is
-        initializing an operation. Its most useful functionality is to  allows a
+        initializing an operation. Its most useful functionality is to allow a
         factory to accept positional arguments where named inputs are usually
         required. It also allows data sources to participate in multiple
         DataSourceCollections with minimal constraints.
@@ -432,20 +440,10 @@ class InputCollectionDescription(collections.OrderedDict):
         # Factory accepts an unadvertised `input` keyword argument that is used as a default kwargs dict.
         # If present, kwargs['input'] is treated as an input "pack" providing _default_ values.
         input_kwargs = collections.OrderedDict()
-        # Note: we have also been allowing arguments with a `run` attribute
-        # to be used as execution dependencies, but we should probably stop that.
-        # TODO: (FR4) generalize
-        execution_dependencies = []
         if 'input' in kwargs:
             provided_input = kwargs.pop('input')
             if provided_input is not None:
-                # Note: we have also been allowing arguments with a `run` attribute
-                # to be used as execution dependencies, but we should probably stop that.
-                if hasattr(provided_input, 'run'):
-                    execution_dependencies.append(provided_input)
-                    # Note that execution_dependencies is not used after this point.
-                else:
-                    input_kwargs.update(provided_input)
+                input_kwargs.update(provided_input)
         # `function` may accept an `output` keyword argument that should not be supplied to the factory.
         for key, value in kwargs.items():
             if key == 'output':
@@ -720,7 +718,7 @@ class SourceResource(abc.ABC):
         return False
 
     @abc.abstractmethod
-    def get(self, name: str) -> 'OutputData':
+    def get(self, name: str) -> OutputData:
         ...
 
     @abc.abstractmethod
@@ -913,16 +911,6 @@ class AbstractOperation(abc.ABC):
         """
         ...
 
-    # TODO: Factory for translating an operation from one context to another.
-    # Interact with OperationDetails.operation_director
-    # E.g.
-    #
-    #     @classmethod
-    #     @abc.abstractmethod
-    #     def factory(cls, context=None, input: typing.Mapping = None) -> 'AbstractOperationHandle':
-    #         """Dispatch an Operation factory for the given Context and input."""
-    #         ...
-
 
 class OperationDetailsBase(abc.ABC):
     """Abstract base class for Operation details in this module's Python Context.
@@ -951,9 +939,13 @@ class OperationDetailsBase(abc.ABC):
     functions. However, an instance should be tied to a specific ResourceManager and
     Context, so weak references to these would be reasonable.
     """
-    # get a symbol we can use to annotate input and output types more specifically.
+    # get symbols we can use to annotate input and output types more specifically.
     Resources = typing.TypeVar('Resources')
+    # Having two TypeVars here probably has no semantic effect here, but it improves
+    # readability, and allows for cleaner migration if we want to use stronger typing
+    # or generics in the future.
     OutputDataProxyType = typing.TypeVar('OutputDataProxyType', bound=DataProxyBase)
+    PublishingDataProxyType = typing.TypeVar('PublishingDataProxyType', bound=DataProxyBase)
 
     @classmethod
     @abc.abstractmethod
@@ -961,6 +953,13 @@ class OperationDetailsBase(abc.ABC):
         """Mapping of named inputs and input type.
 
         Used to determine valid inputs before an Operation node is created.
+
+        Collaborations:
+            Related to the operation resource factory for this context.
+
+        ..  todo::
+            Better unification of this protocol, InputCollectionDescription, and
+            resource factory.
         """
         ...
 
@@ -970,14 +969,14 @@ class OperationDetailsBase(abc.ABC):
         ...
 
     @abc.abstractmethod
-    def publishing_data_proxy(self, *, instance, client_id) -> OutputDataProxyType:
+    def publishing_data_proxy(self, *, instance: SourceResource, client_id) -> PublishingDataProxyType:
         """Factory for Operation output publishing resources.
 
         Used internally when the operation is run with resources provided by instance."""
         ...
 
     @abc.abstractmethod
-    def output_data_proxy(self, instance) -> OutputDataProxyType:
+    def output_data_proxy(self, instance: SourceResource) -> OutputDataProxyType:
         """Get an object that can provide Futures for output data managed by instance."""
         ...
 
@@ -1034,7 +1033,7 @@ class OperationDetailsBase(abc.ABC):
 
     @classmethod
     @abc.abstractmethod
-    def resource_director(cls, *, input, output) -> Resources:
+    def resource_director(cls, *, input, output: PublishingDataProxyType) -> Resources:
         """a Director factory that helps build the Session Resources for the function.
 
         The Session launcher provides the director with all of the resources previously
@@ -1128,12 +1127,30 @@ class Future(object):
 
         Returns an object of the concrete type specified according to
         the operation that produces this Result.
+
+        Ensemble data are returned as a list. Scalar results or results from single
+        member ensembles are returned as scalars.
         """
         self.resource_manager.update_output()
         assert self.resource_manager.is_done(self.name)
         # Return ownership of concrete data
         handle = self.resource_manager.get(self.name)
-        return handle.data
+
+        # For intuitive use in non-ensemble cases, we represent data as bare scalars
+        # when possible. It is easier for users to cast scalars to lists of length 1
+        # than to introspect their own code to determine if a list of length 1 is
+        # part of an ensemble or not. The data model will become clearer as we
+        # develop more robust handling of multidimensional data and data flow topologies.
+        # In the future,
+        # we may distinguish between data of shape () and shape (1,), but we will need
+        # to be careful with semantics. We are already starting to adopt a rule-of-thumb
+        # that data objects assume the minimum dimensionality necessary unless told
+        # otherwise, and we could make that a hard rule if it doesn't make other things
+        # too difficult.
+        if self.description.width == 1:
+            return handle.data(member=0)
+        else:
+            return handle.data()
 
     def _reset(self):
         """Mark the Future "not done" to allow reexecution.
@@ -1171,13 +1188,18 @@ class Future(object):
 class OutputDescriptor(ProxyDataDescriptor):
     """Read-only data descriptor for proxied output access.
 
-    Knows how to get a Future from the resource manager.
+    Knows how to get a Future from a ResourceManager instance.
     """
+    # TODO: Reconcile the internal implementation details with the visibility and
+    #  usages of this class.
 
     def __get__(self, proxy: DataProxyBase, owner):
         if proxy is None:
             # Access through class attribute of owner class
             return self
+        if not isinstance(proxy._resource_instance, ResourceManager):
+            raise exceptions.ApiError(
+                'Data descriptor implementation assumes availability of a ResourceManager instance.')
         result_description = ResultDescription(dtype=self._dtype, width=proxy.ensemble_width)
         return proxy._resource_instance.future(name=self._name, description=result_description)
 
@@ -1985,9 +2007,9 @@ class ModuleContext(Context):
     __version__ = 0
 
     def __init__(self):
-        self.work_graph = {}
-        self.operations = {}
-        self.labels = {}
+        self.work_graph = dict()
+        self.operations = dict()
+        self.labels = dict()
 
     def node_builder(self, label=None) -> NodeBuilder:
         """Get a builder for a new work node to add an operation in this context."""
@@ -2044,6 +2066,8 @@ class OperationDirector(object):
                  label=None,
                  **kwargs):
         self.operation_details = operation_details
+        if not isinstance(context, Context):
+            raise exceptions.UsageError('Client context must be provided when adding an operation.')
         self.context = weakref.proxy(context)
         self.args = args
         self.kwargs = kwargs
@@ -2051,7 +2075,14 @@ class OperationDirector(object):
 
     def __call__(self) -> AbstractOperation:
         cls = self.operation_details
-        builder = self.context.node_builder(label=self.label)
+        try:
+            context = self.context
+        except ReferenceError as e:
+            context = None
+        if context is None:
+            # Bug: This should not be possible.
+            raise exceptions.ProtocolError('Operation director could not access its context.')
+        builder = context.node_builder(label=self.label)
         # TODO: Figure out what interface really needs to be passed and enforce it.
         # Currently this class uses OperationDetailsBase.signature and .resource_director.
         # Ref Node_builder subclasses for additional required interface.
@@ -2138,6 +2169,15 @@ def function_wrapper(output: dict = None):
 
             # TODO: This is a Context detail.
             def make_datastore(self, ensemble_width: int):
+                """Create a container to hold the resources for this operation node.
+
+                Overrides OperationDetailsBase.make_datastore() to provide an
+                implementation for the bound operation.
+
+                Used internally by the resource manager when setting up the node.
+                Evolution of the C++ framework for creating the Operation SessionResources
+                object will inform the future of this and the resource_director method.
+                """
                 datastore = {}
                 for name, dtype in self.output_description().items():
                     assert isinstance(dtype, type)
@@ -2147,40 +2187,94 @@ def function_wrapper(output: dict = None):
 
             @classmethod
             def signature(cls) -> InputCollectionDescription:
+                """Mapping of named inputs and input type.
+
+                Used to determine valid inputs before an Operation node is created.
+
+                Overrides OperationDetailsBase.signature() to provide an
+                implementation for the bound operation.
+                """
                 return cls._input_signature_description
 
             def output_description(self) -> OutputCollectionDescription:
+                """Mapping of available outputs and types for an existing Operation node.
+
+                Overrides OperationDetailsBase.output_description() to provide an
+                implementation for the bound operation.
+                """
                 return self._output_description
 
-            def publishing_data_proxy(self, *, instance, client_id: int):
-                assert isinstance(instance, ResourceManager)
+            def publishing_data_proxy(self,
+                                      *,
+                                      instance: SourceResource,
+                                      client_id: int) -> _publishing_data_proxy_type:
+                """Factory for Operation output publishing resources.
+
+                Used internally when the operation is run with resources provided by instance.
+
+                Overrides OperationDetailsBase.publishing_data_proxy() to provide an
+                implementation for the bound operation.
+                """
+                assert isinstance(instance, SourceResource)
                 return self._publishing_data_proxy_type(instance=instance, client_id=client_id)
 
-            def output_data_proxy(self, instance):
-                assert isinstance(instance, ResourceManager)
+            def output_data_proxy(self, instance: SourceResource) -> _output_data_proxy_type:
+                assert isinstance(instance, SourceResource)
                 return self._output_data_proxy_type(instance=instance)
 
             def __call__(self, resources: PyFunctionRunnerResources):
+                """Execute the operation with provided resources.
+
+                Resources are prepared in an execution context with aid of resource_director()
+
+                After the first call, output data has been published and is trivially
+                available through the output_data_proxy()
+
+                Overrides OperationDetailsBase.__call__().
+                """
                 self._runner(resources)
 
             @classmethod
             def make_uid(cls, input):
                 """The unique identity of an operation node tags the output with respect to the input.
 
-                TODO: We probably don't want to allow Operations to single-handedly determine their
-                 own uniqueness, but they probably should participate in the determination with the Context.
+                Combines information on the Operation details and the input to uniquely
+                identify the Operation node.
 
-                To be refined...
+                Arguments:
+                    input : A (collection of) data source(s) that can provide Fingerprints.
+
+                Used internally by the Context to manage ownership of data sources, to
+                locate resources for nodes in work graphs, and to manage serialization,
+                deserialization, and checkpointing of the work graph.
+
+                The UID is a detail of the generic Operation that _should_ be independent
+                of the Context details to allow the framework to manage when and where
+                an operation is executed.
+
+                Design notes on further refinement:
+                    TODO: Operations should not single-handedly determine their own uniqueness
+                    (but they should participate in the determination with the Context).
+
+                    Context implementations should be allowed to optimize handling of
+                    equivalent operations in different sessions or work graphs, but we do not
+                    yet TODO: guarantee that UIDs are globally unique!
+
+                    The UID should uniquely indicate an operation node based on that node's input.
+                    We need input fingerprinting to identify equivalent nodes in a work graph
+                    or distinguish nodes across work graphs.
+
                 """
-                # TODO: The UID should uniquely indicate an operation node based on that node's input.
-                # We need input fingerprinting to identify equivalent nodes in a work graph
-                # or distinguish nodes across work graphs.
                 uid = str(cls.__basename) + str(cls.__last_uid)
                 cls.__last_uid += 1
                 return uid
 
             @classmethod
-            def resource_director(cls, *, input=None, output=None) -> PyFunctionRunnerResources:
+            def resource_director(cls,
+                                  *,
+                                  input=None,
+                                  output: _publishing_data_proxy_type = None
+                                  ) -> PyFunctionRunnerResources:
                 """a Director factory that helps build the Session Resources for the function.
 
                 The Session launcher provides the director with all of the resources previously
@@ -2251,117 +2345,6 @@ def function_wrapper(output: dict = None):
         return helper
 
     return decorator
-
-
-def make_operation(implementation=None, input: dict = None, output: dict = None, docstring=None) -> typing.Callable:
-    """Generate a factory function for an Operation implemented in a class.
-
-    For an Operation implemented as a function, see function_wrapper().
-
-    For an Operation implemented as a class named MyOperation, generate a factory
-    function named "my_operation" with syntax like the following, in which "input"
-    and "output" are dictionaries mapping constructor arguments and object attributes
-    (respectively) to Python data types.
-
-    Example:
-            my_operation = make_operation(MyOperation, input={...}, output={...})
-
-    Can also be used as a parameterized class decorator::
-
-        @make_operation(input={...}, output={...})
-        class MyOperation(object):
-            ...
-
-    Each output accessor is guaranteed to be called at most once per operation
-    instance, regardless of the number of references held or the number of times
-    `result()` is called. However, where multiple outputs may or may not be
-    accessed separately, the API does not specify (at this time) whether all of
-    the output accessors will be called or at what time. This behavior may be
-    clarified in a future revision to the API specification or may be left as an
-    implementation detail for the execution context in which the results are
-    accessed.
-
-    Args:
-        implementation:
-        input:
-        output:
-        docstring:
-
-    Returns:
-    """
-    # If arguments are given, but cls is None, return a partially bound wrapper
-    # for use as a decorator.
-    if implementation is None:
-        def decorator(cls):
-            return make_operation(cls, input=input, output=output, docstring=docstring)
-
-        return decorator
-
-    # else: Define a function to instantiate and run the functor to populate the outputs.
-
-    # Objects produced by the factory may be serialized and deserialized. Among
-    # the simplest cases of recreating operation implementations in other environments,
-    # we use a protocol mapping named operations to importable code.
-    if hasattr(implementation, '__module__') and hasattr(implementation, '__name__'):
-        try:
-            module_name = importlib.util.resolve_name(name=implementation.__module__,
-                                                      package=None)
-            spec = importlib.util.find_spec(module_name)
-        except ValueError:
-            module_name = None
-            spec = None
-    else:
-        raise exceptions.ValueError(
-            'Could not determine an importable module for implementation {}'.format(implementation))
-    # TODO: we can try harder, such as to inspect the __file__ and other hints for something we can import.
-    if spec is None:
-        raise exceptions.UsageError('make_operation can only produce Operations from importable Python code.')
-    else:
-        name = implementation.__name__
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        assert hasattr(module, name)
-
-    logger.info('Generating factory for {} from {}'.format(name, spec))
-
-    # Define and dynamically execute a wrapper definition.
-    # TODO: Remove the need for key word signature inspection and get rid of this `compile()`
-    # This is confusing and way too hard to debug.
-    input_param_text = ''
-    input_arg_text = ''
-    if input is not None:
-        input_param_text = ', '.join([': '.join((key, value.__name__)) for key, value in input.items()])
-        input_param_text += ', '
-        input_arg_text = ', '.join(['='.join((key, key)) for key in input.keys()])
-    input_param_text += 'output=None'
-    source = ['def wrapper({}):',
-              '    obj = implementation({})',
-              '    for out, _ in output.items():',
-              '        setattr(output, out, getattr(obj, out))',
-              ''
-              ]
-    source[0] = source[0].format(input_param_text)
-    source[1] = source[1].format(input_arg_text)
-    code_object = compile(source='\n'.join(source), filename='<gmxapi dynamic>', mode='exec')
-    # Pass a namespace providing "implementation" and receiving the definition of "wrapper"
-    locals_container = {'implementation': implementation}
-    exec(code_object, locals_container, locals_container)
-    wrapper = locals_container['wrapper']
-
-    factory = function_wrapper(output=output)(wrapper)
-
-    def helper(*args, context=None, **kwargs):
-        # This operation factory is specialized for the default package Context.
-        if context is None:
-            context = current_context()
-        else:
-            raise exceptions.ApiError('Non-default context handling not implemented.')
-        handle = None
-        return handle
-
-    helper.__doc__ = docstring
-
-    return helper
 
 
 class GraphVariableDescriptor(object):
@@ -2825,6 +2808,12 @@ def while_loop(*, operation, condition, max_iteration=10):
     Arguments:
         operation: a callable that produces an instance of an operation when called with no arguments.
         condition: a callable that accepts an object (returned by ``operation``) that returns a boolean.
+        max_iteration: execute the loop no more than this many times (default 10)
+
+    Warning:
+        *max_iteration* is provided in part to minimize the cost of bugs in early
+        versions of this software. The default value may be changed or
+        removed on short notice.
 
     Warning:
         The protocol by which ``while_loop`` interacts with ``operation`` and ``condition``
@@ -2894,33 +2883,6 @@ def while_loop(*, operation, condition, max_iteration=10):
 
     return run_loop
 
-
-# def subgraph(variables=None):
-#     """Declare a Subgraph factory.
-#
-#     Produces an object used to create a *subgraph*, a fused operation that can
-#     be used as a node in a work graph or to create new operations with constructs
-#     like ``while_loop``.
-#
-#     Variables appear as both class attributes and instance attributes.
-#
-#     A Subgraph can be instantiated as a single-execution operation or as a more
-#     complex operation, such as with `while_loop`
-#
-#     The returned object is a factory containing a definition for a subclass of Subgraph.
-#
-#     context manager behavior
-#     ------------------------
-#
-#     The Subgraph has Python context manager behavior. Data flow within the
-#     subgraph can be configured in the region of a Python ``with`` block.
-#
-#     When the context manager is entered and exited, the subclass definition is replaced.
-#     """
-#     class UserSubgraph(Subgraph, variables=variables):
-#         pass
-#
-#     return UserSubgraph()
 
 def subgraph(variables=None):
     """Allow operations to be configured in a sub-context.
@@ -3005,96 +2967,7 @@ def make_constant(value: Scalar) -> Future:
     return future
 
 
-def scatter(array: datamodel.NDArray) -> EnsembleDataSource:
-    """Convert array data to parallel data.
-
-    Given data with shape (M,N), produce M parallel data sources of shape (N,).
-
-    The intention is to produce ensemble data flows from NDArray sources.
-    Currently, we only support zero and one dimensional data edge cross-sections.
-    In the future, it may be clearer if `scatter()` always converts a non-ensemble
-    dimension to an ensemble dimension or creates an error, but right now there
-    are cases where it is best just to raise a warning.
-
-    If provided data is a string, mapping, or scalar, there is no dimension to
-    scatter from, and DataShapeError is raised.
-    """
-    if isinstance(array, Future):
-        # scatter if possible
-        width = array.description.width
-        if width > 1:
-            return EnsembleDataSource(source=array, width=width)
-            # Recipient will need to call `result()`.
-        else:
-            raise exceptions.ValueError('No dimension to scatter from.')
-    if isinstance(array, EnsembleDataSource):
-        # scatter if possible
-        if array.width > 1:
-            raise exceptions.DataShapeError('Cannot scatter. Only 1-D ensemble data is supported.')
-        array = array.source
-        if isinstance(array, Future):
-            return scatter(array)
-        elif isinstance(array, datamodel.NDArray):
-            # Get the first meaningful scattering dimension
-            width = 0
-            source = array[:]
-            for scatter_dimension, width in enumerate(array.shape):
-                if width > 1:
-                    break
-                else:
-                    # Strip unused outer dimensions.
-                    source = source[0]
-            if width > 1:
-                return EnsembleDataSource(source=source, width=width)
-            else:
-                raise exceptions.ValueError('No dimension to scatter from.')
-    if isinstance(array, (str, bytes)):
-        raise exceptions.DataShapeError(
-            'Strings are not treated as sequences of characters to automatically scatter from.')
-    if isinstance(array, collections.abc.Iterable):
-        # scatter
-        array = datamodel.ndarray(array)
-        return scatter(array)
-
-
-def gather(data: EnsembleDataSource) -> Future:
-    """Combines parallel data to an NDArray source.
-
-    If the data source has an ensemble shape of (1,), result is an NDArray of
-    length 1 if for a scalar data source. For a NDArray data source, the
-    dimensionality of the NDArray is not increased, the original NDArray is
-    produced, and gather() is a no-op.
-
-    This may change in future versions so that gather always converts an
-    ensemble dimension to an array dimension.
-    """
-    # TODO: Could be used as part of the clean up for join_arrays to convert a scalar Future to a 1-D list.
-    # Note: Clearly, the implementation of gather() is an implementation detail of the execution Context.
-    if hasattr(data, 'width'):
-        if data.width == 1:
-            # TODO: Do we want to allow this silent no-op?
-            if isinstance(data.source, datamodel.NDArray):
-                return data.source
-            elif isinstance(data.source, Future):
-                raise exceptions.ApiError('gather() not implemented for Future')
-            else:
-                raise exceptions.UsageError('Nothing to gather.')
-
-        assert data.width > 1
-        if isinstance(data.source, Future):
-            manager = ProxyResourceManager(proxied_future=data.source, width=1, function=datamodel.ndarray)
-        else:
-            if isinstance(data.source, datamodel.NDArray):
-                raise exceptions.ValueError('higher-dimensional NDArrays not yet implemented.')
-            manager = StaticSourceManager(proxied_data=data.source, width=1, function=datamodel.ndarray)
-        description = ResultDescription(dtype=datamodel.NDArray, width=1)
-        future = Future(resource_manager=manager, name=data.source.name, description=description)
-        return future
-    else:
-        raise exceptions.TypeError('Expected data with "width".')
-
-
-def logical_not(value: bool) -> Future:
+def logical_not(value: bool):
     """Boolean negation.
 
     If the argument is a gmxapi compatible Data or Future object, a new View or
@@ -3109,18 +2982,3 @@ def logical_not(value: bool) -> Future:
     # within those Context implementations could be simplified.
     operation = function_wrapper(output={'data': bool})(lambda data=bool(): not bool(data))
     return operation(data=value).output.data
-
-
-class File(Future):
-    """Placeholder for input/output files.
-
-    Arguments:
-        suffix: string to be appended to actual file name.
-
-    Note:
-        Some programs have logic influenced by aspects of the text in a file
-        argument. The ``suffix`` key word parameter allows the proxied file's
-        actual name to be constrained when passed as an argument to a program
-        expecting a particular suffix.
-    """
-    assert not gmx.version.has_feature('fr21')

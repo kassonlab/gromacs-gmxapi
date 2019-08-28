@@ -59,8 +59,6 @@ setup(
     setup_requires=['setuptools>=28'],
 
     packages=['gmxapi', 'gmxapi.simulation'],
-    package_data={'gmxapi': ['data/topol.tpr'],
-                  },
     cmake_args=['-DCMAKE_OSX_DEPLOYMENT_TARGET:STRING=10.9',
                 '-DCMAKE_OSX_ARCHITECTURES:STRING=x86_64',
                 ]

@@ -310,13 +310,14 @@ include(gmxManageOpenMP)
 include(gmxCFlags)
 gmx_c_flags()
 
-# This variable should be used for additional compiler flags which are not
-# generated in gmxCFlags nor are SIMD or MPI related.
+# These variables should be used for CMake-style lists (ie. separated
+# by semicolons) of additional compiler flags which are not generated
+# in gmxCFlags nor are SIMD or MPI related.
 #
 # TODO These variables should be consolidated into
 # EXTRA_COMPILER_FLAGS so that we we don't perpetrate bugs where
 # things that work in C compilation (e.g. merging from old branches)
-# also work for C++ compilation.
+# might not also work for C++ compilation.
 set(EXTRA_C_FLAGS "")
 set(EXTRA_CXX_FLAGS "")
 
@@ -360,6 +361,7 @@ check_include_files(time.h       HAVE_TIME_H)
 check_include_files(sys/time.h   HAVE_SYS_TIME_H)
 check_include_files(io.h         HAVE_IO_H)
 check_include_files(sched.h      HAVE_SCHED_H)
+check_include_files(xmmintrin.h  HAVE_XMMINTRIN_H)
 
 include(CheckCXXSymbolExists)
 check_cxx_symbol_exists(gettimeofday      sys/time.h   HAVE_GETTIMEOFDAY)
@@ -469,10 +471,10 @@ gmx_option_trivalue(
 
 if (GMX_HWLOC)
     # Find quietly the second time.
-    if(HWLOC_VERSION)
+    if (HWLOC_FIND_QUIETLY_AFTER_FIRST_RUN)
         set(HWLOC_FIND_QUIETLY TRUE)
     endif()
-    find_package(Hwloc 1.5)
+    find_package(HWLOC 1.5) 
 
     if (HWLOC_FOUND)
         if (HWLOC_LIBRARIES MATCHES ".a$")
@@ -492,8 +494,10 @@ if (GMX_HWLOC)
             list(APPEND GMX_EXTRA_LIBRARIES ${HWLOC_LIBRARIES})
         endif()
     elseif(GMX_HWLOC_FORCE)
-        message(FATAL_ERROR "Hwloc package support required, but not found.")
+        message(FATAL_ERROR "HWLOC package support required, but not found.")
     endif()
+
+    set(HWLOC_FIND_QUIETLY_AFTER_FIRST_RUN TRUE CACHE INTERNAL "Be quiet during future attempts to find HWLOC")
 endif()
 
 option(GMX_EXTERNAL_TINYXML2 "Use external TinyXML-2 instead of compiling the version bundled with GROMACS." OFF)
@@ -570,15 +574,6 @@ if(WIN32)
     add_definitions(-DNOMINMAX)
 endif()
 
-if(CMAKE_SYSTEM_NAME STREQUAL "Darwin") #Work-around for cmake bug #10837
-    if (CMAKE_COMPILER_IS_GNUCC OR CMAKE_C_COMPILER_ID MATCHES "Intel" OR CMAKE_C_COMPILER_ID MATCHES "Clang")
-        set(CMAKE_INCLUDE_SYSTEM_FLAG_C "-isystem ")
-    endif()
-    if (CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Intel" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-        set(CMAKE_INCLUDE_SYSTEM_FLAG_CXX "-isystem ")
-    endif()
-endif()
-
 option(GMX_BUILD_UNITTESTS "Build unit tests with BUILD_TESTING" ON)
 mark_as_advanced(GMX_BUILD_UNITTESTS)
 gmx_add_cache_dependency(GMX_BUILD_UNITTESTS BOOL BUILD_TESTING OFF)
@@ -587,11 +582,7 @@ gmx_add_cache_dependency(GMX_BUILD_UNITTESTS BOOL BUILD_TESTING OFF)
 # Our own GROMACS tests
 ########################################################################
 
-add_definitions( -DHAVE_CONFIG_H )
 include_directories(BEFORE ${CMAKE_SOURCE_DIR}/src)
-# TODO required at high level because both libgromacs and progs/mdrun
-# require it, both for thread-MPI and its atomics and mutexes.
-include_directories(BEFORE SYSTEM ${CMAKE_SOURCE_DIR}/src/external/thread_mpi/include)
 # Required for config.h, maybe should only be set in src/CMakeLists.txt
 include_directories(BEFORE ${CMAKE_BINARY_DIR}/src)
 
@@ -761,18 +752,18 @@ endif()
 # # # # # # # # # # NO MORE TESTS AFTER THIS LINE! # # # # # # # # # # #
 # these are set after everything else
 if (NOT GMX_SKIP_DEFAULT_CFLAGS)
-    set(CMAKE_C_FLAGS "${SIMD_C_FLAGS} ${MPI_COMPILE_FLAGS} ${EXTRA_C_FLAGS} ${CMAKE_C_FLAGS}")
-    set(CMAKE_CXX_FLAGS "${SIMD_CXX_FLAGS} ${MPI_COMPILE_FLAGS} ${EXTRA_CXX_FLAGS} ${CMAKE_CXX_FLAGS}")
     set(CMAKE_EXE_LINKER_FLAGS "${FFT_LINKER_FLAGS} ${MPI_LINKER_FLAGS} ${CMAKE_EXE_LINKER_FLAGS}")
     set(CMAKE_SHARED_LINKER_FLAGS "${FFT_LINKER_FLAGS} ${MPI_LINKER_FLAGS} ${CMAKE_SHARED_LINKER_FLAGS}")
 else()
     message("Recommended flags which are not added because GMX_SKIP_DEFAULT_CFLAGS=yes:")
-    message("CMAKE_C_FLAGS: ${SIMD_C_FLAGS} ${MPI_COMPILE_FLAGS} ${EXTRA_C_FLAGS} ${GMXC_CFLAGS}")
-    message("CMAKE_C_FLAGS_RELEASE: ${GMXC_CFLAGS_RELEASE}")
-    message("CMAKE_C_FLAGS_DEBUG: ${GMXC_CFLAGS_DEBUG}")
-    message("CMAKE_CXX_FLAGS: ${SIMD_CXX_FLAGS} ${MPI_COMPILE_FLAGS} ${EXTRA_CXX_FLAGS} ${GMXC_CXXFLAGS}")
-    message("CMAKE_CXX_FLAGS_RELEASE: ${GMXC_CXXFLAGS_RELEASE}")
-    message("CMAKE_CXX_FLAGS_DEBUG: ${GMXC_CXXFLAGS_DEBUG}")
+    message("CMAKE_C_FLAGS: ${SIMD_C_FLAGS};${MPI_COMPILE_FLAGS};${EXTRA_C_FLAGS};${GMXC_CFLAGS}")
+    foreach(build_type ${build_types_with_explicit_flags})
+        message("CMAKE_C_FLAGS_${build_type}: ${GMXC_CFLAGS_${build_type}}")
+    endforeach()
+    message("CMAKE_CXX_FLAGS: ${SIMD_CXX_FLAGS};${MPI_COMPILE_FLAGS};${EXTRA_CXX_FLAGS};${GMXC_CXXFLAGS}")
+    foreach(build_type ${build_types_with_explicit_flags})
+        message("CMAKE_CXX_FLAGS_${build_type}: ${GMXC_CXXFLAGS_${build_type}}")
+    endforeach()
     message("CMAKE_EXE_LINKER_FLAGS: ${FFT_LINKER_FLAGS} ${MPI_LINKER_FLAGS}")
     message("CMAKE_SHARED_LINKER_FLAGS: ${FFT_LINKER_FLAGS} ${MPI_LINKER_FLAGS}")
 endif()

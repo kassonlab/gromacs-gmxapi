@@ -85,6 +85,7 @@ class t_state;
 
 namespace gmx
 {
+class ForceWithShiftForces;
 class MDLogger;
 class LocalAtomSetManager;
 class RangePartitioning;
@@ -208,7 +209,7 @@ void dd_cycles_add(const gmx_domdec_t *dd, float cycles, int ddCycl);
 
 /*! \brief Communicate the coordinates to the neighboring cells and do pbc. */
 void dd_move_x(struct gmx_domdec_t      *dd,
-               matrix                    box,
+               const matrix              box,
                gmx::ArrayRef<gmx::RVec>  x,
                gmx_wallcycle            *wcycle);
 
@@ -217,10 +218,9 @@ void dd_move_x(struct gmx_domdec_t      *dd,
  * When fshift!=NULL the shift forces are updated to obtain
  * the correct virial from the single sum including f.
  */
-void dd_move_f(struct gmx_domdec_t      *dd,
-               gmx::ArrayRef<gmx::RVec>  f,
-               rvec                     *fshift,
-               gmx_wallcycle            *wcycle);
+void dd_move_f(struct gmx_domdec_t       *dd,
+               gmx::ForceWithShiftForces *forceWithShiftForces,
+               gmx_wallcycle             *wcycle);
 
 /*! \brief Communicate a real for each atom to the neighboring cells. */
 void dd_atom_spread_real(struct gmx_domdec_t *dd, real v[]);
@@ -265,7 +265,8 @@ void dd_print_missing_interactions(const gmx::MDLogger  &mdlog,
                                    int                   local_count,
                                    const gmx_mtop_t     *top_global,
                                    const gmx_localtop_t *top_local,
-                                   const t_state        *state_local);
+                                   const rvec           *x,
+                                   const matrix          box);
 
 /*! \brief Generate and store the reverse topology */
 void dd_make_reverse_top(FILE *fplog,

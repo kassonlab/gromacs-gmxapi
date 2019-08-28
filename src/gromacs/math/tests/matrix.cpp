@@ -49,6 +49,8 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include "gromacs/math/vec.h"
+
 #include "testutils/testasserts.h"
 
 namespace gmx
@@ -142,30 +144,90 @@ TEST_F(MatrixTest, staticMultiDimArrayExtent)
     EXPECT_EQ(matrix_.extent(1), 3);
 }
 
-TEST_F(MatrixTest, determinantWorksForInt)
+TEST_F(MatrixTest, determinantWorks)
 {
-    const BasicMatrix3x3<int> mat = {{6, 4, 2, 1, -2, 8, 1, 5, 7}};
-    EXPECT_EQ(determinant(mat), -306);
-}
-
-TEST_F(MatrixTest, determinantWorksForFloat)
-{
-    const BasicMatrix3x3<float> mat = {{1.0, 2.0, 3.0,
-                                        0.0, 1.0, 4.0,
-                                        5.0, 6.0, 0.0}};
+    const Matrix3x3 mat = {{1.0, 2.0, 3.0,
+                            0.0, 1.0, 4.0,
+                            5.0, 6.0, 0.0}};
     EXPECT_EQ(determinant(mat), 1);
 }
 
 TEST_F(MatrixTest, noninvertableDeterminantIsZero)
 {
-    const BasicMatrix3x3<int> mat = {{1, 0, 0, 0, 1, 0, 0, 0, 0}};
+    const Matrix3x3 mat = {{1, 0, 0, 0, 1, 0, 0, 0, 0}};
     EXPECT_EQ(determinant(mat), 0);
 }
 
 TEST_F(MatrixTest, determinantOfDiagonalMatrix)
 {
-    const BasicMatrix3x3<int> mat = {{2, 0, 0, 0, 3, 0, 0, 0, 4}};
+    const Matrix3x3 mat = {{2, 0, 0, 0, 3, 0, 0, 0, 4}};
     EXPECT_EQ(determinant(mat), 24);
+}
+
+TEST_F(MatrixTest, traceWorks)
+{
+    const Matrix3x3 mat = {{1.5, 9, 9, 9, 2.0, 9, 9, 9, 0.25}};
+    EXPECT_EQ(trace(mat), 3.75);
+}
+
+TEST_F(MatrixTest, transposeWorks)
+{
+    const Matrix3x3 asymmetricMat = {{1, 2, 3,
+                                      4, 5, 6,
+                                      7, 8, 9}};
+
+    const Matrix3x3 transposedAsymmetricMat = transpose(asymmetricMat);
+    EXPECT_EQ(asymmetricMat(0, 0), transposedAsymmetricMat(0, 0));
+    EXPECT_EQ(asymmetricMat(0, 1), transposedAsymmetricMat(1, 0));
+    EXPECT_EQ(asymmetricMat(0, 2), transposedAsymmetricMat(2, 0));
+    EXPECT_EQ(asymmetricMat(1, 0), transposedAsymmetricMat(0, 1));
+    EXPECT_EQ(asymmetricMat(1, 1), transposedAsymmetricMat(1, 1));
+    EXPECT_EQ(asymmetricMat(1, 2), transposedAsymmetricMat(2, 1));
+    EXPECT_EQ(asymmetricMat(2, 0), transposedAsymmetricMat(0, 2));
+    EXPECT_EQ(asymmetricMat(2, 1), transposedAsymmetricMat(1, 2));
+    EXPECT_EQ(asymmetricMat(2, 2), transposedAsymmetricMat(2, 2));
+
+}
+
+TEST_F(MatrixTest, transposeOfSymmetricMatrix)
+{
+    const Matrix3x3 symmetricMat = {{ 1, 2, 3,
+                                      2, 5, 6,
+                                      3, 6, 9}};
+    const Matrix3x3 transposedSymmetricMat = transpose(symmetricMat);
+    for (int i = 0; i < 3; i++)
+    {
+        for (int j = 0; j < 3; j++)
+        {
+            EXPECT_EQ(symmetricMat(i, j), transposedSymmetricMat(i, j));
+        }
+    }
+}
+
+TEST_F(MatrixTest, canCreateFromLegacyMatrix)
+{
+    matrix          legacyMatrix = { { 1, 2, 3}, { 4, 5, 6}, {7, 8, 9}};
+    const Matrix3x3 fromLegacy   = createMatrix3x3FromLegacyMatrix(legacyMatrix);
+    for (int i = 0; i < 3; i++)
+    {
+        for (int j = 0; j < 3; j++)
+        {
+            EXPECT_EQ(fromLegacy(i, j), legacyMatrix[i][j]);
+        }
+    }
+}
+
+TEST_F(MatrixTest, canFillLegacyMatrix)
+{
+    matrix          legacyMatrix = {{ -2 }};
+    fillLegacyMatrix(matrix_, legacyMatrix);
+    for (int i = 0; i < 3; i++)
+    {
+        for (int j = 0; j < 3; j++)
+        {
+            EXPECT_EQ(legacyMatrix[i][j], matrix_(i, j));
+        }
+    }
 }
 
 } // namespace

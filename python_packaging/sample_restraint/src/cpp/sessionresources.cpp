@@ -1,6 +1,10 @@
-//
-// Created by Eric Irrgang on 6/11/18.
-//
+/*! \file
+ * \brief Definitions for some useful types and templates for GROMACS restraints.
+ *
+ * \todo This should be part of a template library installed with GROMACS.
+ *
+ * \author M. Eric Irrgang <ericirrgang@gmail.com>
+ */
 
 #include "sessionresources.h"
 

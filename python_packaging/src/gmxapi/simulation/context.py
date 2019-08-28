@@ -1,11 +1,10 @@
+# This file is borrowed from the Kasson Lab gmxapi project release 0.0.7.4.
+# https://github.com/kassonlab/gmxapi/blob/v0.0.7.4/src/gmx/context.py
+# https://github.com/kassonlab/gmxapi/blob/v0.0.7.4/LICENSE
 """
 Execution Context
 =================
 """
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-from __future__ import unicode_literals
 
 __all__ = ['Context']
 
@@ -35,7 +34,6 @@ def _load_tpr(self, element):
     Returns:
         A Director that the Context can use in launching the Session.
     """
-
     class Builder(object):
         def __init__(self, tpr_list):
             logger.debug("Loading tpr builder for tpr_list {}".format(tpr_list))
@@ -57,7 +55,6 @@ def _load_tpr(self, element):
 
     return Builder(element.params['input'])
 
-
 def _md(context, element):
     """Implement the gmxapi.md operation by returning a builder that can populate a data flow graph for the element.
 
@@ -73,10 +70,8 @@ def _md(context, element):
     Returns:
         A Director that the Context can use in launching the Session.
     """
-
     class Builder(object):
         """Translate md work element to a node in the session's DAG."""
-
         def __init__(self, element):
             try:
                 self.name = element.name
@@ -89,11 +84,9 @@ def _md(context, element):
                 self.runtime_params = element.params
             except AttributeError:
                 raise exceptions.ValueError("object provided does not seem to be a WorkElement.")
-
         def add_subscriber(self, builder):
             """The md operation does not yet have any subscribeable facilities."""
             pass
-
         def build(self, dag):
             """Add a node to the graph that, when launched, will construct a simulation runner.
 
@@ -112,13 +105,13 @@ def _md(context, element):
             for neighbor in self.input_nodes:
                 dag.add_edge(neighbor, name)
             infile = self.infile
-            assert infile is not None
+            assert not infile is None
             potential_list = self.potential
             assert dag.graph['width'] >= len(infile)
 
             # Provide closure with which to execute tasks for this node.
             def launch(rank=None):
-                assert rank is not None
+                assert not rank is None
 
                 # Copy and update, if required by `end_time` parameter.
                 temp_filename = None
@@ -155,21 +148,17 @@ def _md(context, element):
                         dag.nodes[name]['session'].close()
                         logger.debug("Unlinking temporary TPR file {}.".format(temp_filename))
                         os.unlink(temp_filename)
-
                     dag.nodes[name]['close'] = special_close
                 else:
                     dag.nodes[name]['close'] = dag.nodes[name]['session'].close
 
                 def runner():
                     """Currently we only support a single call to run."""
-
                     def done():
                         raise StopIteration()
-
                     # Replace the runner with a stop condition for subsequent passes.
                     dag.nodes[name]['run'] = done
                     return dag.nodes[name]['session'].run()
-
                 dag.nodes[name]['run'] = runner
                 return dag.nodes[name]['run']
 
@@ -229,7 +218,7 @@ def _get_mpi_ensemble_communicator(session_communicator, ensemble_size):
     try:
         ensemble_communicator_size = ensemble_communicator.Get_size()
         ensemble_communicator_rank = ensemble_communicator.Get_rank()
-    except Exception:
+    except:
         warnings.warn("Possible API programming error: ensemble_communicator does not provide required methods...")
         ensemble_communicator_size = 0
         ensemble_communicator_rank = None
@@ -381,7 +370,6 @@ def _get_ensemble_communicator(communicator, ensemble_size):
 
     return ensemble_communicator
 
-
 def _get_ensemble_update(context):
     """Set up a simple ensemble resource.
 
@@ -414,12 +402,12 @@ def _get_ensemble_update(context):
     except ImportError:
         message = "ensemble_update requires numpy, but numpy is not available."
         logger.error(message)
-        raise exceptions.ApiError(message)
+        raise exceptions.FeatureNotAvailableError(message)
 
     def _ensemble_update(active_context, send, recv, tag=None):
-        assert tag is not None
+        assert not tag is None
         assert str(tag) != ''
-        if tag not in active_context.part:
+        if not tag in active_context.part:
             active_context.part[tag] = 0
         logger.debug("Performing ensemble update.")
         active_context._session_ensemble_communicator.Allreduce(send, recv)
@@ -435,7 +423,7 @@ def _get_ensemble_update(context):
         message = "Attempt to call ensemble_update() in a Context that does not provide the operation."
         # If we confirm effective exception handling, remove the extraneous log.
         logger.error(message)
-        raise exceptions.ApiError(message)
+        raise exceptions.FeatureNotAvailableError(message)
 
     if context._session_ensemble_communicator is not None:
         functor = _ensemble_update
@@ -462,7 +450,6 @@ class _libgromacsContext(object):
     any case, the operations allow a Context implementation to transform a work specification into a
     directed acyclic graph of schedulable work.
     """
-
     # The Context is the appropriate entity to own or mediate access to an appropriate logging facility,
     # but right now we are using the module-level Python logger.
     # Reference https://github.com/kassonlab/gmxapi/issues/135
@@ -525,6 +512,7 @@ class _libgromacsContext(object):
                 raise exceptions.ApiError('WorkSpec must contain at least one source element')
         return is_valid
 
+
     def __enter__(self):
         """Implement Python context manager protocol.
 
@@ -538,7 +526,7 @@ class _libgromacsContext(object):
             # launch() with no arguments is deprecated.
             # Ref: https://github.com/kassonlab/gmxapi/issues/124
             self._session = self.workflow.launch()
-        except Exception:
+        except:
             self._session = None
             raise
         return self._session
@@ -568,11 +556,10 @@ class DefaultContext(_libgromacsContext):
         have this same interface, but the name and scoping of DefaultContext is
         misleading.
     """
-
     def __init__(self, work):
         # There is very little context abstraction at this point...
+        warnings.warn("Behavior of DefaultContext is unspecified starting in gmxapi 0.0.8.", DeprecationWarning)
         super(DefaultContext, self).__init__(work)
-
 
 class Context(object):
     """Manage an array of simulation work executing in parallel.
@@ -696,7 +683,7 @@ class Context(object):
         # initialize the operations map. May be extended during the lifetime of a Context.
         # Note that there may be a difference between built-in operations provided by this module and
         # additional operations registered at run time.
-        self.__operations = {}
+        self.__operations = dict()
         # The map contains a builder for each operation. The builder is created by passing the element to the function
         # in the map. The object returned must have the following methods:
         #
@@ -704,14 +691,14 @@ class Context(object):
         #   * build(dag) : Fulfill the builder responsibilities by adding an arbitrary number of nodes and edges to a Graph.
         #
         # The gmxapi namespace of operations should be consistent with a specified universal set of functionalities
-        self.__operations['gmxapi'] = {'md': lambda element: _md(self, element),
+        self.__operations['gmxapi'] = {'md': lambda element : _md(self, element),
                                        # 'global_data' : shared_data_maker,
-                                       }
+                                      }
         # Even if TPR file loading were to become a common and stable enough operation to be specified in
         # and API, it is unlikely to be implemented by any code outside of GROMACS, so let's not clutter
         # a potentially more universal namespace.
-        self.__operations['gromacs'] = {'load_tpr': lambda element: _load_tpr(self, element),
-                                        }
+        self.__operations['gromacs'] = {'load_tpr': lambda element : _load_tpr(self, element),
+                                       }
 
         # Right now we are treating workspec elements and work DAG nodes as equivalent, but they are
         # emphatically not intended to be tightly coupled. The work specification is intended to be
@@ -771,16 +758,26 @@ class Context(object):
         for e in workspec.elements:
             element = WorkElement.deserialize(workspec.elements[e])
 
-            if element.namespace not in {'gmxapi', 'gromacs'} and element.namespace not in self.__operations:
-                # Non-built-in namespaces are treated as modules to import.
-                try:
-                    element_module = importlib.import_module(element.namespace)
-                except ImportError as e:
-                    raise exceptions.UsageError(
-                        'This context does not know how to invoke {} from {}. ImportError: {}'.format(
-                            element.operation,
+            # Note: Non-built-in namespaces (non-native) are treated as modules to import.
+            # Native namespaces may not be completely implemented in a particular version of a particular Context.
+            if element.namespace in {'gmxapi', 'gromacs'}:
+                assert element.namespace in self.__operations
+                if not element.operation in self.__operations[element.namespace]:
+                    # The requested element is a built-in operation but not available in this Context.
+                    # element.namespace should be mapped, but not all operations are necessarily implemented.
+                    logger.error("Operation {} not found in map {}".format(element.operation,
+                                                                           str(self.__operations)))
+                    # This check should be performed when deciding if the context is appropriate for the work.
+                    # If we are just going to use a try/catch block for this test, then we should differentiate
+                    # this exception from those raised due to incorrect usage.
+                    # The exception thrown here may evolve with https://github.com/kassonlab/gmxapi/issues/125
+                    raise exceptions.FeatureNotAvailableError(
+                        'Specified work cannot be performed due to unimplemented operation {}.{}.'.format(
                             element.namespace,
-                            str(e)))
+                            element.operation))
+
+            else:
+                assert element.namespace not in {'gmxapi', 'gromacs'}
 
                 # Don't leave an empty nested dictionary if we couldn't map the operation.
                 if element.namespace in self.__operations:
@@ -788,31 +785,25 @@ class Context(object):
                 else:
                     namespace_map = dict()
 
+                # Set or update namespace map iff we have something new.
                 if element.operation not in namespace_map:
                     try:
+                        element_module = importlib.import_module(element.namespace)
                         element_operation = getattr(element_module, element.operation)
-                        namespace_map[element.operation] = element_operation
-                    except Exception as e:
-                        raise exceptions.ApiError('Operation {} not found in {}.'.format(element.operation,
-                                                                                         element.namespace)) from e
-                    # Set or update namespace map only if we have something to contribute.
+                    except ImportError as e:
+                        raise exceptions.UsageError(
+                            'Cannot find implementation for namespace {}. ImportError: {}'.format(
+                                element.namespace,
+                                str(e)))
+                    except AttributeError:
+                        raise exceptions.UsageError(
+                            'Cannot find factory for operation {}.{}'.format(
+                                element.namespace,
+                                element.operation
+                            )
+                        )
+                    namespace_map[element.operation] = element_operation
                     self.__operations[element.namespace] = namespace_map
-            else:
-                # The requested element is a built-in operation or otherwise already configured.
-                # element.namespace should be mapped, but not all operations are necessarily implemented.
-                assert element.namespace in self.__operations
-                if element.operation not in self.__operations[element.namespace]:
-                    if self.rank < 1:
-                        logger.error("Operation {} not found in map {}".format(element.operation,
-                                                                               str(self.__operations)))
-                    # This check should be performed when deciding if the context is appropriate for the work.
-                    # If we are just going to use a try/catch block for this test, then we should differentiate
-                    # this exception from those raised due to incorrect usage.
-                    # The exception thrown here may evolve with https://github.com/kassonlab/gmxapi/issues/125
-                    raise exceptions.ApiError(
-                        'Specified work cannot be performed due to unimplemented operation {}.{}.'.format(
-                            element.namespace,
-                            element.operation))
 
         self.__work = workspec
 
@@ -940,7 +931,15 @@ class Context(object):
             # are a facility provided by the Context, in which case they may be member functions
             # of the Context. We will probably need to pass at least some
             # of the Session to the `launch()` method, though...
-            for name in element.depends:
+            dependencies = element.depends
+            for dependency in dependencies:
+                # If a dependency is a list, assume it is an "ensemble" of dependencies
+                # and pick the element for corresponding to the local rank.
+                if isinstance(dependency, (list, tuple)):
+                    assert len(dependency) > context_rank
+                    name = str(dependency[context_rank])
+                else:
+                    name = dependency
                 logger.info("Subscribing {} to {}.".format(element.name, name))
                 builders[name].add_subscriber(new_builder)
             builders[element.name] = new_builder
@@ -994,7 +993,7 @@ class Context(object):
             self.workdir = self.__workdir_list[self.rank]
             if os.path.exists(self.workdir):
                 if not os.path.isdir(self.workdir):
-                    raise exceptions.ValueError('{} is not a valid working directory.'.format(self.workdir))
+                    raise exceptions.FileError('{} is not a valid working directory.'.format(self.workdir))
             else:
                 os.mkdir(self.workdir)
             os.chdir(self.workdir)
@@ -1005,13 +1004,12 @@ class Context(object):
             for name in sorted_nodes:
                 launcher = graph.nodes[name]['launch']
                 runner = launcher(self.rank)
-                if runner is not None:
+                if not runner is None:
                     runners.append(runner)
                     closers.append(graph.nodes[name]['close'])
 
             # Get a session object to return. It must simply provide a `run()` function.
-            context = self  # Part of workaround for bug gmxapi-214
-
+            context = self # Part of workaround for bug gmxapi-214
             class Session(object):
                 def __init__(self, runners, closers):
                     self.runners = list(runners)
@@ -1041,13 +1039,11 @@ class Context(object):
         else:
             logger.info("Context rank {} has no work to do".format(self.rank))
 
-            context = self  # Part of workaround for bug gmxapi-214
-
+            context = self # Part of workaround for bug gmxapi-214
             class NullSession(object):
                 def run(self):
                     logger.info("Running null session on rank {}.".format(self.rank))
-                    return
-
+                    return True
                 def close(self):
                     logger.info("Closing null session.")
                     # Workaround for bug gmxapi-214
@@ -1105,7 +1101,6 @@ class Context(object):
 # Context behavior, but we need to keep the old name for compatibility for
 # the moment.
 ParallelArrayContext = Context
-
 
 def get_context(work=None):
     """Get a concrete Context object.

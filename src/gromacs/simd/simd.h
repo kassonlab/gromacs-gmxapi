@@ -1,7 +1,7 @@
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
- * Copyright (c) 2013,2014,2015,2016,2017,2018, by the GROMACS development team, led by
+ * Copyright (c) 2013,2014,2015,2016,2017,2018,2019, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -495,7 +495,7 @@ static inline T
  * 2) load(real*); template parameter is mandatory because otherwise ambiguity is
  *    created. The dependent type disables type deduction.
  */
-load(const typename std::enable_if<std::is_arithmetic<T>::value, T>::type *m)
+load(const std::enable_if_t<std::is_arithmetic<T>::value, T> *m)
 {
     return *m;
 }
@@ -522,7 +522,7 @@ loadU(const typename internal::SimdTraits<T>::type *m)
 
 template<typename T>
 static inline T
-loadU(const typename std::enable_if<std::is_arithmetic<T>::value, T>::type *m)
+loadU(const std::enable_if_t<std::is_arithmetic<T>::value, T> *m)
 {
     return *m;
 }
@@ -543,7 +543,7 @@ class SimdSetZeroProxy
 {
     public:
         //!\brief Conversion method that returns 0.0 as float
-        operator float() const { return 0.0f; }
+        operator float() const { return 0.0F; }
         //!\brief Conversion method that returns 0.0 as double
         operator double() const { return 0.0; }
         //!\brief Conversion method that returns 0.0 as int32
@@ -576,7 +576,7 @@ class SimdSetZeroProxy
  *         variable to zero based on the conversion function called when you
  *         assign the result.
  */
-static inline const SimdSetZeroProxy gmx_simdcall
+static inline SimdSetZeroProxy gmx_simdcall
 setZero()
 {
     return {};

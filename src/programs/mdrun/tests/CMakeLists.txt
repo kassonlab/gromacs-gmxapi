@@ -32,12 +32,13 @@
 # To help us fund GROMACS development, we humbly ask that you cite
 # the research papers on the package. Check out http://www.gromacs.org.
 
-# Make an "object library" for test infrastructure code that we re-use
-# in multiple test executables.
-add_library(mdrun_test_objlib OBJECT
+# Make a static library for test infrastructure code that we re-use
+# in multiple test executables across the repository.
+gmx_add_unit_test_library(mdrun_test_infrastructure
     energyreader.cpp
     energycomparison.cpp
     moduletest.cpp
+    mdmodulenotification.cpp
     terminationhelper.cpp
     trajectorycomparison.cpp
     trajectoryreader.cpp
@@ -50,21 +51,22 @@ gmx_add_gtest_executable(
     ${exename}
     # files with code for tests
     compressed_x_output.cpp
+    exactcontinuation.cpp
     grompp.cpp
     helpwriting.cpp
     initialconstraints.cpp
     interactiveMD.cpp
     pmetest.cpp
+    simulator.cpp
     swapcoords.cpp
     tabulated_bonded_interactions.cpp
     termination.cpp
     trajectory_writing.cpp
     mimic.cpp
-    # pseudo-library for code for testing mdrun
-    $<TARGET_OBJECTS:mdrun_test_objlib>
     # pseudo-library for code for mdrun
     $<TARGET_OBJECTS:mdrun_objlib>
     )
+target_link_libraries(${exename} PRIVATE mdrun_test_infrastructure)
 gmx_register_gtest_test(${testname} ${exename} OPENMP_THREADS 2 INTEGRATION_TEST)
 
 # To avoid running into test timeouts, some end-to-end tests of mdrun
@@ -81,11 +83,10 @@ gmx_add_gtest_executable(
     rerun.cpp
     simple_mdrun.cpp
     tpitest.cpp
-    # pseudo-library for code for testing mdrun
-    $<TARGET_OBJECTS:mdrun_test_objlib>
     # pseudo-library for code for mdrun
     $<TARGET_OBJECTS:mdrun_objlib>
     )
+target_link_libraries(${exename} PRIVATE mdrun_test_infrastructure)
 gmx_register_gtest_test(${testname} ${exename} OPENMP_THREADS 2 INTEGRATION_TEST)
 
 # Tests that only make sense to run with multiple ranks and/or real
@@ -103,9 +104,8 @@ gmx_add_gtest_executable(
     multisimtest.cpp
     pmetest.cpp
     replicaexchange.cpp
-    # pseudo-library for code for testing mdrun
-    $<TARGET_OBJECTS:mdrun_test_objlib>
     # pseudo-library for code for mdrun
     $<TARGET_OBJECTS:mdrun_objlib>
     )
+target_link_libraries(${exename} PRIVATE mdrun_test_infrastructure)
 gmx_register_gtest_test(${testname} ${exename} OPENMP_THREADS 2 INTEGRATION_TEST)

@@ -46,15 +46,13 @@
 #ifndef GMX_MDLIB_UPDATE_CONSTRAIN_CUDA_IMPL_H
 #define GMX_MDLIB_UPDATE_CONSTRAIN_CUDA_IMPL_H
 
+#include "gmxpre.h"
+
+#include "gromacs/mdlib/leapfrog_cuda.cuh"
 #include "gromacs/mdlib/lincs_cuda.cuh"
+#include "gromacs/mdlib/settle_cuda.cuh"
 #include "gromacs/mdlib/update_constrain_cuda.h"
 #include "gromacs/mdtypes/inputrec.h"
-#include "gromacs/pbcutil/pbc.h"
-#include "gromacs/pbcutil/pbc_aiuc_cuda.cuh"
-#include "gromacs/topology/idef.h"
-
-#include "leapfrog_cuda_impl.h"
-#include "settle_cuda_impl.h"
 
 namespace gmx
 {
@@ -66,14 +64,12 @@ class UpdateConstrainCuda::Impl
     public:
         /*! \brief Create Update-Constrain object
          *
-         * \param[in] numAtoms  Number of atoms.
          * \param[in] ir        Input record data: LINCS takes number of iterations and order of
          *                      projection from it.
          * \param[in] mtop      Topology of the system: SETTLE gets the masses for O and H atoms
          *                      and target O-H and H-H distances from this object.
          */
-        Impl(int                   numAtoms,
-             const t_inputrec     &ir,
+        Impl(const t_inputrec     &ir,
              const gmx_mtop_t     &mtop);
 
         ~Impl();
@@ -83,25 +79,36 @@ class UpdateConstrainCuda::Impl
          * Integrates the equation of motion using Leap-Frog algorithm and applies
          * LINCS and SETTLE constraints.
          * Updates d_xp_ and d_v_ fields of this object.
+         * If computeVirial is true, constraints virial is written at the provided pointer.
+         * doTempCouple should be true if:
+         *   1. The temperature coupling is enabled.
+         *   2. This is the temperature coupling step.
+         * Parameters virial/lambdas can be nullptr if computeVirial/doTempCouple are false.
          *
-         * \param[in] dt                Timestep
-         * \param[in] updateVelocities  If the velocities should be constrained.
-         * \param[in] computeVirial     If virial should be updated.
-         * \param[out] virial           Place to save virial tensor.
+         * \param[in]  dt                Timestep
+         * \param[in]  updateVelocities  If the velocities should be constrained.
+         * \param[in]  computeVirial     If virial should be updated.
+         * \param[out] virial            Place to save virial tensor.
+         * \param[in]  doTempCouple      If the temperature coupling should be performed.
+         * \param[in]  tcstat            Temperature coupling data.
          */
-        void integrate(const real  dt,
-                       const bool  updateVelocities,
-                       const bool  computeVirial,
-                       tensor      virial);
+        void integrate(const real                        dt,
+                       const bool                        updateVelocities,
+                       const bool                        computeVirial,
+                       tensor                            virial,
+                       const bool                        doTempCouple,
+                       gmx::ArrayRef<const t_grp_tcstat> tcstat);
 
         /*! \brief
          * Update data-structures (e.g. after NB search step).
          *
-         * \param[in] idef    System topology
-         * \param[in] md      Atoms data. Can be used to update masses if needed (not used now).
+         * \param[in] idef                 System topology
+         * \param[in] md                   Atoms data.
+         * \param[in] numTempScaleValues   Number of temperature scaling groups. Set zero for no temperature coupling.
          */
-        void set(const t_idef     &idef,
-                 const t_mdatoms  &md);
+        void set(const t_idef    &idef,
+                 const t_mdatoms &md,
+                 const int        numTempScaleValues);
 
         /*! \brief
          * Update PBC data.
@@ -192,22 +199,45 @@ class UpdateConstrainCuda::Impl
 
         //! Coordinates before the timestep (on GPU)
         float3             *d_x_;
+        //! Number of elements in coordinates buffer
+        int                 numX_                  = -1;
+        //! Allocation size for the coordinates buffer
+        int                 numXAlloc_             = -1;
+
         //! Coordinates after the timestep (on GPU).
         float3             *d_xp_;
+        //! Number of elements in shifted coordinates buffer
+        int                 numXp_                 = -1;
+        //! Allocation size for the shifted coordinates buffer
+        int                 numXpAlloc_            = -1;
+
         //! Velocities of atoms (on GPU)
         float3             *d_v_;
+        //! Number of elements in velocities buffer
+        int                 numV_                  = -1;
+        //! Allocation size for the velocities buffer
+        int                 numVAlloc_             = -1;
+
         //! Forces, exerted by atoms (on GPU)
         float3             *d_f_;
+        //! Number of elements in forces buffer
+        int                 numF_                  = -1;
+        //! Allocation size for the forces buffer
+        int                 numFAlloc_             = -1;
 
         //! 1/mass for all atoms (GPU)
         real               *d_inverseMasses_;
+        //! Number of elements in reciprocal masses buffer
+        int                 numInverseMasses_      = -1;
+        //! Allocation size for the reciprocal masses buffer
+        int                 numInverseMassesAlloc_ = -1;
 
         //! Leap-Frog integrator
-        std::unique_ptr<LeapFrogCuda::Impl>  integrator_;
+        std::unique_ptr<LeapFrogCuda>        integrator_;
         //! LINCS CUDA object to use for non-water constraints
         std::unique_ptr<LincsCuda>           lincsCuda_;
         //! SETTLE CUDA object for water constrains
-        std::unique_ptr<SettleCuda::Impl>    settleCuda_;
+        std::unique_ptr<SettleCuda>          settleCuda_;
 
 };
 

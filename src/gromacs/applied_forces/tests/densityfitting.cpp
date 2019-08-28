@@ -48,6 +48,7 @@
 #include "gromacs/gmxlib/network.h"
 #include "gromacs/math/paddedvector.h"
 #include "gromacs/math/vec.h"
+#include "gromacs/mdrunutility/mdmodulenotification.h"
 #include "gromacs/mdtypes/enerdata.h"
 #include "gromacs/mdtypes/forceoutput.h"
 #include "gromacs/mdtypes/iforceprovider.h"
@@ -71,27 +72,28 @@ namespace gmx
 namespace
 {
 
-TEST(DensityFittingTest, Options)
+TEST(DensityFittingTest, ForceOnSingleOption)
 {
-    auto densityFittingModule(gmx::createDensityFittingModule());
+    MdModulesNotifier notifier;
+    auto densityFittingModule(DensityFittingModuleInfo::create(&notifier));
 
     // Prepare MDP inputs
-    gmx::KeyValueTreeBuilder mdpValueBuilder;
-    mdpValueBuilder.rootObject().addValue("density-guided-simulation-active", "yes");
+    KeyValueTreeBuilder      mdpValueBuilder;
+    mdpValueBuilder.rootObject().addValue("density-guided-simulation-active", std::string("yes"));
     KeyValueTreeObject       densityFittingMdpValues = mdpValueBuilder.build();
 
     // set up options
-    gmx::Options densityFittingModuleOptions;
+    Options densityFittingModuleOptions;
     densityFittingModule->mdpOptionProvider()->initMdpOptions(&densityFittingModuleOptions);
 
     // Add rules to transform mdp inputs to densityFittingModule data
-    gmx::KeyValueTreeTransformer transform;
-    transform.rules()->addRule().keyMatchType("/", gmx::StringCompareType::CaseAndDashInsensitive);
+    KeyValueTreeTransformer transform;
+    transform.rules()->addRule().keyMatchType("/", StringCompareType::CaseAndDashInsensitive);
     densityFittingModule->mdpOptionProvider()->initMdpTransform(transform.rules());
 
     // Execute the transform on the mdpValues
     auto transformedMdpValues = transform.transform(densityFittingMdpValues, nullptr);
-    gmx::assignOptionsFromKeyValueTree(&densityFittingModuleOptions, transformedMdpValues.object(), nullptr);
+    assignOptionsFromKeyValueTree(&densityFittingModuleOptions, transformedMdpValues.object(), nullptr);
 
     // Build the force provider, once all input data is gathered
     ForceProviders densityFittingForces;
@@ -100,18 +102,18 @@ TEST(DensityFittingTest, Options)
     // Build a minimal simulation system.
     t_mdatoms               mdAtoms;
     mdAtoms.homenr = 1;
-    PaddedVector<gmx::RVec> x             = {{0, 0, 0}};
+    PaddedVector<RVec>      x             = {{0, 0, 0}};
     matrix                  simulationBox = {{0, 0, 0}, {0, 0, 0}, {0, 0, 0}};
     const double            t             = 0.0;
     t_commrec              *cr            = init_commrec();
-    gmx::ForceProviderInput forceProviderInput(x, mdAtoms, t, simulationBox, *cr);
+    ForceProviderInput      forceProviderInput(x, mdAtoms, t, simulationBox, *cr);
 
     // The forces that the force-provider is to update
-    PaddedVector<gmx::RVec>  f = {{0, 0, 0}};
-    gmx::ForceWithVirial     forceWithVirial(f, false);
+    PaddedVector<RVec>       f = {{0, 0, 0}};
+    ForceWithVirial          forceWithVirial(f, false);
 
     gmx_enerdata_t           energyData(1, 0);
-    gmx::ForceProviderOutput forceProviderOutput(&forceWithVirial, &energyData);
+    ForceProviderOutput      forceProviderOutput(&forceWithVirial, &energyData);
 
     // update the forces
     densityFittingForces.calculateForces(forceProviderInput, &forceProviderOutput);

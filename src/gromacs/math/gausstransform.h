@@ -45,14 +45,13 @@
 
 #include <vector>
 
+#include "gromacs/math/multidimarray.h"
 #include "gromacs/math/vectypes.h"
 #include "gromacs/mdspan/extensions.h"
 #include "gromacs/mdspan/mdspan.h"
 #include "gromacs/utility/arrayref.h"
 #include "gromacs/utility/classhelpers.h"
 #include "gromacs/utility/real.h"
-
-#include "multidimarray.h"
 
 namespace gmx
 {
@@ -152,16 +151,13 @@ struct GaussianSpreadKernelParameters
 };
 
 /*! \libinternal \brief Sums Gaussian values at three dimensional lattice coordinates.
- * The Gaussian is defined as
- * \f[
- *      A * \frac{1}{\sigma^3 \sqrt(2^3*\pi^3)} * \exp(-\frac{(x-x0)^2}{2 \sigma^2})
- * \f]
- * \verbatim
- *  x0:              X           x
- *                 /   \        / \
- *               --     --    --   --
- *  lattice: |    |    |    |    |    |    |
- * \endverbatim
+ * The Gaussian is defined as \f$A \frac{1}{\sigma^3 \sqrt(2^3\pi^3)} * \exp(-\frac{(x-x0)^2}{2 \sigma^2})\f$
+   \verbatim
+   x0:              X           x
+               /   \        / \
+             --     --    --   --
+   lattice: |    |    |    |    |    |    |
+   \endverbatim
  * The lattice has spacing 1, all coordinates are given with respect to the lattice
  * coordinates.
  */
@@ -178,22 +174,32 @@ class GaussTransform3D
         GaussTransform3D(const dynamicExtents3D &extent, const GaussianSpreadKernelParameters::Shape &globalParameters);
 
         ~GaussTransform3D();
+
         //! Copy constructor
         GaussTransform3D(const GaussTransform3D &other);
+
         //! Copy assignment
         GaussTransform3D &operator=(const GaussTransform3D &other);
+
         //! Move constructor
         GaussTransform3D(GaussTransform3D &&other) noexcept;
+
         //! Move assignment
         GaussTransform3D &operator=(GaussTransform3D &&other) noexcept;
+
         /*! \brief Add a three dimensional Gaussian with given amplitude at a coordinate.
          * \param[in] localParameters of the spreading kernel
          */
         void add(const GaussianSpreadKernelParameters::PositionAndAmplitude &localParameters);
+
         //! \brief Set all values on the lattice to zero.
         void setZero();
+
         //! Return a view on the spread lattice.
-        const basic_mdspan<const float, dynamicExtents3D> view();
+        basic_mdspan<float, dynamicExtents3D> view();
+
+        //! Return a const view on the spread lattice.
+        basic_mdspan<const float, dynamicExtents3D> constView() const;
 
     private:
         class Impl;

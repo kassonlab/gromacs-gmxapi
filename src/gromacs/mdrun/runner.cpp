@@ -102,12 +102,14 @@
 #include "gromacs/mdrun/simulationcontext.h"
 #include "gromacs/mdrunutility/handlerestart.h"
 #include "gromacs/mdrunutility/logging.h"
+#include "gromacs/mdrunutility/mdmodulenotification.h"
 #include "gromacs/mdrunutility/multisim.h"
 #include "gromacs/mdrunutility/printtime.h"
 #include "gromacs/mdrunutility/threadaffinity.h"
 #include "gromacs/mdtypes/commrec.h"
 #include "gromacs/mdtypes/enerdata.h"
 #include "gromacs/mdtypes/fcdata.h"
+#include "gromacs/mdtypes/group.h"
 #include "gromacs/mdtypes/inputrec.h"
 #include "gromacs/mdtypes/md_enums.h"
 #include "gromacs/mdtypes/mdrunoptions.h"
@@ -140,6 +142,7 @@
 #include "gromacs/utility/filestream.h"
 #include "gromacs/utility/gmxassert.h"
 #include "gromacs/utility/gmxmpi.h"
+#include "gromacs/utility/keyvaluetree.h"
 #include "gromacs/utility/logger.h"
 #include "gromacs/utility/loggerbuilder.h"
 #include "gromacs/utility/physicalnodecommunicator.h"
@@ -148,8 +151,9 @@
 #include "gromacs/utility/smalloc.h"
 #include "gromacs/utility/stringutil.h"
 
+#include "isimulator.h"
 #include "replicaexchange.h"
-#include "simulator.h"
+#include "simulatorbuilder.h"
 
 #if GMX_FAHCORE
 #include "corewrap.h"
@@ -157,6 +161,32 @@
 
 namespace gmx
 {
+
+/*! \brief Log if development feature flags are encountered
+ *
+ * The use of dev features indicated by environment variables is logged
+ * in order to ensure that runs with such featrues enabled can be identified
+ * from their log and standard output.
+ *
+ * \param[in]  mdlog        Logger object.
+ */
+static void reportDevelopmentFeatures(const gmx::MDLogger &mdlog)
+{
+    const bool enableGpuBufOps       = (getenv("GMX_USE_GPU_BUFFER_OPS") != nullptr);
+    const bool useGpuUpdateConstrain = (getenv("GMX_UPDATE_CONSTRAIN_GPU") != nullptr);
+
+    if (enableGpuBufOps)
+    {
+        GMX_LOG(mdlog.warning).asParagraph().appendTextFormatted(
+                "NOTE: This run uses the 'GPU buffer ops' feature, enabled by the GMX_USE_GPU_BUFFER_OPS environment variable.");
+    }
+
+    if (useGpuUpdateConstrain)
+    {
+        GMX_LOG(mdlog.warning).asParagraph().appendTextFormatted(
+                "NOTE: This run uses the 'GPU update/constraints' feature, enabled by the GMX_UPDATE_CONSTRAIN_GPU environment variable.");
+    }
+}
 
 /*! \brief Barrier for safe simultaneous thread access to mdrunner data
  *
@@ -437,7 +467,6 @@ static void finish_run(FILE *fplog,
                        const gmx_pme_t *pme,
                        gmx_bool bWriteStat)
 {
-    t_nrnb *nrnb_tot = nullptr;
     double  delta_t  = 0;
     double  nbfs     = 0, mflop = 0;
     double  elapsed_time,
@@ -465,9 +494,12 @@ static void finish_run(FILE *fplog,
         printReport = false;
     }
 
+    t_nrnb                  *nrnb_tot;
+    std::unique_ptr<t_nrnb>  nrnbTotalStorage;
     if (cr->nnodes > 1)
     {
-        snew(nrnb_tot, 1);
+        nrnbTotalStorage = std::make_unique<t_nrnb>();
+        nrnb_tot         = nrnbTotalStorage.get();
 #if GMX_MPI
         MPI_Allreduce(nrnb->n, nrnb_tot->n, eNRNB, MPI_DOUBLE, MPI_SUM,
                       cr->mpi_comm_mysim);
@@ -506,10 +538,6 @@ static void finish_run(FILE *fplog,
     if (printReport)
     {
         print_flop(fplog, nrnb_tot, &nbfs, &mflop);
-    }
-    if (cr->nnodes > 1)
-    {
-        sfree(nrnb_tot);
     }
 
     if (thisRankHasDuty(cr, DUTY_PP) && DOMAINDECOMP(cr))
@@ -566,7 +594,6 @@ static void finish_run(FILE *fplog,
 int Mdrunner::mdrunner()
 {
     matrix                    box;
-    t_nrnb                   *nrnb;
     t_forcerec               *fr               = nullptr;
     t_fcdata                 *fcd              = nullptr;
     real                      ewaldcoeff_q     = 0;
@@ -616,6 +643,9 @@ int Mdrunner::mdrunner()
     }
     gmx::LoggerOwner logOwner(buildLogger(fplog, cr));
     gmx::MDLogger    mdlog(logOwner.logger());
+
+    // report any development features that may be enabled by environment variables
+    reportDevelopmentFeatures(mdlog);
 
     // With thread-MPI, the communicator changes after threads are
     // launched, so this is rebuilt for the master rank at that
@@ -769,6 +799,12 @@ int Mdrunner::mdrunner()
 
     // TODO: Error handling
     mdModules_->assignOptionsToModules(*inputrec->params, nullptr);
+    const auto &mdModulesNotifier = mdModules_->notifier().notifier_;
+
+    if (inputrec->internalParameters != nullptr)
+    {
+        mdModulesNotifier.notify(*inputrec->internalParameters);
+    }
 
     if (fplog != nullptr)
     {
@@ -893,6 +929,18 @@ int Mdrunner::mdrunner()
 
     if (startingBehavior != StartingBehavior::NewSimulation)
     {
+        /* Check if checkpoint file exists before doing continuation.
+         * This way we can use identical input options for the first and subsequent runs...
+         */
+        if (mdrunOptions.numStepsCommandline > -2)
+        {
+            /* Temporarily set the number of steps to unmlimited to avoid
+             * triggering the nsteps check in load_checkpoint().
+             * This hack will go away soon when the -nsteps option is removed.
+             */
+            inputrec->nsteps = -1;
+        }
+
         load_checkpoint(opt2fn_master("-cpi", filenames.size(), filenames.data(), cr),
                         logFileHandle,
                         cr, domdecOptions.numCells,
@@ -938,7 +986,6 @@ int Mdrunner::mdrunner()
                           useGpuForNonbonded || (emulateGpuNonbonded == EmulateGpuNonbonded::Yes), *hwinfo->cpuInfo);
 
     LocalAtomSetManager atomSets;
-
     if (PAR(cr) && !(EI_TPI(inputrec->eI) ||
                      inputrec->eI == eiNM))
     {
@@ -946,6 +993,7 @@ int Mdrunner::mdrunner()
                                            &mtop, inputrec,
                                            box, positionsFromStatePointer(globalState.get()),
                                            &atomSets);
+        mdModulesNotifier.notify(&atomSets);
         // Note that local state still does not exist yet.
     }
     else
@@ -1237,9 +1285,10 @@ int Mdrunner::mdrunner()
     std::unique_ptr<MDAtoms>     mdAtoms;
     std::unique_ptr<gmx_vsite_t> vsite;
 
-    snew(nrnb, 1);
+    t_nrnb nrnb;
     if (thisRankHasDuty(cr, DUTY_PP))
     {
+        mdModulesNotifier.notify(*cr);
         /* Initiate forcerecord */
         fr                 = new t_forcerec;
         fr->forceProviders = mdModules_->initForceProviders();
@@ -1251,7 +1300,8 @@ int Mdrunner::mdrunner()
                       *hwinfo, nonbondedDeviceInfo,
                       useGpuForBonded,
                       FALSE,
-                      pforce);
+                      pforce,
+                      wcycle);
 
         /* Initialize the mdAtoms structure.
          * mdAtoms is not filled with atom data,
@@ -1422,10 +1472,14 @@ int Mdrunner::mdrunner()
                                     || observablesHistory.edsamHistory);
         auto constr              = makeConstraints(mtop, *inputrec, pull_work, doEssentialDynamics,
                                                    fplog, *mdAtoms->mdatoms(),
-                                                   cr, ms, nrnb, wcycle, fr->bMolPBC);
+                                                   cr, ms, &nrnb, wcycle, fr->bMolPBC);
 
         /* Energy terms and groups */
         gmx_enerdata_t enerd(mtop.groups.groups[SimulationAtomGroupType::EnergyOutput].size(), inputrec->fepvals->n_lambda);
+
+        /* Kinetic energy data */
+        gmx_ekindata_t ekind;
+        init_ekindata(fplog, &mtop, &(inputrec->opts), &ekind, inputrec->cos_accel);
 
         /* Set up interactive MD (IMD) */
         auto imdSession = makeImdSession(inputrec, cr, wcycle, &enerd, ms, &mtop, mdlog,
@@ -1452,29 +1506,32 @@ int Mdrunner::mdrunner()
         PpForceWorkload ppForceWorkload;
 
         GMX_ASSERT(stopHandlerBuilder_, "Runner must provide StopHandlerBuilder to simulator.");
-        /* Now do whatever the user wants us to do (how flexible...) */
-        Simulator simulator {
-            fplog, cr, ms, mdlog, static_cast<int>(filenames.size()), filenames.data(),
-            oenv,
-            mdrunOptions,
-            startingBehavior,
-            vsite.get(), constr.get(),
-            enforcedRotation ? enforcedRotation->getLegacyEnfrot() : nullptr,
-            deform.get(),
-            mdModules_->outputProvider(),
-            inputrec, imdSession.get(), pull_work, swap, &mtop,
-            fcd,
-            globalState.get(),
-            &observablesHistory,
-            mdAtoms.get(), nrnb, wcycle, fr,
-            &enerd,
-            &ppForceWorkload,
-            replExParams,
-            membed,
-            walltime_accounting,
-            std::move(stopHandlerBuilder_)
-        };
-        simulator.run(inputrec->eI, doRerun);
+        SimulatorBuilder simulatorBuilder;
+
+        // build and run simulator object based on user-input
+        auto simulator = simulatorBuilder.build(
+                    fplog, cr, ms, mdlog, static_cast<int>(filenames.size()), filenames.data(),
+                    oenv,
+                    mdrunOptions,
+                    startingBehavior,
+                    vsite.get(), constr.get(),
+                    enforcedRotation ? enforcedRotation->getLegacyEnfrot() : nullptr,
+                    deform.get(),
+                    mdModules_->outputProvider(),
+                    inputrec, imdSession.get(), pull_work, swap, &mtop,
+                    fcd,
+                    globalState.get(),
+                    &observablesHistory,
+                    mdAtoms.get(), &nrnb, wcycle, fr,
+                    &enerd,
+                    &ekind,
+                    &ppForceWorkload,
+                    replExParams,
+                    membed,
+                    walltime_accounting,
+                    std::move(stopHandlerBuilder_),
+                    doRerun);
+        simulator->run();
 
         if (inputrec->bPull)
         {
@@ -1487,7 +1544,7 @@ int Mdrunner::mdrunner()
         GMX_RELEASE_ASSERT(pmedata, "pmedata was NULL while cr->duty was not DUTY_PP");
         /* do PME only */
         walltime_accounting = walltime_accounting_init(gmx_omp_nthreads_get(emntPME));
-        gmx_pmeonly(pmedata, cr, nrnb, wcycle, walltime_accounting, inputrec, pmeRunMode);
+        gmx_pmeonly(pmedata, cr, &nrnb, wcycle, walltime_accounting, inputrec, pmeRunMode);
     }
 
     wallcycle_stop(wcycle, ewcRUN);
@@ -1496,7 +1553,7 @@ int Mdrunner::mdrunner()
      * if rerunMD, don't write last frame again
      */
     finish_run(fplog, mdlog, cr,
-               inputrec, nrnb, wcycle, walltime_accounting,
+               inputrec, &nrnb, wcycle, walltime_accounting,
                fr ? fr->nbv.get() : nullptr,
                pmedata,
                EI_DYNAMICS(inputrec->eI) && !isMultiSim(ms));
@@ -1520,7 +1577,7 @@ int Mdrunner::mdrunner()
     mdModules_.reset(nullptr);   // destruct force providers here as they might also use the GPU
 
     /* Free GPU memory and set a physical node tMPI barrier (which should eventually go away) */
-    free_gpu_resources(fr, physicalNodeComm);
+    free_gpu_resources(fr, physicalNodeComm, hwinfo->gpu_info);
     free_gpu(nonbondedDeviceInfo);
     free_gpu(pmeDeviceInfo);
     done_forcerec(fr, mtop.molblock.size());
@@ -1534,7 +1591,6 @@ int Mdrunner::mdrunner()
     /* Does what it says */
     print_date_and_time(fplog, cr->nodeid, "Finished mdrun", gmx_gettime());
     walltime_accounting_destroy(walltime_accounting);
-    sfree(nrnb);
 
     // Ensure log file content is written
     if (logFileHandle)
@@ -1580,7 +1636,7 @@ Mdrunner::~Mdrunner()
 };
 
 void Mdrunner::addPotential(std::shared_ptr<gmx::IRestraintPotential> puller,
-                            std::string                               name)
+                            const std::string                        &name)
 {
     GMX_ASSERT(restraintManager_, "Mdrunner must have a restraint manager.");
     // Not sure if this should be logged through the md logger or something else,
@@ -1590,7 +1646,7 @@ void Mdrunner::addPotential(std::shared_ptr<gmx::IRestraintPotential> puller,
     // When multiple restraints are used, it may be wasteful to register them separately.
     // Maybe instead register an entire Restraint Manager as a force provider.
     restraintManager_->addToSpec(std::move(puller),
-                                 std::move(name));
+                                 name);
 }
 
 Mdrunner::Mdrunner(std::unique_ptr<MDModules> mdModules)

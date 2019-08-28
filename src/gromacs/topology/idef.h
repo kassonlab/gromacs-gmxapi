@@ -3,7 +3,7 @@
  *
  * Copyright (c) 1991-2000, University of Groningen, The Netherlands.
  * Copyright (c) 2001-2004, The GROMACS development team.
- * Copyright (c) 2013,2014,2015,2016,2018, by the GROMACS development team, led by
+ * Copyright (c) 2013,2014,2015,2016,2018,2019, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -180,7 +180,7 @@ struct InteractionList
     /* Returns the total number of elements in iatoms */
     int size() const
     {
-        return iatoms.size();
+        return gmx::ssize(iatoms);
     }
 
     /* List of interactions, see explanation further down */
@@ -255,7 +255,7 @@ struct InteractionListHandle
  * \param[in] ilists  Set of interaction lists
  * \param[in] flags   Bit mask with one or more IF_... bits set
  */
-static inline const std::vector<InteractionListHandle>
+static inline std::vector<InteractionListHandle>
 extractILists(const InteractionLists &ilists,
               int                     flags)
 {

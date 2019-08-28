@@ -51,19 +51,20 @@
 #include "gromacs/fileio/warninp.h"
 #include "gromacs/gmxlib/chargegroup.h"
 #include "gromacs/gmxlib/network.h"
-#include "gromacs/gmxpreprocess/keyvaluetreemdpwriter.h"
 #include "gromacs/gmxpreprocess/toputil.h"
 #include "gromacs/math/functions.h"
 #include "gromacs/math/units.h"
 #include "gromacs/math/vec.h"
 #include "gromacs/mdlib/calc_verletbuf.h"
 #include "gromacs/mdrun/mdmodules.h"
+#include "gromacs/mdrunutility/mdmodulenotification.h"
 #include "gromacs/mdtypes/inputrec.h"
 #include "gromacs/mdtypes/md_enums.h"
 #include "gromacs/mdtypes/pull_params.h"
 #include "gromacs/options/options.h"
 #include "gromacs/options/treesupport.h"
 #include "gromacs/pbcutil/pbc.h"
+#include "gromacs/selection/indexutil.h"
 #include "gromacs/topology/block.h"
 #include "gromacs/topology/ifunc.h"
 #include "gromacs/topology/index.h"
@@ -78,6 +79,7 @@
 #include "gromacs/utility/ikeyvaluetreeerror.h"
 #include "gromacs/utility/keyvaluetree.h"
 #include "gromacs/utility/keyvaluetreebuilder.h"
+#include "gromacs/utility/keyvaluetreemdpwriter.h"
 #include "gromacs/utility/keyvaluetreetransform.h"
 #include "gromacs/utility/smalloc.h"
 #include "gromacs/utility/strconvert.h"
@@ -227,18 +229,12 @@ static int lcd(int n1, int n2)
     return d;
 }
 
-static void process_interaction_modifier(const t_inputrec *ir, int *eintmod)
+//! Convert legacy mdp entries to modern ones.
+static void process_interaction_modifier(int *eintmod)
 {
-    if (*eintmod == eintmodPOTSHIFT_VERLET)
+    if (*eintmod == eintmodPOTSHIFT_VERLET_UNSUPPORTED)
     {
-        if (ir->cutoff_scheme == ecutsVERLET)
-        {
-            *eintmod = eintmodPOTSHIFT;
-        }
-        else
-        {
-            *eintmod = eintmodNONE;
-        }
+        *eintmod = eintmodPOTSHIFT;
     }
 }
 
@@ -286,8 +282,8 @@ void check_ir(const char *mdparin, t_inputrec *ir, t_gromppopts *opts,
     sprintf(err_buf, "nstlist can not be smaller than 0. (If you were trying to use the heuristic neighbour-list update scheme for efficient buffering for improved energy conservation, please use the Verlet cut-off scheme instead.)");
     CHECK(ir->nstlist < 0);
 
-    process_interaction_modifier(ir, &ir->coulomb_modifier);
-    process_interaction_modifier(ir, &ir->vdw_modifier);
+    process_interaction_modifier(&ir->coulomb_modifier);
+    process_interaction_modifier(&ir->vdw_modifier);
 
     if (ir->cutoff_scheme == ecutsGROUP)
     {
@@ -350,7 +346,7 @@ void check_ir(const char *mdparin, t_inputrec *ir, t_gromppopts *opts,
         if (!(ir->coulomb_modifier == eintmodNONE ||
               ir->coulomb_modifier == eintmodPOTSHIFT))
         {
-            sprintf(warn_buf, "coulomb_modifier=%s is not supported with the Verlet cut-off scheme", eintmod_names[ir->coulomb_modifier]);
+            sprintf(warn_buf, "coulomb_modifier=%s is not supported", eintmod_names[ir->coulomb_modifier]);
             warning_error(wi, warn_buf);
         }
 
@@ -809,9 +805,13 @@ void check_ir(const char *mdparin, t_inputrec *ir, t_gromppopts *opts,
         {
             sprintf(err_buf, "nstlog must be non-zero");
             CHECK(ir->nstlog == 0);
-            sprintf(err_buf, "nst-transition-matrix (%d) must be an integer multiple of nstlog (%d)",
-                    expand->nstTij, ir->nstlog);
-            CHECK((expand->nstTij % ir->nstlog) != 0);
+            // Avoid modulus by zero in the case that already triggered an error exit.
+            if (ir->nstlog != 0)
+            {
+                sprintf(err_buf, "nst-transition-matrix (%d) must be an integer multiple of nstlog (%d)",
+                        expand->nstTij, ir->nstlog);
+                CHECK((expand->nstTij % ir->nstlog) != 0);
+            }
         }
     }
 
@@ -2696,11 +2696,11 @@ static void calc_nrdf(const gmx_mtop_t *mtop, t_inputrec *ir, char **gnames)
     snew(na_vcm, groups.groups[SimulationAtomGroupType::MassCenterVelocityRemoval].size()+1);
     snew(nrdf_vcm_sub, groups.groups[SimulationAtomGroupType::MassCenterVelocityRemoval].size()+1);
 
-    for (int i = 0; i < gmx::ssize(groups.groups[SimulationAtomGroupType::TemperatureCoupling]); i++)
+    for (gmx::index i = 0; i < gmx::ssize(groups.groups[SimulationAtomGroupType::TemperatureCoupling]); i++)
     {
         nrdf_tc[i] = 0;
     }
-    for (int i = 0; i < gmx::ssize(groups.groups[SimulationAtomGroupType::MassCenterVelocityRemoval])+1; i++)
+    for (gmx::index i = 0; i < gmx::ssize(groups.groups[SimulationAtomGroupType::MassCenterVelocityRemoval])+1; i++)
     {
         nrdf_vcm[i]     = 0;
         clear_ivec(dof_vcm[i]);
@@ -2859,7 +2859,7 @@ static void calc_nrdf(const gmx_mtop_t *mtop, t_inputrec *ir, char **gnames)
          * the number of degrees of freedom in each vcm group when COM
          * translation is removed and 6 when rotation is removed as well.
          */
-        for (int j = 0; j < gmx::ssize(groups.groups[SimulationAtomGroupType::MassCenterVelocityRemoval])+1; j++)
+        for (gmx::index j = 0; j < gmx::ssize(groups.groups[SimulationAtomGroupType::MassCenterVelocityRemoval])+1; j++)
         {
             switch (ir->comm_mode)
             {
@@ -2882,10 +2882,10 @@ static void calc_nrdf(const gmx_mtop_t *mtop, t_inputrec *ir, char **gnames)
             }
         }
 
-        for (int i = 0; i < gmx::ssize(groups.groups[SimulationAtomGroupType::TemperatureCoupling]); i++)
+        for (gmx::index i = 0; i < gmx::ssize(groups.groups[SimulationAtomGroupType::TemperatureCoupling]); i++)
         {
             /* Count the number of atoms of TC group i for every VCM group */
-            for (int j = 0; j < gmx::ssize(groups.groups[SimulationAtomGroupType::MassCenterVelocityRemoval])+1; j++)
+            for (gmx::index j = 0; j < gmx::ssize(groups.groups[SimulationAtomGroupType::MassCenterVelocityRemoval])+1; j++)
             {
                 na_vcm[j] = 0;
             }
@@ -2903,7 +2903,7 @@ static void calc_nrdf(const gmx_mtop_t *mtop, t_inputrec *ir, char **gnames)
              */
             nrdf_uc    = nrdf_tc[i];
             nrdf_tc[i] = 0;
-            for (int j = 0; j < gmx::ssize(groups.groups[SimulationAtomGroupType::MassCenterVelocityRemoval])+1; j++)
+            for (gmx::index j = 0; j < gmx::ssize(groups.groups[SimulationAtomGroupType::MassCenterVelocityRemoval])+1; j++)
             {
                 if (nrdf_vcm[j] > nrdf_vcm_sub[j])
                 {
@@ -3052,6 +3052,7 @@ static void make_IMD_group(t_IMD *IMDgroup, char *IMDgname, t_blocka *grps, char
 void do_index(const char* mdparin, const char *ndx,
               gmx_mtop_t *mtop,
               bool bVerbose,
+              const gmx::MdModulesNotifier &notifier,
               t_inputrec *ir,
               warninp_t wi)
 {
@@ -3397,6 +3398,10 @@ void do_index(const char* mdparin, const char *ndx,
     {
         make_IMD_group(ir->imd, is->imd_grp, defaultIndexGroups, gnames);
     }
+
+    gmx::IndexGroupsAndNames defaultIndexGroupsAndNames(
+            *defaultIndexGroups, gmx::arrayRefFromArray(gnames, defaultIndexGroups->nr));
+    notifier.notifier_.notify(defaultIndexGroupsAndNames);
 
     auto accelerations          = gmx::splitString(is->acc);
     auto accelerationGroupNames = gmx::splitString(is->accgrps);
@@ -4040,18 +4045,10 @@ void triple_check(const char *mdparin, t_inputrec *ir, gmx_mtop_t *sys,
     }
 
     /* Generalized reaction field */
-    if (ir->opts.ngtc == 0)
+    if (ir->coulombtype == eelGRF_NOTUSED)
     {
-        sprintf(err_buf, "No temperature coupling while using coulombtype %s",
-                eel_names[eelGRF]);
-        CHECK(ir->coulombtype == eelGRF);
-    }
-    else
-    {
-        sprintf(err_buf, "When using coulombtype = %s"
-                " ref-t for temperature coupling should be > 0",
-                eel_names[eelGRF]);
-        CHECK((ir->coulombtype == eelGRF) && (ir->opts.ref_t[0] <= 0));
+        warning_error(wi, "Generalized reaction-field electrostatics is no longer supported. "
+                      "You can use normal reaction-field instead and compute the reaction-field constant by hand.");
     }
 
     bAcc = FALSE;

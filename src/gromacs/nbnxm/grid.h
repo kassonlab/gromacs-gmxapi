@@ -56,11 +56,10 @@
 #include <memory>
 #include <vector>
 
+#include "gromacs/gpu_utils/hostallocator.h"
 #include "gromacs/math/vectypes.h"
-#include "gromacs/simd/simd.h"
 #include "gromacs/utility/alignedallocator.h"
 #include "gromacs/utility/arrayref.h"
-
 
 struct gmx_domdec_zones_t;
 struct nbnxn_atomdata_t;
@@ -152,62 +151,7 @@ struct BoundingBox1D
     float upper; //!< upper bound
 };
 
-/*! \brief The number of bounds along one dimension of a bounding box */
-static constexpr int c_numBoundingBoxBounds1D = 2;
-
 } // namespace Nbnxm
-
-#ifndef DOXYGEN
-
-/* Bounding box calculations are (currently) always in single precision, so
- * we only need to check for single precision support here.
- * This uses less (cache-)memory and SIMD is faster, at least on x86.
- */
-#if GMX_SIMD4_HAVE_FLOAT
-#    define NBNXN_SEARCH_BB_SIMD4      1
-#else
-#    define NBNXN_SEARCH_BB_SIMD4      0
-#endif
-
-
-#if NBNXN_SEARCH_BB_SIMD4
-/* Always use 4-wide SIMD for bounding box calculations */
-
-#    if !GMX_DOUBLE
-/* Single precision BBs + coordinates, we can also load coordinates with SIMD */
-#        define NBNXN_SEARCH_SIMD4_FLOAT_X_BB  1
-#    else
-#        define NBNXN_SEARCH_SIMD4_FLOAT_X_BB  0
-#    endif
-
-/* Store bounding boxes corners as quadruplets: xxxxyyyyzzzz
- *
- * The packed bounding box coordinate stride is always set to 4.
- * With AVX we could use 8, but that turns out not to be faster.
- */
-#    define NBNXN_BBXXXX  1
-
-//! The number of bounding boxes in a pack, also the size of a pack along one dimension
-static constexpr int c_packedBoundingBoxesDimSize = GMX_SIMD4_WIDTH;
-
-//! Total number of corners (floats) in a pack of bounding boxes
-static constexpr int c_packedBoundingBoxesSize    =
-    c_packedBoundingBoxesDimSize*DIM*Nbnxm::c_numBoundingBoxBounds1D;
-
-//! Returns the starting index of the bouding box pack that contains the given cluster
-static constexpr inline int packedBoundingBoxesIndex(int clusterIndex)
-{
-    return (clusterIndex/c_packedBoundingBoxesDimSize)*c_packedBoundingBoxesSize;
-}
-
-#else  /* NBNXN_SEARCH_BB_SIMD4 */
-
-#    define NBNXN_SEARCH_SIMD4_FLOAT_X_BB  0
-#    define NBNXN_BBXXXX                   0
-
-#endif /* NBNXN_SEARCH_BB_SIMD4 */
-
-#endif // !DOXYGEN
 
 namespace Nbnxm
 {
@@ -385,14 +329,14 @@ class Grid
         //! Returns whether any atom in the cluster is perturbed
         bool clusterIsPerturbed(int clusterIndex) const
         {
-            return fep_[clusterIndex] != 0u;
+            return fep_[clusterIndex] != 0U;
         }
 
         //! Returns whether the given atom in the cluster is perturbed
         bool atomIsPerturbed(int clusterIndex,
                              int atomIndexInCluster) const
         {
-            return (fep_[clusterIndex] & (1 << atomIndexInCluster)) != 0u;
+            return (fep_[clusterIndex] & (1 << atomIndexInCluster)) != 0U;
         }
 
         //! Returns the free-energy perturbation bits for the cluster
@@ -463,7 +407,8 @@ class Grid
                            const rvec            upperCorner,
                            real                  atomDensity,
                            real                  maxAtomGroupRadius,
-                           bool                  haveFep);
+                           bool                  haveFep,
+                           gmx::PinningPolicy    pinningPolicy);
 
         //! Sets the cell indices using indices in \p gridSetData and \p gridWork
         void setCellIndices(int                             ddZone,
@@ -545,11 +490,11 @@ class Grid
         /*! \brief The number of, non-filler, atoms for each grid column.
          *
          * \todo Needs a useful name. */
-        std::vector<int> cxy_na_;
+        gmx::HostVector<int>    cxy_na_;
         /*! \brief The grid-local cell index for each grid column
          *
          * \todo Needs a useful name. */
-        std::vector<int> cxy_ind_;
+        gmx::HostVector<int>    cxy_ind_;
 
         //! The number of cluster for each cell
         std::vector<int> numClusters_;

@@ -33,8 +33,6 @@
 # the research papers on the package. Check out http://www.gromacs.org.
 
 import gmxapi as gmx
-import pytest
-from gmxapi.operation import Subgraph
 
 
 @gmx.function_wrapper(output={'data': float})
@@ -45,20 +43,6 @@ def add_float(a: float, b: float) -> float:
 @gmx.function_wrapper(output={'data': bool})
 def less_than(lhs: float, rhs: float) -> bool:
     return lhs < rhs
-
-
-# def test_subgraph_class():
-#     """Test subgraph definition as class body execution accompanied by metaclass processing.
-#     """
-#     class MySubgraph(Subgraph, variables={'int_with_default': 1, 'bool_data': bool}):
-#         """Testable subgraph."""
-#         int_with_default = Subgraph.Variable(int, 1)
-#         bool_data = Subgraph.Variable(bool)
-#
-#     subgraph = MySubgraph()
-#     assert hasattr(MySubgraph, 'int_with_default')
-#     assert hasattr(subgraph, 'int_with_default')
-#     assert subgraph.int_with_default == 1
 
 
 def test_subgraph_function():

@@ -1232,8 +1232,6 @@ static void getRandomIntArray(int nPull, int blockLength, int* randomArray, gmx:
         }
         randomArray[ipull] = ipullRandom;
     }
-    /*for (ipull=0; ipull<nPull; ipull++)
-       printf("%d ",randomArray[ipull]); printf("\n"); */
 }
 
 /*! \brief Set pull group information of a synthetic histogram
@@ -1641,7 +1639,6 @@ static void do_bootstrapping(const char *fnres, const char* fnprof, const char *
     switch (opt->bsMethod)
     {
         case bsMethod_hist:
-            snew(randomArray, nAllPull);
             printf("\n\nWhen computing statistical errors by bootstrapping entire histograms:\n");
             please_cite(stdout, "Hub2006");
             break;
@@ -1674,6 +1671,7 @@ static void do_bootstrapping(const char *fnres, const char* fnprof, const char *
         {
             case bsMethod_hist:
                 /* bootstrap complete histograms from given histograms */
+                srenew(randomArray, nAllPull);
                 getRandomIntArray(nAllPull, opt->histBootStrapBlockLength, randomArray, &opt->rng);
                 for (i = 0; i < nAllPull; i++)
                 {
@@ -2050,7 +2048,8 @@ static void read_tpr_header(const char *fn, t_UmbrellaHeader* header, t_Umbrella
         header->pcrd[i].pull_type     = ir->pull->coord[i].eType;
         header->pcrd[i].geometry      = ir->pull->coord[i].eGeom;
         header->pcrd[i].ngroup        = ir->pull->coord[i].ngroup;
-        header->pcrd[i].k             = ir->pull->coord[i].k;
+        /* Angle type coordinates are handled fully in degrees in gmx wham */
+        header->pcrd[i].k             = ir->pull->coord[i].k*pull_conversion_factor_internal2userinput(&ir->pull->coord[i]);
         header->pcrd[i].init_dist     = ir->pull->coord[i].init;
 
         copy_ivec(ir->pull->coord[i].dim, header->pcrd[i].dim);

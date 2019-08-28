@@ -164,7 +164,7 @@ static void reset_pmeonly_counters(gmx_wallcycle_t           wcycle,
     /* Reset all the counters related to performance over the run */
     wallcycle_stop(wcycle, ewcRUN);
     wallcycle_reset_all(wcycle);
-    init_nrnb(nrnb);
+    *nrnb = { 0 };
     wallcycle_start(wcycle, ewcRUN);
     walltime_accounting_reset_time(walltime_accounting, step);
 
@@ -404,7 +404,7 @@ static int gmx_pme_recv_coeffs_coords(gmx_pme_pp        *pme_pp,
             copy_mat(cnb.box, box);
             *lambda_q       = cnb.lambda_q;
             *lambda_lj      = cnb.lambda_lj;
-            *bEnerVir       = ((cnb.flags & PP_PME_ENER_VIR) != 0u);
+            *bEnerVir       = ((cnb.flags & PP_PME_ENER_VIR) != 0U);
             *step           = cnb.step;
 
             /* Receive the coordinates in place */
@@ -552,7 +552,7 @@ int gmx_pmeonly(struct gmx_pme_t *pme,
         changePinningPolicy(&pme_pp->x, pme_get_pinning_policy());
     }
 
-    init_nrnb(mynrnb);
+    clear_nrnb(mynrnb);
 
     count = 0;
     do /****** this is a quasi-loop over time steps! */
@@ -626,7 +626,7 @@ int gmx_pmeonly(struct gmx_pme_t *pme,
             pme_gpu_prepare_computation(pme, boxChanged, box, wcycle, pmeFlags);
             pme_gpu_launch_spread(pme, as_rvec_array(pme_pp->x.data()), wcycle);
             pme_gpu_launch_complex_transforms(pme, wcycle);
-            pme_gpu_launch_gather(pme, wcycle, PmeForceOutputHandling::Set);
+            pme_gpu_launch_gather(pme, wcycle, PmeForceOutputHandling::Set, false);
             output = pme_gpu_wait_finish_task(pme, pmeFlags, wcycle);
             pme_gpu_reinit_computation(pme, wcycle);
         }

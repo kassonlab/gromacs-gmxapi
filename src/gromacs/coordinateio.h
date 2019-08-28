@@ -148,7 +148,6 @@
 #define GMX_COORDINATEIO_H
 
 #include "gromacs/coordinateio/coordinatefile.h"
-#include "gromacs/coordinateio/enums.h"
 #include "gromacs/coordinateio/ioutputadapter.h"
 #include "gromacs/coordinateio/outputadaptercontainer.h"
 #include "gromacs/coordinateio/outputadapters.h"
@@ -156,6 +155,11 @@
 #include "gromacs/coordinateio/outputadapters/setatoms.h"
 #include "gromacs/coordinateio/outputadapters/setbox.h"
 #include "gromacs/coordinateio/outputadapters/setforces.h"
+#include "gromacs/coordinateio/outputadapters/setprecision.h"
+#include "gromacs/coordinateio/outputadapters/setstarttime.h"
+#include "gromacs/coordinateio/outputadapters/settimestep.h"
 #include "gromacs/coordinateio/outputadapters/setvelocities.h"
+
+#include "coordinateio/enums.h"
 
 #endif

@@ -104,8 +104,8 @@
 #include "gromacs/utility/logger.h"
 #include "gromacs/utility/smalloc.h"
 
+#include "legacysimulator.h"
 #include "shellfc.h"
-#include "simulator.h"
 
 //! Utility structure for manipulating states during EM
 typedef struct {
@@ -375,8 +375,6 @@ static void init_em(FILE *fplog,
         state_global->ngtc = 0;
     }
     initialize_lambdas(fplog, *ir, MASTER(cr), &(state_global->fep_state), state_global->lambda, nullptr);
-
-    init_nrnb(nrnb);
 
     if (ir->eI == eiNM)
     {
@@ -664,7 +662,7 @@ static bool do_em_step(const t_commrec *cr,
 
             /* OpenMP does not supported unsigned loop variables */
 #pragma omp for schedule(static) nowait
-            for (int i = 0; i < gmx::ssize(s2->cg_gl); i++)
+            for (gmx::index i = 0; i < gmx::ssize(s2->cg_gl); i++)
             {
                 s2->cg_gl[i] = s1->cg_gl[i];
             }
@@ -1059,7 +1057,7 @@ namespace gmx
 {
 
 void
-Simulator::do_cg()
+LegacySimulator::do_cg()
 {
     const char        *CG = "Polak-Ribiere Conjugate Gradients";
 
@@ -1686,7 +1684,7 @@ Simulator::do_cg()
 
 
 void
-Simulator::do_lbfgs()
+LegacySimulator::do_lbfgs()
 {
     static const char *LBFGS = "Low-Memory BFGS Minimizer";
     em_state_t         ems;
@@ -2127,15 +2125,15 @@ Simulator::do_lbfgs()
                 {
                     /* Replace c endpoint with b */
                     c   = b;
-                    /* swap states b and c */
-                    swap_em_state(&sb, &sc);
+                    /* copy state b to c */
+                    *sc = *sb;
                 }
                 else
                 {
                     /* Replace a endpoint with b */
                     a   = b;
-                    /* swap states a and b */
-                    swap_em_state(&sa, &sb);
+                    /* copy state b to a */
+                    *sa = *sb;
                 }
 
                 /*
@@ -2341,7 +2339,7 @@ Simulator::do_lbfgs()
         }
 
         // Reset stepsize in we are doing more iterations
-        stepsize = 1.0/ems.fnorm;
+        stepsize = 1.0;
 
         /* Stop when the maximum force lies below tolerance.
          * If we have reached machine precision, converged is already set to true.
@@ -2416,7 +2414,7 @@ Simulator::do_lbfgs()
 }
 
 void
-Simulator::do_steep()
+LegacySimulator::do_steep()
 {
     const char       *SD  = "Steepest Descents";
     gmx_localtop_t    top;
@@ -2599,8 +2597,15 @@ Simulator::do_steep()
             }
         }
 
-        /* Determine new step  */
-        stepsize = ustep/s_min->fmax;
+        // If the force is very small after finishing minimization,
+        // we risk dividing by zero when calculating the step size.
+        // So we check first if the minimization has stopped before
+        // trying to obtain a new step size.
+        if (!bDone)
+        {
+            /* Determine new step  */
+            stepsize = ustep/s_min->fmax;
+        }
 
         /* Check if stepsize is too small, with 1 nm as a characteristic length */
 #if GMX_DOUBLE
@@ -2657,10 +2662,10 @@ Simulator::do_steep()
 }
 
 void
-Simulator::do_nm()
+LegacySimulator::do_nm()
 {
     const char          *NM = "Normal Mode Analysis";
-    int                  nnodes, node;
+    int                  nnodes;
     gmx_localtop_t       top;
     gmx_global_stat_t    gstat;
     t_graph             *graph;
@@ -2756,9 +2761,6 @@ Simulator::do_nm()
         snew(full_matrix, sz*sz);
     }
 
-    init_nrnb(nrnb);
-
-
     /* Write start time and temperature */
     print_em_start(fplog, cr, walltime_accounting, wcycle, NM);
 
@@ -2811,7 +2813,7 @@ Simulator::do_nm()
     bool bNS          = true;
     auto state_work_x = makeArrayRef(state_work.s.x);
     auto state_work_f = makeArrayRef(state_work.f);
-    for (unsigned int aid = cr->nodeid; aid < atom_index.size(); aid += nnodes)
+    for (index aid = cr->nodeid; aid < ssize(atom_index); aid += nnodes)
     {
         size_t atom = atom_index[aid];
         for (size_t d = 0; d < DIM; d++)
@@ -2853,7 +2855,12 @@ Simulator::do_nm()
                                         constr,
                                         enerd,
                                         fcd,
-                                        &state_work.s,
+                                        state_work.s.natoms,
+                                        state_work.s.x.arrayRefWithPadding(),
+                                        state_work.s.v.arrayRefWithPadding(),
+                                        state_work.s.box,
+                                        state_work.s.lambda,
+                                        &state_work.s.hist,
                                         state_work.f.arrayRefWithPadding(),
                                         vir,
                                         mdatoms,
@@ -2905,7 +2912,7 @@ Simulator::do_nm()
             }
             else
             {
-                for (node = 0; (node < nnodes && aid+node < atom_index.size()); node++)
+                for (index node = 0; (node < nnodes && aid+node < ssize(atom_index)); node++)
                 {
                     if (node > 0)
                     {

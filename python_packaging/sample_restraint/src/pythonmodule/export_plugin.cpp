@@ -39,11 +39,12 @@ using plugin::RestraintModule;
 using EnsembleRestraintBuilder = RestraintBuilder<EnsemblePotential>;
 
 /*!
- * \brief Factory function to create a new builder for use during Session
- * launch.
+ * \brief Factory function for use by the Session launcher.
+ *
+ * Creates an object that can participate in the building of a work node.
  *
  * \param element WorkElement provided through Context
- * \return ownership of new builder object
+ * \return ownership of new builder object for the protocol in gmxapi.simulation.Context
  */
 std::unique_ptr<EnsembleRestraintBuilder> createEnsembleBuilder(const py::object &element)
 {

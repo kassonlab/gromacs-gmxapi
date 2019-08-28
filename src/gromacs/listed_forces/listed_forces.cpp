@@ -68,7 +68,6 @@
 #include "gromacs/mdtypes/md_enums.h"
 #include "gromacs/pbcutil/ishift.h"
 #include "gromacs/pbcutil/pbc.h"
-#include "gromacs/simd/simd.h"
 #include "gromacs/timing/wallcycle.h"
 #include "gromacs/topology/topology.h"
 #include "gromacs/utility/exceptions.h"
@@ -77,121 +76,6 @@
 
 #include "listed_internal.h"
 #include "utilities.h"
-
-struct BondedInteractions
-{
-    BondedFunction function;
-    int            nrnbIndex;
-};
-
-/*! \brief Lookup table of bonded interaction functions
- *
- * This must have as many entries as interaction_function in ifunc.cpp */
-static std::array<BondedInteractions, F_NRE> s_bondedInteractionFunctions
-    = {
-    BondedInteractions {bonds, eNR_BONDS },                       // F_BONDS
-    BondedInteractions {g96bonds, eNR_BONDS },                    // F_G96BONDS
-    BondedInteractions {morse_bonds, eNR_MORSE },                 // F_MORSE
-    BondedInteractions {cubic_bonds, eNR_CUBICBONDS },            // F_CUBICBONDS
-    BondedInteractions {unimplemented, -1 },                      // F_CONNBONDS
-    BondedInteractions {bonds, eNR_BONDS },                       // F_HARMONIC
-    BondedInteractions {FENE_bonds, eNR_FENEBONDS },              // F_FENEBONDS
-    BondedInteractions {tab_bonds, eNR_TABBONDS },                // F_TABBONDS
-    BondedInteractions {tab_bonds, eNR_TABBONDS },                // F_TABBONDSNC
-    BondedInteractions {restraint_bonds, eNR_RESTRBONDS },        // F_RESTRBONDS
-    BondedInteractions {angles, eNR_ANGLES },                     // F_ANGLES
-    BondedInteractions {g96angles, eNR_ANGLES },                  // F_G96ANGLES
-    BondedInteractions {restrangles, eNR_ANGLES },                // F_RESTRANGLES
-    BondedInteractions {linear_angles, eNR_ANGLES },              // F_LINEAR_ANGLES
-    BondedInteractions {cross_bond_bond, eNR_CROSS_BOND_BOND },   // F_CROSS_BOND_BONDS
-    BondedInteractions {cross_bond_angle, eNR_CROSS_BOND_ANGLE }, // F_CROSS_BOND_ANGLES
-    BondedInteractions {urey_bradley, eNR_UREY_BRADLEY },         // F_UREY_BRADLEY
-    BondedInteractions {quartic_angles, eNR_QANGLES },            // F_QUARTIC_ANGLES
-    BondedInteractions {tab_angles, eNR_TABANGLES },              // F_TABANGLES
-    BondedInteractions {pdihs, eNR_PROPER },                      // F_PDIHS
-    BondedInteractions {rbdihs, eNR_RB },                         // F_RBDIHS
-    BondedInteractions {restrdihs, eNR_PROPER },                  // F_RESTRDIHS
-    BondedInteractions {cbtdihs, eNR_RB },                        // F_CBTDIHS
-    BondedInteractions {rbdihs, eNR_FOURDIH },                    // F_FOURDIHS
-    BondedInteractions {idihs, eNR_IMPROPER },                    // F_IDIHS
-    BondedInteractions {pdihs, eNR_IMPROPER },                    // F_PIDIHS
-    BondedInteractions {tab_dihs, eNR_TABDIHS },                  // F_TABDIHS
-    BondedInteractions {unimplemented, eNR_CMAP },                // F_CMAP
-    BondedInteractions {unimplemented, -1 },                      // F_GB12_NOLONGERUSED
-    BondedInteractions {unimplemented, -1 },                      // F_GB13_NOLONGERUSED
-    BondedInteractions {unimplemented, -1 },                      // F_GB14_NOLONGERUSED
-    BondedInteractions {unimplemented, -1 },                      // F_GBPOL_NOLONGERUSED
-    BondedInteractions {unimplemented, -1 },                      // F_NPSOLVATION_NOLONGERUSED
-    BondedInteractions {unimplemented, eNR_NB14 },                // F_LJ14
-    BondedInteractions {unimplemented, -1 },                      // F_COUL14
-    BondedInteractions {unimplemented, eNR_NB14 },                // F_LJC14_Q
-    BondedInteractions {unimplemented, eNR_NB14 },                // F_LJC_PAIRS_NB
-    BondedInteractions {unimplemented, -1 },                      // F_LJ
-    BondedInteractions {unimplemented, -1 },                      // F_BHAM
-    BondedInteractions {unimplemented, -1 },                      // F_LJ_LR_NOLONGERUSED
-    BondedInteractions {unimplemented, -1 },                      // F_BHAM_LR_NOLONGERUSED
-    BondedInteractions {unimplemented, -1 },                      // F_DISPCORR
-    BondedInteractions {unimplemented, -1 },                      // F_COUL_SR
-    BondedInteractions {unimplemented, -1 },                      // F_COUL_LR_NOLONGERUSED
-    BondedInteractions {unimplemented, -1 },                      // F_RF_EXCL
-    BondedInteractions {unimplemented, -1 },                      // F_COUL_RECIP
-    BondedInteractions {unimplemented, -1 },                      // F_LJ_RECIP
-    BondedInteractions {unimplemented, -1 },                      // F_DPD
-    BondedInteractions {polarize, eNR_POLARIZE },                 // F_POLARIZATION
-    BondedInteractions {water_pol, eNR_WPOL },                    // F_WATER_POL
-    BondedInteractions {thole_pol, eNR_THOLE },                   // F_THOLE_POL
-    BondedInteractions {anharm_polarize, eNR_ANHARM_POL },        // F_ANHARM_POL
-    BondedInteractions {unimplemented, -1 },                      // F_POSRES
-    BondedInteractions {unimplemented, -1 },                      // F_FBPOSRES
-    BondedInteractions {ta_disres, eNR_DISRES },                  // F_DISRES
-    BondedInteractions {unimplemented, -1 },                      // F_DISRESVIOL
-    BondedInteractions {orires, eNR_ORIRES },                     // F_ORIRES
-    BondedInteractions {unimplemented, -1 },                      // F_ORIRESDEV
-    BondedInteractions {angres, eNR_ANGRES },                     // F_ANGRES
-    BondedInteractions {angresz, eNR_ANGRESZ },                   // F_ANGRESZ
-    BondedInteractions {dihres, eNR_DIHRES },                     // F_DIHRES
-    BondedInteractions {unimplemented, -1 },                      // F_DIHRESVIOL
-    BondedInteractions {unimplemented, -1 },                      // F_CONSTR
-    BondedInteractions {unimplemented, -1 },                      // F_CONSTRNC
-    BondedInteractions {unimplemented, -1 },                      // F_SETTLE
-    BondedInteractions {unimplemented, -1 },                      // F_VSITE2
-    BondedInteractions {unimplemented, -1 },                      // F_VSITE3
-    BondedInteractions {unimplemented, -1 },                      // F_VSITE3FD
-    BondedInteractions {unimplemented, -1 },                      // F_VSITE3FAD
-    BondedInteractions {unimplemented, -1 },                      // F_VSITE3OUT
-    BondedInteractions {unimplemented, -1 },                      // F_VSITE4FD
-    BondedInteractions {unimplemented, -1 },                      // F_VSITE4FDN
-    BondedInteractions {unimplemented, -1 },                      // F_VSITEN
-    BondedInteractions {unimplemented, -1 },                      // F_COM_PULL
-    BondedInteractions {unimplemented, -1 },                      // F_EQM
-    BondedInteractions {unimplemented, -1 },                      // F_EPOT
-    BondedInteractions {unimplemented, -1 },                      // F_EKIN
-    BondedInteractions {unimplemented, -1 },                      // F_ETOT
-    BondedInteractions {unimplemented, -1 },                      // F_ECONSERVED
-    BondedInteractions {unimplemented, -1 },                      // F_TEMP
-    BondedInteractions {unimplemented, -1 },                      // F_VTEMP_NOLONGERUSED
-    BondedInteractions {unimplemented, -1 },                      // F_PDISPCORR
-    BondedInteractions {unimplemented, -1 },                      // F_PRES
-    BondedInteractions {unimplemented, -1 },                      // F_DVDL_CONSTR
-    BondedInteractions {unimplemented, -1 },                      // F_DVDL
-    BondedInteractions {unimplemented, -1 },                      // F_DKDL
-    BondedInteractions {unimplemented, -1 },                      // F_DVDL_COUL
-    BondedInteractions {unimplemented, -1 },                      // F_DVDL_VDW
-    BondedInteractions {unimplemented, -1 },                      // F_DVDL_BONDED
-    BondedInteractions {unimplemented, -1 },                      // F_DVDL_RESTRAINT
-    BondedInteractions {unimplemented, -1 },                      // F_DVDL_TEMPERATURE
-    };
-
-BondedFunction bondedFunction(int ftype)
-{
-    return s_bondedInteractionFunctions[ftype].function;
-}
-
-//! Getter for finding the flop count for an \c ftype interaction.
-static int nrnbIndex(int ftype)
-{
-    return s_bondedInteractionFunctions[ftype].nrnbIndex;
-}
 
 namespace
 {
@@ -252,15 +136,18 @@ zero_thread_output(f_thread_t *f_t)
 
 /*! \brief Reduce thread-local force buffers */
 void
-reduce_thread_forces(int n, rvec *f,
-                     const bonded_threading_t *bt,
-                     int nthreads)
+reduce_thread_forces(int                        n,
+                     gmx::ArrayRef<gmx::RVec>   force,
+                     const bonded_threading_t  *bt,
+                     int                        nthreads)
 {
     if (nthreads > MAX_BONDED_THREADS)
     {
         gmx_fatal(FARGS, "Can not reduce bonded forces on more than %d threads",
                   MAX_BONDED_THREADS);
     }
+
+    rvec * gmx_restrict f = as_rvec_array(force.data());
 
     /* This reduction can run on any number of threads,
      * independently of bt->nthreads.
@@ -309,7 +196,7 @@ reduce_thread_forces(int n, rvec *f,
 
 /*! \brief Reduce thread-local forces, shift forces and energies */
 void
-reduce_thread_output(int n, rvec *f, rvec *fshift,
+reduce_thread_output(int n, gmx::ForceWithShiftForces *forceWithShiftForces,
                      real *ener, gmx_grppairener_t *grpp, real *dvdl,
                      const bonded_threading_t *bt,
                      gmx_bool bCalcEnerVir,
@@ -320,8 +207,10 @@ reduce_thread_output(int n, rvec *f, rvec *fshift,
     if (bt->nblock_used > 0)
     {
         /* Reduce the bonded force buffer */
-        reduce_thread_forces(n, f, bt, bt->nthreads);
+        reduce_thread_forces(n, forceWithShiftForces->force(), bt, bt->nthreads);
     }
+
+    rvec * gmx_restrict fshift = as_rvec_array(forceWithShiftForces->shiftForces().data());
 
     /* When necessary, reduce energy and virial using one thread only */
     if (bCalcEnerVir && bt->nthreads > 1)
@@ -366,6 +255,39 @@ reduce_thread_output(int n, rvec *f, rvec *fshift,
     }
 }
 
+/*! \brief Returns the bonded kernel flavor
+ *
+ * Note that energies are always requested when the virial
+ * is requested (performance gain would be small).
+ * Note that currently we do not have bonded kernels that
+ * do not compute forces.
+ */
+BondedKernelFlavor bondedKernelFlavor(const int     forceFlags,
+                                      const bool    useSimdKernels,
+                                      const t_idef &idef,
+                                      const int     ftype)
+{
+    GMX_ASSERT(idef.ilsort == ilsortNO_FE || idef.ilsort == ilsortFE_SORTED,
+               "The topology should be marked either as no FE or sorted on FE");
+
+    BondedKernelFlavor flavor;
+    if (forceFlags & (GMX_FORCE_ENERGY | GMX_FORCE_VIRIAL))
+    {
+        flavor = BondedKernelFlavor::ForcesAndVirialAndEnergy;
+    }
+    else if (useSimdKernels && (idef.ilsort == ilsortNO_FE ||
+                                idef.il[ftype].nr_nonperturbed == idef.il[ftype].nr))
+    {
+        flavor = BondedKernelFlavor::ForcesSimdWhenAvailable;
+    }
+    else
+    {
+        flavor = BondedKernelFlavor::ForcesNoSimd;
+    }
+
+    return flavor;
+}
+
 /*! \brief Calculate one element of the list of bonded interactions
     for this thread */
 real
@@ -379,18 +301,12 @@ calc_one_bond(int thread,
               t_nrnb *nrnb,
               const real *lambda, real *dvdl,
               const t_mdatoms *md, t_fcdata *fcd,
-              gmx_bool bCalcEnerVir,
+              const int forceFlags,
               int *global_atom_index)
 {
-#if GMX_SIMD_HAVE_REAL
-    bool bUseSIMD = fr->use_simd_kernels;
-#endif
-
-    int      nat1, nbonds, efptFTYPE;
-    real     v = 0;
-    t_iatom *iatoms;
-    int      nb0, nbn;
-
+    BondedKernelFlavor flavor =
+        bondedKernelFlavor(forceFlags, fr->use_simd_kernels, *idef, ftype);
+    int                efptFTYPE;
     if (IS_RESTRAINT_TYPE(ftype))
     {
         efptFTYPE = efptRESTRAINT;
@@ -401,19 +317,18 @@ calc_one_bond(int thread,
     }
 
     GMX_ASSERT(fr->efep == efepNO || idef->ilsort == ilsortNO_FE || idef->ilsort == ilsortFE_SORTED, "With free-energy calculations, we should either have no perturbed bondeds or sorted perturbed bondeds");
-    const bool useFreeEnergy     = (idef->ilsort == ilsortFE_SORTED && idef->il[ftype].nr_nonperturbed < idef->il[ftype].nr);
-    const bool computeForcesOnly = (!bCalcEnerVir && !useFreeEnergy);
 
-    nat1      = interaction_function[ftype].nratoms + 1;
-    nbonds    = idef->il[ftype].nr/nat1;
-    iatoms    = idef->il[ftype].iatoms;
+    const int      nat1   = interaction_function[ftype].nratoms + 1;
+    const int      nbonds = idef->il[ftype].nr/nat1;
+    const t_iatom *iatoms = idef->il[ftype].iatoms;
 
     GMX_ASSERT(fr->gpuBonded != nullptr || workDivision.end(ftype) == idef->il[ftype].nr,
                "The thread division should match the topology");
 
-    nb0 = workDivision.bound(ftype, thread);
-    nbn = workDivision.bound(ftype, thread + 1) - nb0;
+    const int nb0 = workDivision.bound(ftype, thread);
+    const int nbn = workDivision.bound(ftype, thread + 1) - nb0;
 
+    real      v = 0;
     if (!isPairInteraction(ftype))
     {
         if (ftype == F_CMAP)
@@ -428,71 +343,14 @@ calc_one_bond(int thread,
                           pbc, g, lambda[efptFTYPE], &(dvdl[efptFTYPE]),
                           md, fcd, global_atom_index);
         }
-#if GMX_SIMD_HAVE_REAL
-        else if (ftype == F_ANGLES && bUseSIMD && computeForcesOnly)
-        {
-            /* No energies, shift forces, dvdl */
-            angles_noener_simd(nbn, idef->il[ftype].iatoms+nb0,
-                               idef->iparams,
-                               x, f,
-                               pbc, g, lambda[efptFTYPE], md, fcd,
-                               global_atom_index);
-            v = 0;
-        }
-
-        else if (ftype == F_UREY_BRADLEY && bUseSIMD && computeForcesOnly)
-        {
-            /* No energies, shift forces, dvdl */
-            urey_bradley_noener_simd(nbn, idef->il[ftype].iatoms+nb0,
-                                     idef->iparams,
-                                     x, f,
-                                     pbc, g, lambda[efptFTYPE], md, fcd,
-                                     global_atom_index);
-            v = 0;
-        }
-#endif
-        else if (ftype == F_PDIHS && computeForcesOnly)
-        {
-            /* No energies, shift forces, dvdl */
-#if GMX_SIMD_HAVE_REAL
-            if (bUseSIMD)
-            {
-                pdihs_noener_simd(nbn, idef->il[ftype].iatoms+nb0,
-                                  idef->iparams,
-                                  x, f,
-                                  pbc, g, lambda[efptFTYPE], md, fcd,
-                                  global_atom_index);
-            }
-            else
-#endif
-            {
-                pdihs_noener(nbn, idef->il[ftype].iatoms+nb0,
-                             idef->iparams,
-                             x, f,
-                             pbc, g, lambda[efptFTYPE], md, fcd,
-                             global_atom_index);
-            }
-            v = 0;
-        }
-#if GMX_SIMD_HAVE_REAL
-        else if (ftype == F_RBDIHS && bUseSIMD && computeForcesOnly)
-        {
-            /* No energies, shift forces, dvdl */
-            rbdihs_noener_simd(nbn, idef->il[ftype].iatoms+nb0,
-                               idef->iparams,
-                               static_cast<const rvec*>(x), f,
-                               pbc, g, lambda[efptFTYPE], md, fcd,
-                               global_atom_index);
-            v = 0;
-        }
-#endif
         else
         {
-            v = bondedFunction(ftype)(nbn, iatoms+nb0,
-                                      idef->iparams,
-                                      x, f, fshift,
-                                      pbc, g, lambda[efptFTYPE], &(dvdl[efptFTYPE]),
-                                      md, fcd, global_atom_index);
+            v = calculateSimpleBond(ftype, nbn, iatoms + nb0,
+                                    idef->iparams,
+                                    x, f, fshift,
+                                    pbc, g, lambda[efptFTYPE], &(dvdl[efptFTYPE]),
+                                    md, fcd, global_atom_index,
+                                    flavor);
         }
     }
     else
@@ -502,8 +360,8 @@ calc_one_bond(int thread,
            extended to support calling from multiple threads. */
         do_pairs(ftype, nbn, iatoms+nb0, idef->iparams, x, f, fshift,
                  pbc, g, lambda, dvdl, md, fr,
-                 computeForcesOnly, grpp, global_atom_index);
-        v = 0;
+                 flavor == BondedKernelFlavor::ForcesSimdWhenAvailable,
+                 grpp, global_atom_index);
     }
 
     if (thread == 0)
@@ -524,13 +382,14 @@ calcBondedForces(const t_idef     *idef,
                  const t_forcerec *fr,
                  const t_pbc      *pbc_null,
                  const t_graph    *g,
+                 rvec             *fshiftMasterBuffer,
                  gmx_enerdata_t   *enerd,
                  t_nrnb           *nrnb,
                  const real       *lambda,
                  real             *dvdl,
                  const t_mdatoms  *md,
                  t_fcdata         *fcd,
-                 gmx_bool          bCalcEnerVir,
+                 const int         forceFlags,
                  int              *global_atom_index)
 {
     bonded_threading_t *bt = fr->bondedThreading;
@@ -557,7 +416,7 @@ calcBondedForces(const t_idef     *idef,
              */
             if (thread == 0)
             {
-                fshift = fr->fshift;
+                fshift = fshiftMasterBuffer;
                 epot   = enerd->term;
                 grpp   = &enerd->grpp;
                 dvdlt  = dvdl;
@@ -578,7 +437,7 @@ calcBondedForces(const t_idef     *idef,
                                       fr->bondedThreading->workDivision, x,
                                       ft, fshift, fr, pbc_null, g, grpp,
                                       nrnb, lambda, dvdlt,
-                                      md, fcd, bCalcEnerVir,
+                                      md, fcd, forceFlags,
                                       global_atom_index);
                     epot[ftype] += v;
                 }
@@ -615,8 +474,7 @@ void calc_listed(const t_commrec             *cr,
                  struct gmx_wallcycle        *wcycle,
                  const t_idef *idef,
                  const rvec x[], history_t *hist,
-                 rvec f[],
-                 gmx::ForceWithVirial *forceWithVirial,
+                 gmx::ForceOutputs *forceOutputs,
                  const t_forcerec *fr,
                  const struct t_pbc *pbc,
                  const struct t_pbc *pbc_full,
@@ -654,13 +512,13 @@ void calc_listed(const t_commrec             *cr,
         if (idef->il[F_POSRES].nr > 0)
         {
             posres_wrapper(nrnb, idef, pbc_full, x, enerd, lambda, fr,
-                           forceWithVirial);
+                           &forceOutputs->forceWithVirial());
         }
 
         if (idef->il[F_FBPOSRES].nr > 0)
         {
             fbposres_wrapper(nrnb, idef, pbc_full, x, enerd, fr,
-                             forceWithVirial);
+                             &forceOutputs->forceWithVirial());
         }
 
         /* Do pre force calculation stuff which might require communication */
@@ -693,16 +551,20 @@ void calc_listed(const t_commrec             *cr,
 
     if (haveCpuBondeds(*fr))
     {
+        gmx::ForceWithShiftForces &forceWithShiftForces = forceOutputs->forceWithShiftForces();
+
         wallcycle_sub_start(wcycle, ewcsLISTED);
         /* The dummy array is to have a place to store the dhdl at other values
            of lambda, which will be thrown away in the end */
         real dvdl[efptNR] = {0};
-        calcBondedForces(idef, x, fr, pbc_null, g, enerd, nrnb, lambda, dvdl, md,
-                         fcd, bCalcEnerVir, global_atom_index);
+        calcBondedForces(idef, x, fr, pbc_null, g,
+                         as_rvec_array(forceWithShiftForces.shiftForces().data()),
+                         enerd, nrnb, lambda, dvdl, md,
+                         fcd, force_flags, global_atom_index);
         wallcycle_sub_stop(wcycle, ewcsLISTED);
 
         wallcycle_sub_start(wcycle, ewcsLISTED_BUF_OPS);
-        reduce_thread_output(fr->natoms_force, f, fr->fshift,
+        reduce_thread_output(fr->natoms_force, &forceWithShiftForces,
                              enerd->term, &enerd->grpp, dvdl,
                              bt,
                              bCalcEnerVir,
@@ -800,8 +662,7 @@ do_force_listed(struct gmx_wallcycle        *wcycle,
                 const t_idef                *idef,
                 const rvec                   x[],
                 history_t                   *hist,
-                rvec                        *forceForUseWithShiftForces,
-                gmx::ForceWithVirial        *forceWithVirial,
+                gmx::ForceOutputs           *forceOutputs,
                 const t_forcerec            *fr,
                 const struct t_pbc          *pbc,
                 const struct t_graph        *graph,
@@ -827,7 +688,7 @@ do_force_listed(struct gmx_wallcycle        *wcycle,
         set_pbc(&pbc_full, fr->ePBC, box);
     }
     calc_listed(cr, ms, wcycle, idef, x, hist,
-                forceForUseWithShiftForces, forceWithVirial,
+                forceOutputs,
                 fr, pbc, &pbc_full,
                 graph, enerd, nrnb, lambda, md, fcd,
                 global_atom_index, flags);

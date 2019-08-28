@@ -364,7 +364,8 @@ init_nb_verlet(const gmx::MDLogger     &mdlog,
                const gmx_hw_info_t     &hardwareInfo,
                const gmx_device_info_t *deviceInfo,
                const gmx_mtop_t        *mtop,
-               matrix                   box)
+               matrix                   box,
+               gmx_wallcycle           *wcycle)
 {
     const bool          emulateGpu = (getenv("GMX_EMULATE_GPU") != nullptr);
     const bool          useGpu     = deviceInfo != nullptr;
@@ -427,10 +428,11 @@ init_nb_verlet(const gmx::MDLogger     &mdlog,
         enbnxninitcombrule = enbnxninitcombruleNONE;
     }
 
-    auto nbat =
-        std::make_unique<nbnxn_atomdata_t>(useGpu ? gmx::PinningPolicy::PinnedIfSupported : gmx::PinningPolicy::CannotBePinned);
+    auto pinPolicy = (useGpu ? gmx::PinningPolicy::PinnedIfSupported : gmx::PinningPolicy::CannotBePinned);
 
-    int mimimumNumEnergyGroupNonbonded = ir->opts.ngener;
+    auto nbat      = std::make_unique<nbnxn_atomdata_t>(pinPolicy);
+
+    int  mimimumNumEnergyGroupNonbonded = ir->opts.ngener;
     if (ir->opts.ngener - ir->nwall == 1)
     {
         /* We have only one non-wall energy group, we do not need energy group
@@ -474,13 +476,15 @@ init_nb_verlet(const gmx::MDLogger     &mdlog,
                                      DOMAINDECOMP(cr) ? domdec_zones(cr->dd) : nullptr,
                                      pairlistParams.pairlistType,
                                      bFEP_NonBonded,
-                                     gmx_omp_nthreads_get(emntPairsearch));
+                                     gmx_omp_nthreads_get(emntPairsearch),
+                                     pinPolicy);
 
     return std::make_unique<nonbonded_verlet_t>(std::move(pairlistSets),
                                                 std::move(pairSearch),
                                                 std::move(nbat),
                                                 kernelSetup,
-                                                gpu_nbv);
+                                                gpu_nbv,
+                                                wcycle);
 }
 
 } // namespace Nbnxm
@@ -489,11 +493,13 @@ nonbonded_verlet_t::nonbonded_verlet_t(std::unique_ptr<PairlistSets>      pairli
                                        std::unique_ptr<PairSearch>        pairSearch,
                                        std::unique_ptr<nbnxn_atomdata_t>  nbat_in,
                                        const Nbnxm::KernelSetup          &kernelSetup,
-                                       gmx_nbnxn_gpu_t                   *gpu_nbv_ptr) :
+                                       gmx_nbnxn_gpu_t                   *gpu_nbv_ptr,
+                                       gmx_wallcycle                     *wcycle) :
     pairlistSets_(std::move(pairlistSets)),
     pairSearch_(std::move(pairSearch)),
     nbat(std::move(nbat_in)),
     kernelSetup_(kernelSetup),
+    wcycle_(wcycle),
     gpu_nbv(gpu_nbv_ptr)
 {
     GMX_RELEASE_ASSERT(pairlistSets_, "Need valid pairlistSets");

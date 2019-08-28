@@ -61,6 +61,7 @@
 #include "gromacs/nbnxm/gpu_data_mgmt.h"
 #include "gromacs/nbnxm/gridset.h"
 #include "gromacs/nbnxm/nbnxm.h"
+#include "gromacs/nbnxm/nbnxm_gpu.h"
 #include "gromacs/nbnxm/pairlistsets.h"
 #include "gromacs/pbcutil/ishift.h"
 #include "gromacs/timing/gpu_timing.h"
@@ -108,17 +109,17 @@ static inline bool useLjCombRule(const cu_nbparam_t  *nbparam)
     and the table GPU array. If called with an already allocated table,
     it just re-uploads the table.
  */
-static void init_ewald_coulomb_force_table(const interaction_const_t *ic,
-                                           cu_nbparam_t              *nbp)
+static void init_ewald_coulomb_force_table(const EwaldCorrectionTables &tables,
+                                           cu_nbparam_t                *nbp)
 {
     if (nbp->coulomb_tab != nullptr)
     {
         nbnxn_cuda_free_nbparam_table(nbp);
     }
 
-    nbp->coulomb_tab_scale = ic->tabq_scale;
+    nbp->coulomb_tab_scale = tables.scale;
     initParamLookupTable(nbp->coulomb_tab, nbp->coulomb_tab_texobj,
-                         ic->tabq_coul_F, ic->tabq_size);
+                         tables.tableF.data(), tables.tableF.size());
 }
 
 
@@ -320,7 +321,8 @@ static void init_nbparam(cu_nbparam_t                   *nbp,
     nbp->coulomb_tab = nullptr;
     if (nbp->eeltype == eelCuEWALD_TAB || nbp->eeltype == eelCuEWALD_TAB_TWIN)
     {
-        init_ewald_coulomb_force_table(ic, nbp);
+        GMX_RELEASE_ASSERT(ic->coulombEwaldTables, "Need valid Coulomb Ewald correction tables");
+        init_ewald_coulomb_force_table(*ic->coulombEwaldTables, nbp);
     }
 
     /* set up LJ parameter lookup table */
@@ -353,7 +355,8 @@ void gpu_pme_loadbal_update_param(const nonbonded_verlet_t    *nbv,
 
     nbp->eeltype        = pick_ewald_kernel_type(ic->rcoulomb != ic->rvdw);
 
-    init_ewald_coulomb_force_table(ic, nbp);
+    GMX_RELEASE_ASSERT(ic->coulombEwaldTables, "Need valid Coulomb Ewald correction tables");
+    init_ewald_coulomb_force_table(*ic->coulombEwaldTables, nbp);
 }
 
 /*! Initializes the pair list data structure. */
@@ -503,6 +506,10 @@ gpu_init(const gmx_device_info_t   *deviceInfo,
     nb->ncxy_na_alloc            = 0;
     nb->ncxy_ind                 = 0;
     nb->ncxy_ind_alloc           = 0;
+    nb->nfrvec                   = 0;
+    nb->nfrvec_alloc             = 0;
+    nb->ncell                    = 0;
+    nb->ncell_alloc              = 0;
 
     if (debug)
     {
@@ -872,11 +879,9 @@ rvec *gpu_get_fshift(gmx_nbnxn_gpu_t *nb)
 void nbnxn_gpu_init_x_to_nbat_x(const Nbnxm::GridSet            &gridSet,
                                 gmx_nbnxn_gpu_t                 *gpu_nbv)
 {
-    cudaError_t                      stat;
     cudaStream_t                     stream    = gpu_nbv->stream[InteractionLocality::Local];
     bool                             bDoTime   = gpu_nbv->bDoTime;
     const int maxNumColumns                    = gridSet.numColumnsMax();
-
 
     reallocateDeviceBuffer(&gpu_nbv->cxy_na, maxNumColumns*gridSet.grids().size(),
                            &gpu_nbv->ncxy_na, &gpu_nbv->ncxy_na_alloc, nullptr);
@@ -900,9 +905,6 @@ void nbnxn_gpu_init_x_to_nbat_x(const Nbnxm::GridSet            &gridSet,
 
         if (atomIndicesSize > 0)
         {
-            // source data must be pinned for H2D assertion. This should be moved into place where data is (re-)alloced.
-            stat = cudaHostRegister((void*) atomIndices, atomIndicesSize*sizeof(int), cudaHostRegisterDefault);
-            CU_RET_ERR(stat, "cudaHostRegister failed on atomIndices");
 
             if (bDoTime)
             {
@@ -916,16 +918,10 @@ void nbnxn_gpu_init_x_to_nbat_x(const Nbnxm::GridSet            &gridSet,
                 gpu_nbv->timers->xf[AtomLocality::Local].nb_h2d.closeTimingRegion(stream);
             }
 
-            stat = cudaHostUnregister((void*) atomIndices);
-            CU_RET_ERR(stat, "cudaHostUnRegister failed on atomIndices");
         }
 
         if (numColumns > 0)
         {
-            // source data must be pinned for H2D assertion. This should be moved into place where data is (re-)alloced.
-            stat = cudaHostRegister((void*) cxy_na, numColumns*sizeof(int), cudaHostRegisterDefault);
-            CU_RET_ERR(stat, "cudaHostRegister failed on cxy_na");
-
             if (bDoTime)
             {
                 gpu_nbv->timers->xf[AtomLocality::Local].nb_h2d.openTimingRegion(stream);
@@ -938,13 +934,6 @@ void nbnxn_gpu_init_x_to_nbat_x(const Nbnxm::GridSet            &gridSet,
             {
                 gpu_nbv->timers->xf[AtomLocality::Local].nb_h2d.closeTimingRegion(stream);
             }
-
-            stat = cudaHostUnregister((void*) cxy_na);
-            CU_RET_ERR(stat, "cudaHostUnRegister failed on cxy_na");
-
-            // source data must be pinned for H2D assertion. This should be moved into place where data is (re-)alloced.
-            stat = cudaHostRegister((void*) cxy_ind, numColumns*sizeof(int), cudaHostRegisterDefault);
-            CU_RET_ERR(stat, "cudaHostRegister failed on cxy_ind");
 
             if (bDoTime)
             {
@@ -959,8 +948,6 @@ void nbnxn_gpu_init_x_to_nbat_x(const Nbnxm::GridSet            &gridSet,
                 gpu_nbv->timers->xf[AtomLocality::Local].nb_h2d.closeTimingRegion(stream);
             }
 
-            stat = cudaHostUnregister((void*) cxy_ind);
-            CU_RET_ERR(stat, "cudaHostUnRegister failed on cxy_ind");
         }
     }
 
@@ -972,6 +959,25 @@ void nbnxn_gpu_init_x_to_nbat_x(const Nbnxm::GridSet            &gridSet,
     nbnxnInsertNonlocalGpuDependency(gpu_nbv, Nbnxm::InteractionLocality::Local);
     // ...and this call instructs the nonlocal stream to wait on that event:
     nbnxnInsertNonlocalGpuDependency(gpu_nbv, Nbnxm::InteractionLocality::NonLocal);
+
+    return;
+}
+
+/* Initialization for F buffer operations on GPU. */
+void nbnxn_gpu_init_add_nbat_f_to_f(const int                *cell,
+                                    gmx_nbnxn_gpu_t          *gpu_nbv,
+                                    int                       natoms_total)
+{
+
+    cudaStream_t         stream  = gpu_nbv->stream[InteractionLocality::Local];
+
+    reallocateDeviceBuffer(&gpu_nbv->frvec, natoms_total, &gpu_nbv->nfrvec, &gpu_nbv->nfrvec_alloc, nullptr);
+
+    if (natoms_total > 0)
+    {
+        reallocateDeviceBuffer(&gpu_nbv->cell, natoms_total, &gpu_nbv->ncell, &gpu_nbv->ncell_alloc, nullptr);
+        copyToDeviceBuffer(&gpu_nbv->cell, cell, 0, natoms_total, stream, GpuApiCallBehavior::Async, nullptr);
+    }
 
     return;
 }

@@ -34,20 +34,18 @@
 
 gmx_add_libgromacs_sources(
     legacymdrunoptions.cpp
-    shellfc.cpp
+    legacysimulator.cpp
     md.cpp
     mdmodules.cpp
+    mimic.cpp
     minimize.cpp
     replicaexchange.cpp
     rerun.cpp
-    mimic.cpp
     runner.cpp
+    shellfc.cpp
     simulationcontext.cpp
-    simulator.cpp
     tpi.cpp
     )
-
-gmx_install_headers()
 
 if (BUILD_TESTING)
 # TODO import this from src/programs/mdrun/tests

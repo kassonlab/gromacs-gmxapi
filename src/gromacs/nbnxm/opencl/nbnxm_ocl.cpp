@@ -133,7 +133,7 @@ static inline void validate_global_work_size(const KernelLaunchConfig &config, i
     {
         size_t device_limit;
 
-        device_limit = (1ull << device_size_t_size_bits) - 1;
+        device_limit = (1ULL << device_size_t_size_bits) - 1;
 
         for (int i = 0; i < work_dim; i++)
         {
@@ -731,10 +731,11 @@ void gpu_launch_kernel_pruneonly(gmx_nbnxn_gpu_t           *nb,
  * Launch asynchronously the download of nonbonded forces from the GPU
  * (and energies/shift forces if required).
  */
-void gpu_launch_cpyback(gmx_nbnxn_ocl_t               *nb,
-                        struct nbnxn_atomdata_t       *nbatom,
-                        const int                      flags,
-                        const AtomLocality             aloc)
+void gpu_launch_cpyback(gmx_nbnxn_ocl_t                          *nb,
+                        struct nbnxn_atomdata_t                  *nbatom,
+                        const int                                 flags,
+                        const AtomLocality                        aloc,
+                        const bool                    gmx_unused  copyBackNbForce)
 {
     GMX_ASSERT(nb, "Need a valid nbnxn_gpu object");
 

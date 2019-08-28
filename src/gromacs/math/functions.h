@@ -1,7 +1,7 @@
 /*
  * This file is part of the GROMACS molecular simulation package.
  *
- * Copyright (c) 2015,2016,2018, by the GROMACS development team, led by
+ * Copyright (c) 2015,2016,2018,2019, by the GROMACS development team, led by
  * Mark Abraham, David van der Spoel, Berk Hess, and Erik Lindahl,
  * and including many others, as listed in the AUTHORS file in the
  * top-level source directory and at http://www.gromacs.org.
@@ -167,7 +167,7 @@ greatestCommonDivisor(std::int64_t p, std::int64_t q);
 static inline float
 invsqrt(float x)
 {
-    return 1.0f/std::sqrt(x);
+    return 1.0F/std::sqrt(x);
 }
 
 /*! \brief Calculate 1.0/sqrt(x) in double precision, but single range
@@ -210,7 +210,7 @@ invsqrt(int x)
 static inline float
 invcbrt(float x)
 {
-    return 1.0f/std::cbrt(x);
+    return 1.0F/std::cbrt(x);
 }
 
 /*! \brief Calculate inverse sixth root of x in double precision
@@ -418,7 +418,7 @@ power12(T x)
 static inline real series_sinhx(real x)
 {
     real x2 = x*x;
-    return (1 + (x2/6.0)*(1 + (x2/20.0)*(1 + (x2/42.0)*(1 + (x2/72.0)*(1 + (x2/110.0))))));
+    return (1 + (x2/6.0_real)*(1 + (x2/20.0_real)*(1 + (x2/42.0_real)*(1 + (x2/72.0_real)*(1 + (x2/110.0_real))))));
 }
 
 /*! \brief Inverse error function, double precision.

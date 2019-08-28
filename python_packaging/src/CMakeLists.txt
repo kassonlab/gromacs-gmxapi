@@ -100,11 +100,11 @@ endif()
 set(GMXAPI_PYTHON_EXTENSION_SOURCES
     gmxapi/module.cpp
     gmxapi/export_context.cpp
+    gmxapi/export_exceptions.cpp
     gmxapi/export_system.cpp
     gmxapi/export_tprfile.cpp
     gmxapi/pycontext.cpp
     gmxapi/pysystem.cpp
-    gmxapi/tprfile.cpp
     )
 
 pybind11_add_module(_gmxapi
@@ -118,41 +118,77 @@ target_include_directories(_gmxapi PRIVATE
 
 # RPATH management: make sure build artifacts can find GROMACS library.
 set_target_properties(_gmxapi PROPERTIES SKIP_BUILD_RPATH FALSE)
-set_target_properties(_gmxapi PROPERTIES BUILD_WITH_INSTALL_RPATH TRUE)
-set_target_properties(_gmxapi PROPERTIES INSTALL_RPATH_USE_LINK_PATH TRUE)
 
 # Python sources (*.py) will be packaged by scikit-build and setuptools.
-# Library target will be build in CMAKE_LIBRARY_OUTPUT_DIRECTORY if not overridden.
-# This may be an unexpected location whether inherited from the GROMACS build tree
-# or the SKBUILD framework. When scikit-build is invoked with setup.py, the CMake
-# build takes place in a subdirectory of ./_skbuild/.
-set_target_properties(_gmxapi PROPERTIES LIBRARY_OUTPUT_DIRECTORY gmxapi_staging/gmxapi)
-target_link_libraries(_gmxapi PRIVATE Gromacs::gmxapi)
+# Note that library targets are built in CMAKE_LIBRARY_OUTPUT_DIRECTORY if not otherwise specified.
+# This may be an unexpected location, whether inherited from the GROMACS build tree
+# or the SKBUILD framework. Note, also, that when scikit-build is invoked with setup.py,
+# the CMake build takes place in a subdirectory of ./_skbuild/.
+set(GMXAPI_PYTHON_STAGING_DIR ${CMAKE_CURRENT_BINARY_DIR}/gmxapi_staging)
+set_target_properties(_gmxapi PROPERTIES
+                      LIBRARY_OUTPUT_DIRECTORY ${GMXAPI_PYTHON_STAGING_DIR}/gmxapi)
 
 # scikit-build sets SKBUILD when running Python packaging tools through setup.py
 # (e.g. with pip)
 if(SKBUILD)
+    # The Python module is being built for a GROMACS installation.
+    set_target_properties(_gmxapi PROPERTIES BUILD_WITH_INSTALL_RPATH TRUE)
+    set_target_properties(_gmxapi PROPERTIES INSTALL_RPATH_USE_LINK_PATH TRUE)
+    target_link_libraries(_gmxapi PRIVATE Gromacs::gmxapi)
     # By default, scikit-build expects the library to be installed into a directory
     # named for the Python package as in setup.py.
     install(TARGETS _gmxapi LIBRARY DESTINATION gmxapi)
 else()
-    # TODO: (#2896) Determine packaging and installation cases and implementation.
+    # The Python module is being built against GROMACS in its build tree.
+    # Note: we do not have plans to install the staged package when SKBUILD != TRUE
+    set_target_properties(_gmxapi PROPERTIES BUILD_WITH_INSTALL_RPATH FALSE)
+    target_link_libraries(_gmxapi PRIVATE Gromacs::gmxapi)
+
+    # TODO: Determine packaging and installation cases and implementation.
     # Reference https://redmine.gromacs.org/issues/2896 for additional discussion.
     # Currently, CMake should be run by scikit-build through setup.py for proper Python packaging.
-    # Try to do something sensible. Collect Python sources as setup.py would.
-    file(GLOB_RECURSE _py_sources CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/gmxapi/*.py)
+    # We don't want to install by default in the outer scope of the GROMACS
+    # CMake procedure because we could end up trying to install to a system directory
+    # the user did not intend, or a user might install a Python-installation-specific
+    # package into an overly generic GROMACS path.
 
-    # We probably don't want to install by default.
-    # We could end up trying to install to a system directory the user did not
-    # intend, or a user might install a Python-installation-specific package
-    # into an overly generic GROMACS path. Instead, we should probably build a
-    # source package and alert the user of its location.
-    #install(TARGETS _gmxapi LIBRARY DESTINATION ${Python3_SITEARCH}/gmxapi)
-    #install(FILES ${_py_sources} DESTINATION ${Python3_SITEARCH}/gmxapi)
+    # Instead, we should probably build a source package and alert the user of its location.
+    # We can use CMake to call the Python packaging tools to create an 'sdist'
+    # source distribution archive to be installed in the GROMACS installation
+    # destination. We can use the build directory as the working directory for
+    # easier clean-up, as well.
+    # TODO: (ref issue #2896) Build and install 'sdist' with GROMACS.
 
-    file(COPY ${_py_sources} DESTINATION gmxapi_staging/gmxapi)
-    # Unit test and build docs using PYTHONPATH=$CMAKE_CURRENT_BINARY_DIR/gmxapi_staging/gmxapi
-    # Integration testing for multiple Python versions
-    # and/or CMake-driven sdist preparation could be performed
-    # with CMake custom_commands and custom_targets.
+    # However, we can still produce an importable package for documentation builds and
+    # basic testing in ${CMAKE_CURRENT_BINARY_DIR}/gmxapi_staging
+    if(CMAKE_VERSION VERSION_LESS 3.12)
+        file(GLOB_RECURSE _py_sources
+             ${CMAKE_CURRENT_SOURCE_DIR}/gmxapi/*.py)
+    else()
+        # CONFIGURE_DEPENDS appears in CMake 3.12 and can help to more robustly detect
+        # the need to update anything depending on the staged package.
+        file(GLOB_RECURSE _py_sources
+             CONFIGURE_DEPENDS
+             ${CMAKE_CURRENT_SOURCE_DIR}/gmxapi/*.py)
+    endif()
+    foreach(_package_file IN LISTS _py_sources)
+        get_filename_component(_absolute_dir ${_package_file} DIRECTORY)
+        file(RELATIVE_PATH _relative_dir ${CMAKE_CURRENT_SOURCE_DIR} ${_absolute_dir})
+        file(COPY ${_package_file} DESTINATION gmxapi_staging/${_relative_dir})
+    endforeach()
+    file(COPY setup.py CMakeLists.txt DESTINATION ${GMXAPI_PYTHON_STAGING_DIR})
+    # Set CMake variable pybind11_DIR to ${CMAKE_CURRENT_SOURCE_DIR}/external/pybind/tools
+    # if re-invoking CMake (including via Python setuptools) for the files in gmxapi_staging.
+
+    # Unit test and build docs using PYTHONPATH=$CMAKE_CURRENT_BINARY_DIR/gmxapi_staging
+    set_target_properties(_gmxapi PROPERTIES staging_dir ${GMXAPI_PYTHON_STAGING_DIR})
+    # Note: Integration testing for multiple Python versions and/or CMake-driven
+    # sdist preparation could be performed with CMake custom_commands and custom_targets.
+endif()
+
+# When building as part of GROMACS umbrella project, add a testing target
+# to the `check` target. Normal usage is to first install the Python package,
+# then run `pytest` on the `tests` directory. Refer to gmxapi package documentation.
+if(NOT GMXAPI_MASTER_PROJECT)
+    add_subdirectory(test)
 endif()

@@ -57,6 +57,10 @@ struct nonbonded_verlet_t;
 struct t_mdatoms;
 struct tMPI_Atomic;
 
+enum class BufferOpsUseGpu;
+
+class GpuEventSynchronizer;
+
 namespace Nbnxm
 {
 class GridSet;
@@ -335,13 +339,47 @@ void nbnxn_atomdata_copy_x_to_nbat_x<false>(const Nbnxm::GridSet &,
                                             void *);
 
 //! Add the computed forces to \p f, an internal reduction might be performed as well
-void reduceForces(nbnxn_atomdata_t     *nbat,
-                  Nbnxm::AtomLocality   locality,
-                  const Nbnxm::GridSet &gridSet,
-                  rvec                 *f);
+template <bool  useGpu>
+void reduceForces(nbnxn_atomdata_t                   *nbat,
+                  Nbnxm::AtomLocality                 locality,
+                  const Nbnxm::GridSet               &gridSet,
+                  rvec                               *f,
+                  void                               *pmeFDeviceBuffer,
+                  GpuEventSynchronizer               *pmeForcesReady,
+                  gmx_nbnxn_gpu_t                    *gpu_nbv,
+                  bool                                useGpuFPmeReduction,
+                  bool                                accumulateForce);
+
+
+extern template
+void reduceForces<true>(nbnxn_atomdata_t             *nbat,
+                        const Nbnxm::AtomLocality     locality,
+                        const Nbnxm::GridSet         &gridSet,
+                        rvec                         *f,
+                        void                         *pmeFDeviceBuffer,
+                        GpuEventSynchronizer         *pmeForcesReady,
+                        gmx_nbnxn_gpu_t              *gpu_nbv,
+                        bool                          useGpuFPmeReduction,
+                        bool                          accumulateForce);
+
+extern template
+void reduceForces<false>(nbnxn_atomdata_t             *nbat,
+                         const Nbnxm::AtomLocality     locality,
+                         const Nbnxm::GridSet         &gridSet,
+                         rvec                         *f,
+                         void                         *pmeFDeviceBuffer,
+                         GpuEventSynchronizer         *pmeForcesReady,
+                         gmx_nbnxn_gpu_t              *gpu_nbv,
+                         bool                          useGpuFPmeReduction,
+                         bool                          accumulateForce);
 
 /* Add the fshift force stored in nbat to fshift */
-void nbnxn_atomdata_add_nbat_fshift_to_fshift(const nbnxn_atomdata_t *nbat,
-                                              rvec                   *fshift);
+void nbnxn_atomdata_add_nbat_fshift_to_fshift(const nbnxn_atomdata_t   &nbat,
+                                              gmx::ArrayRef<gmx::RVec>  fshift);
 
+/* Get the atom start index and number of atoms for a given locality */
+void nbnxn_get_atom_range(Nbnxm::AtomLocality              atomLocality,
+                          const Nbnxm::GridSet            &gridSet,
+                          int                             *atomStart,
+                          int                             *nAtoms);
 #endif

@@ -112,8 +112,8 @@ static PmeSafePointer pmeInitInternal(const t_inputrec         *inputRec,
                                       const gmx_device_info_t  *gpuInfo,
                                       PmeGpuProgramHandle       pmeGpuProgram,
                                       const Matrix3x3          &box,
-                                      real                      ewaldCoeff_q = 1.0f,
-                                      real                      ewaldCoeff_lj = 1.0f
+                                      real                      ewaldCoeff_q = 1.0F,
+                                      real                      ewaldCoeff_lj = 1.0F
                                       )
 {
     const MDLogger dummyLogger;
@@ -418,7 +418,7 @@ void pmePerformGather(gmx_pme_t *pme, CodePath mode,
             {
                 std::copy(std::begin(forces), std::end(forces), std::begin(output.forces_));
             }
-            pme_gpu_gather(pme->gpu, inputTreatment, reinterpret_cast<float *>(fftgrid));
+            pme_gpu_gather(pme->gpu, inputTreatment, reinterpret_cast<float *>(fftgrid), false);
             std::copy(std::begin(output.forces_), std::end(output.forces_), std::begin(forces));
         }
         break;

@@ -173,9 +173,9 @@ static int nral_rt(int ftype)
 static gmx_bool dd_check_ftype(int ftype, gmx_bool bBCheck,
                                gmx_bool bConstr, gmx_bool bSettle)
 {
-    return ((((interaction_function[ftype].flags & IF_BOND) != 0u) &&
-             ((interaction_function[ftype].flags & IF_VSITE) == 0u) &&
-             (bBCheck || ((interaction_function[ftype].flags & IF_LIMZERO) == 0u))) ||
+    return ((((interaction_function[ftype].flags & IF_BOND) != 0U) &&
+             ((interaction_function[ftype].flags & IF_VSITE) == 0U) &&
+             (bBCheck || ((interaction_function[ftype].flags & IF_LIMZERO) == 0U))) ||
             (bConstr && (ftype == F_CONSTR || ftype == F_CONSTRNC)) ||
             (bSettle && ftype == F_SETTLE));
 }
@@ -342,7 +342,8 @@ void dd_print_missing_interactions(const gmx::MDLogger  &mdlog,
                                    int                   local_count,
                                    const gmx_mtop_t     *top_global,
                                    const gmx_localtop_t *top_local,
-                                   const t_state        *state_local)
+                                   const rvec           *x,
+                                   const matrix          box)
 {
     int             ndiff_tot, cl[F_NRE], n, ndiff, rest_global, rest_local;
     int             ftype, nral;
@@ -408,7 +409,7 @@ void dd_print_missing_interactions(const gmx::MDLogger  &mdlog,
 
     print_missing_interactions_atoms(mdlog, cr, top_global, &top_local->idef);
     write_dd_pdb("dd_dump_err", 0, "dump", top_global, cr,
-                 -1, state_local->x.rvec_array(), state_local->box);
+                 -1, x, box);
 
     std::string errorMessage;
 
@@ -515,7 +516,7 @@ static int low_make_reverse_ilist(const InteractionLists &il_mt,
             (bConstr && (ftype == F_CONSTR || ftype == F_CONSTRNC)) ||
             (bSettle && ftype == F_SETTLE))
         {
-            const bool  bVSite = ((interaction_function[ftype].flags & IF_VSITE) != 0u);
+            const bool  bVSite = ((interaction_function[ftype].flags & IF_VSITE) != 0U);
             const int   nral   = NRAL(ftype);
             const auto &il     = il_mt[ftype];
             for (int i = 0; i < il.size(); i += 1+nral)
@@ -1733,7 +1734,6 @@ static int make_local_bondeds_excls(gmx_domdec_t *dd,
     int                izone, cg0, cg1;
     real               rc2;
     int                nbonded_local;
-    int                thread;
     gmx_reverse_top_t *rt;
 
     if (dd->reverse_top->bInterCGInteractions)
@@ -1780,7 +1780,7 @@ static int make_local_bondeds_excls(gmx_domdec_t *dd,
 
         const int numThreads = rt->th_work.size();
 #pragma omp parallel for num_threads(numThreads) schedule(static)
-        for (thread = 0; thread < numThreads; thread++)
+        for (int thread = 0; thread < numThreads; thread++)
         {
             try
             {

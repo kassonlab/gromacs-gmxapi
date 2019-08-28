@@ -46,10 +46,9 @@
 #include <algorithm>
 #include <numeric>
 
+#include "gromacs/math/multidimarray.h"
 #include "gromacs/math/vec.h"
 #include "gromacs/utility/exceptions.h"
-
-#include "multidimarray.h"
 
 namespace gmx
 {
@@ -97,7 +96,7 @@ class DensitySimilarityInnerProduct final : public DensitySimilarityMeasureImpl
 DensitySimilarityInnerProduct::DensitySimilarityInnerProduct(density referenceDensity) :
     referenceDensity_ {referenceDensity },
 gradient_ {
-    referenceDensity.extent(XX), referenceDensity.extent(YY), referenceDensity.extent(ZZ)
+    referenceDensity.extents()
 }
 {
     const auto numVoxels = gradient_.asConstView().mapping().required_span_size();

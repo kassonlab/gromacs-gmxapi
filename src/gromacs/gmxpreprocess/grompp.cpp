@@ -82,6 +82,7 @@
 #include "gromacs/mdlib/qmmm.h"
 #include "gromacs/mdlib/vsite.h"
 #include "gromacs/mdrun/mdmodules.h"
+#include "gromacs/mdrunutility/mdmodulenotification.h"
 #include "gromacs/mdtypes/inputrec.h"
 #include "gromacs/mdtypes/md_enums.h"
 #include "gromacs/mdtypes/nblist.h"
@@ -101,6 +102,7 @@
 #include "gromacs/utility/fatalerror.h"
 #include "gromacs/utility/futil.h"
 #include "gromacs/utility/gmxassert.h"
+#include "gromacs/utility/keyvaluetreebuilder.h"
 #include "gromacs/utility/smalloc.h"
 #include "gromacs/utility/snprintf.h"
 
@@ -959,6 +961,7 @@ static void read_posres(gmx_mtop_t *mtop,
     }
 
     npbcdim = ePBC2npbcdim(ePBC);
+    GMX_RELEASE_ASSERT(npbcdim <= DIM, "Invalid npbcdim");
     clear_rvec(com);
     if (rc_scaling != erscNO)
     {
@@ -1980,7 +1983,7 @@ int gmx_grompp(int argc, char *argv[])
 
     /* If we are doing QM/MM, check that we got the atom numbers */
     have_atomnumber = TRUE;
-    for (int i = 0; i < gmx::ssize(atypes); i++)
+    for (gmx::index i = 0; i < gmx::ssize(atypes); i++)
     {
         have_atomnumber = have_atomnumber && (atypes.atomNumberFromAtomType(i) >= 0);
     }
@@ -2145,8 +2148,7 @@ int gmx_grompp(int argc, char *argv[])
         fprintf(stderr, "initialising group options...\n");
     }
     do_index(mdparin, ftp2fn_null(efNDX, NFILE, fnm),
-             &sys, bVerbose, ir,
-             wi);
+             &sys, bVerbose, mdModules.notifier(), ir, wi);
 
     if (ir->cutoff_scheme == ecutsVERLET && ir->verletbuf_tol > 0)
     {
@@ -2356,8 +2358,14 @@ int gmx_grompp(int argc, char *argv[])
 
     if (ir->bDoAwh)
     {
+        tensor compressibility = { { 0 } };
+        if (ir->epc != epcNO)
+        {
+            copy_mat(ir->compress, compressibility);
+        }
         setStateDependentAwhParams(ir->awhParams, ir->pull, pull,
-                                   state.box, ir->ePBC, &ir->opts, wi);
+                                   state.box, ir->ePBC, compressibility,
+                                   &ir->opts, wi);
     }
 
     if (ir->bPull)
@@ -2410,6 +2418,15 @@ int gmx_grompp(int argc, char *argv[])
         {
             printf("%s\n", warn_buf);
         }
+    }
+
+    // Add the md modules internal parameters that are not mdp options
+    // e.g., atom indices
+
+    {
+        gmx::KeyValueTreeBuilder internalParameterBuilder;
+        mdModules.notifier().notifier_.notify(internalParameterBuilder.rootObject());
+        ir->internalParameters = std::make_unique<gmx::KeyValueTreeObject>(internalParameterBuilder.build());
     }
 
     if (bVerbose)

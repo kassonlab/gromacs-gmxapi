@@ -105,6 +105,8 @@
 
 #include <cmath>
 
+#include <type_traits>
+
 #include "gromacs/math/functions.h"
 #include "gromacs/math/vectypes.h"
 #include "gromacs/utility/real.h"
@@ -216,9 +218,9 @@ static inline void copy_rvec_to_dvec(const rvec a, dvec b)
 
 static inline void copy_dvec_to_rvec(const dvec a, rvec b)
 {
-    b[XX] = a[XX];
-    b[YY] = a[YY];
-    b[ZZ] = a[ZZ];
+    b[XX] = static_cast<real>(a[XX]);
+    b[YY] = static_cast<real>(a[YY]);
+    b[ZZ] = static_cast<real>(a[ZZ]);
 }
 
 static inline void copy_rvecn(const rvec *a, rvec *b, int startn, int endn)
@@ -396,7 +398,7 @@ static inline real cos_angle(const rvec a, const rvec b)
     ipab = ipa*ipb;
     if (ipab > 0)
     {
-        cosval = ip*gmx::invsqrt(ipab);  /*  7 */
+        cosval = static_cast<real>(ip*gmx::invsqrt(ipab));  /*  7 */
     }
     else
     {
@@ -624,9 +626,19 @@ namespace gmx
  * \return magnitude or squared magnitude of vector
  * \{
  */
-template<typename T> T norm(T* v) {return ::norm(v); }
-template <typename T> T norm2(T* v) { return ::norm2(v); }
+template<typename T> std::remove_const_t<T>
+norm(T* v)
+{
+    return ::norm(v);
+}
+template <typename T> std::remove_const_t<T>
+norm2(T* v)
+{
+    return ::norm2(v);
+}
+
 }      // namespace gmx
+
 /*! \} */
 
 #endif

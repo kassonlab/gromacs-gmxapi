@@ -1211,12 +1211,12 @@ static float dd_f_imbal(gmx_domdec_t *dd)
 {
     if (dd->comm->load[0].sum > 0)
     {
-        return dd->comm->load[0].max*dd->nnodes/dd->comm->load[0].sum - 1.0f;
+        return dd->comm->load[0].max*dd->nnodes/dd->comm->load[0].sum - 1.0F;
     }
     else
     {
         /* Something is wrong in the cycle counting, report no load imbalance */
-        return 0.0f;
+        return 0.0F;
     }
 }
 
@@ -1744,6 +1744,7 @@ get_zone_pulse_cgs(gmx_domdec_t *dd,
             }
             if (dim_ind == 2 && (zonei == 2 || zonei == 3))
             {
+                GMX_ASSERT(dim1 >= 0 && dim1 < DIM, "Must have a valid dimension index");
                 rn[dim1] += cg_cm[cg][dim1] - c->cr1[zone];
                 tric_sh   = 0;
                 for (i = dim1+1; i < DIM; i++)
@@ -1809,6 +1810,7 @@ get_zone_pulse_cgs(gmx_domdec_t *dd,
             if (bDistMB_pulse)
             {
                 clear_rvec(rb);
+                GMX_ASSERT(dim >= 0 && dim < DIM, "Must have a valid dimension index");
                 rb[dim] += cg_cm[cg][dim] - c->bc[dim_ind] + tric_sh;
                 if (rb[dim] > 0)
                 {
@@ -2460,8 +2462,7 @@ static void set_zones_size(gmx_domdec_t *dd,
                 corner[d] -= corner[ZZ]*box[ZZ][d]/box[ZZ][ZZ];
             }
             /* Apply the triclinic couplings */
-            assert(ddbox->npbcdim <= DIM);
-            for (i = YY; i < ddbox->npbcdim; i++)
+            for (i = YY; i < ddbox->npbcdim && i < DIM; i++)
             {
                 for (j = XX; j < i; j++)
                 {
@@ -2845,7 +2846,7 @@ void dd_partition_system(FILE                    *fplog,
                 if (DDMASTER(dd))
                 {
                     /* Add the measured cycles to the running average */
-                    const float averageFactor        = 0.1f;
+                    const float averageFactor        = 0.1F;
                     comm->cyclesPerStepDlbExpAverage =
                         (1 - averageFactor)*comm->cyclesPerStepDlbExpAverage +
                         averageFactor*comm->cycl[ddCyclStep]/comm->cycl_n[ddCyclStep];
@@ -3351,14 +3352,15 @@ void checkNumberOfBondedInteractions(const gmx::MDLogger  &mdlog,
                                      int                   totalNumberOfBondedInteractions,
                                      const gmx_mtop_t     *top_global,
                                      const gmx_localtop_t *top_local,
-                                     const t_state        *state,
+                                     const rvec           *x,
+                                     const matrix          box,
                                      bool                 *shouldCheckNumberOfBondedInteractions)
 {
     if (*shouldCheckNumberOfBondedInteractions)
     {
         if (totalNumberOfBondedInteractions != cr->dd->nbonded_global)
         {
-            dd_print_missing_interactions(mdlog, cr, totalNumberOfBondedInteractions, top_global, top_local, state); // Does not return
+            dd_print_missing_interactions(mdlog, cr, totalNumberOfBondedInteractions, top_global, top_local, x, box); // Does not return
         }
         *shouldCheckNumberOfBondedInteractions = false;
     }

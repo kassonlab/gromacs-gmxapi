@@ -287,7 +287,7 @@ gmx_fprintf_pqr_atomline(FILE *            fp,
     res_seq_number  = res_seq_number % 10000;
 
     int n = fprintf(fp,
-                    "%s %d %s %s %c %d %8.3f %8.3f %8.3f %6.2f %6.2f\n",
+                    "%-6s%5d %-4.4s%4.4s%c%4d %8.3f %8.3f %8.3f %6.2f %6.2f\n",
                     pdbtp[record],
                     atom_seq_number,
                     atom_name,
@@ -316,7 +316,7 @@ void write_pdbfile_indexed(FILE *out, const char *title,
 
 
     fprintf(out, "TITLE     %s\n", (title && title[0]) ? title : gmx::bromacs().c_str());
-    if (box && ( (norm2(box[XX]) != 0.0f) || (norm2(box[YY]) != 0.0f) || (norm2(box[ZZ]) != 0.0f) ) )
+    if (box && ( (norm2(box[XX]) != 0.0F) || (norm2(box[YY]) != 0.0F) || (norm2(box[ZZ]) != 0.0F) ) )
     {
         gmx_write_pdb_box(out, ePBC, box);
     }

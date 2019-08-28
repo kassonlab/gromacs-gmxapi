@@ -22,16 +22,13 @@ endif()
 # would only be available to this project with some additional management by
 # the parent project CMake configuration.
 # Also reference https://redmine.gromacs.org/issues/2896
-set(GMXAPI_EXTENSION_USE_BUNDLED_PYBIND OFF CACHE BOOL
-    "Use pybind11 headers bundled with this repository. If OFF, CMake does `find_package(pybind11)`.")
-if(GMXAPI_EXTENSION_USE_BUNDLED_PYBIND)
-    add_subdirectory(external/pybind)
-else()
-    # If configuring as part of the GROMACS project, pybind11 2.2 has already been found.
-    if(NOT GMXAPI_EXTENSION_MASTER_PROJECT)
-        # TODO: (Issue #3027) Handle locally available sources.
+if(GMXAPI_EXTENSION_MASTER_PROJECT)
+    # TODO: (Issue #3027) Handle locally available sources.
+    set(GMXAPI_EXTENSION_USE_BUNDLED_PYBIND OFF CACHE BOOL
+        "Use pybind11 headers bundled with this repository. If OFF, CMake does `find_package(pybind11)`.")
+    if(GMXAPI_EXTENSION_USE_BUNDLED_PYBIND)
+        add_subdirectory(external/pybind)
     else()
-        # TODO: Find a proper way to reference a local directory, once we figure out where that is.
         option(GMXAPI_EXTENSION_DOWNLOAD_PYBIND ON)
         if(GMXAPI_EXTENSION_DOWNLOAD_PYBIND)
             configure_file(CMakeLists.pybind.in pybind-download/CMakeLists.txt)
@@ -52,7 +49,10 @@ else()
             find_package(pybind11 2.2 REQUIRED)
         endif()
     endif()
+else()
+    # If configuring as part of the GROMACS project, pybind11 2.2 has already been found.
 endif()
+
 
 # This project requires a GROMACS supporting gmxapi 0.0.8 or higher. It should
 # be sufficient to source the GMXRC, but you can also set the GROMACS_DIR or
@@ -112,6 +112,9 @@ if(GMXAPI_EXTENSION_MASTER_PROJECT)
         string(REPLACE /MD /MT CMAKE_C_FLAGS_DEBUG ${CMAKE_C_FLAGS_DEBUG})
         set(CMAKE_C_FLAGS_DEBUG ${CMAKE_C_FLAGS_DEBUG} CACHE STRING "" FORCE)
     endif()
+
+    # Activate the CTest module for this directory.
+    include(CTest)
 endif()
 
 ########################################################
@@ -172,10 +175,6 @@ set(GMXPLUGIN_INSTALL_PATH ${GMXPLUGIN_DEFAULT_SITE_PACKAGES} CACHE PATH
 
 message(STATUS "Python module will be installed to GMXPLUGIN_INSTALL_PATH cache value ${GMXPLUGIN_INSTALL_PATH}")
 
-
-# Set up testing options.
-include(CTest)
-
 # TODO: (Issue #3027) Handle Googletest sources both for forked projects and
 #  for GROMACS-project-internal testing.
 # Projects based on this subtree should bundle googletest sources.
@@ -196,10 +195,9 @@ add_subdirectory(src)
 # Set up documentation build targets (work in progress).
 add_subdirectory(docs)
 
-
 # Process CMake configuration for Python and C++ tests.
-# TODO: get GTest::Main target to work under GROMACS repository umbrella.
-if(GMXAPI_EXTENSION_MASTER_PROJECT)
+include(CTest)
+if(BUILD_TESTING)
     include(GoogleTest)
     add_subdirectory(tests)
 endif()

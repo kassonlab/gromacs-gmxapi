@@ -622,16 +622,6 @@ Electrostatics
       :mdp:`epsilon-rf`. The dielectric constant can be set to
       infinity by setting :mdp:`epsilon-rf` =0.
 
-   .. mdp-value:: Generalized-Reaction-Field
-
-      Generalized reaction field with Coulomb cut-off
-      :mdp:`rcoulomb`, where :mdp:`rlist` >= :mdp:`rcoulomb`. The
-      dielectric constant beyond the cut-off is
-      :mdp:`epsilon-rf`. The ionic strength is computed from the
-      number of charged (*i.e.* with non zero charge) charge
-      groups. The temperature for the GRF potential is set with
-      :mdp:`ref-t`.
-
    .. mdp-value:: Reaction-Field-zero
 
       In |Gromacs|, normal reaction-field electrostatics with
@@ -714,11 +704,6 @@ Electrostatics
 
 .. mdp:: coulomb-modifier
 
-   .. mdp-value:: Potential-shift-Verlet
-
-      Selects Potential-shift with the Verlet cutoff-scheme, as it is
-      (nearly) free; selects None with the group cutoff-scheme.
-
    .. mdp-value:: Potential-shift
 
       Shift the Coulomb potential by a constant such that it is zero
@@ -728,9 +713,8 @@ Electrostatics
 
    .. mdp-value:: None
 
-      Use an unmodified Coulomb potential. With the group scheme this
-      means no exact cut-off is used, energies and forces are
-      calculated for all pairs in the pair list.
+      Use an unmodified Coulomb potential. This can be useful
+      when comparing energies with those computed with other software.
 
 .. mdp:: rcoulomb-switch
 
@@ -818,11 +802,6 @@ Van der Waals
 
 .. mdp:: vdw-modifier
 
-   .. mdp-value:: Potential-shift-Verlet
-
-      Selects Potential-shift with the Verlet cutoff-scheme, as it is
-      (nearly) free; selects None with the group cutoff-scheme.
-
    .. mdp-value:: Potential-shift
 
       Shift the Van der Waals potential by a constant such that it is
@@ -832,9 +811,8 @@ Van der Waals
 
    .. mdp-value:: None
 
-      Use an unmodified Van der Waals potential. With the group scheme
-      this means no exact cut-off is used, energies and forces are
-      calculated for all pairs in the pair list.
+      Use an unmodified Van der Waals potential. This can be useful
+      when comparing energies with those computed with other software.
 
    .. mdp-value:: Force-switch
 
@@ -1227,8 +1205,8 @@ Pressure coupling
 
       The reference coordinates for position restraints are not
       modified. Note that with this option the virial and pressure
-      will depend on the absolute positions of the reference
-      coordinates.
+      might be ill defined, see :ref:`here <reference-manual-position-restraints>`
+      for more details.
 
    .. mdp-value:: all
 
@@ -1243,7 +1221,9 @@ Pressure coupling
       one COM is used, even when there are multiple molecules with
       position restraints. For calculating the COM of the reference
       coordinates in the starting configuration, periodic boundary
-      conditions are not taken into account.
+      conditions are not taken into account. Note that with this option
+      the virial and pressure might be ill defined, see
+      :ref:`here <reference-manual-position-restraints>` for more details.
 
 
 Simulated annealing
@@ -1917,7 +1897,7 @@ AWH adaptive biasing
       multidimensional and is defined by mapping each dimension to a pull coordinate index.
       This is only allowed if :mdp-value:`pull-coord1-type=external-potential` and
       :mdp:`pull-coord1-potential-provider` = ``awh`` for the concerned pull coordinate
-      indices.
+      indices. Pull geometry 'direction-periodic' is not supported by AWH.
 
 .. mdp:: awh-potential
 
@@ -2141,18 +2121,17 @@ AWH adaptive biasing
    (0.0) [nm] or [rad]
    Start value of the sampling interval along this dimension. The range of allowed
    values depends on the relevant pull geometry (see :mdp:`pull-coord1-geometry`).
-   For periodic geometries :mdp:`awh1-dim1-start` greater than :mdp:`awh1-dim1-end`
+   For dihedral geometries :mdp:`awh1-dim1-start` greater than :mdp:`awh1-dim1-end`
    is allowed. The interval will then wrap around from +period/2 to -period/2.
+   For the direction geometry, the dimension is made periodic when
+   the direction is along a box vector and covers more than 95%
+   of the box length. Note that one should not apply pressure coupling
+   along a periodic dimension.
 
 .. mdp:: awh1-dim1-end
 
    (0.0) [nm] or [rad]
    End value defining the sampling interval together with :mdp:`awh1-dim1-start`.
-
-.. mdp:: awh1-dim1-period
-
-   (0.0) [nm] or [rad]
-   The period of this reaction coordinate, use 0 when the coordinate is not periodic.
 
 .. mdp:: awh1-dim1-diffusion
 

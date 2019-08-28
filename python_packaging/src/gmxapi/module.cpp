@@ -45,13 +45,10 @@
 
 #include <memory>
 
-#include "pybind11/pybind11.h"
-
 #include "gmxapi/status.h"
 #include "gmxapi/version.h"
 
-#include "data.h"
-
+#include "pybind11/pybind11.h"
 
 namespace py = pybind11;
 
@@ -81,6 +78,13 @@ code and developer documentation for more details.
 PYBIND11_MODULE(_gmxapi, m){
     using namespace gmxpy::detail;
     m.doc() = docstring;
+
+    // Register exceptions and catch-all exception translators. We do this early
+    // to give more freedom to the other export functions. Note that bindings
+    // for C++ symbols should be expressed before those symbols are referenced
+    // in other bindings, and that exception translators are tried in reverse
+    // order of registration for uncaught C++ exceptions.
+    export_exceptions(m);
 
     // Export core bindings
     m.def("has_feature",
