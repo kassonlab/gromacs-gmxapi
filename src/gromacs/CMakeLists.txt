@@ -105,6 +105,7 @@ add_subdirectory(simd)
 add_subdirectory(imd)
 add_subdirectory(compat)
 add_subdirectory(mimic)
+add_subdirectory(modularsimulator)
 if (NOT GMX_BUILD_MDRUN_ONLY)
     add_subdirectory(gmxana)
     add_subdirectory(gmxpreprocess)
@@ -185,11 +186,8 @@ endif()
 # Add these contents first because linking their tests can take a lot
 # of time, so we want lots of parallel work still available after
 # linking starts.
-if (NOT GMX_BUILD_MDRUN_ONLY)
-    add_subdirectory(selection)
-endif()
-# Add normal contents
 add_subdirectory(fileio)
+add_subdirectory(selection)
 
 # Suppress a warning about our abuse of t_inputrec
 gmx_source_file_warning_suppression(mdtypes/inputrec.cpp -Wno-class-memaccess HAS_NO_CLASS_MEMACCESS)
