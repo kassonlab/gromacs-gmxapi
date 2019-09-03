@@ -43,9 +43,14 @@
 
 #include "densityfitting.h"
 
-#include "gromacs/mdrunutility/mdmodulenotification.h"
+#include <memory>
+
+#include "gromacs/domdec/localatomsetmanager.h"
 #include "gromacs/mdtypes/imdmodule.h"
+#include "gromacs/utility/classhelpers.h"
+#include "gromacs/utility/exceptions.h"
 #include "gromacs/utility/keyvaluetreebuilder.h"
+#include "gromacs/utility/mdmodulenotification.h"
 
 #include "densityfittingforceprovider.h"
 #include "densityfittingoptions.h"
@@ -60,6 +65,83 @@ class DensityFittingForceProvider;
 
 namespace
 {
+
+/*! \internal
+ * \brief Collect density fitting parameters only available during simulation setup.
+ *
+ * \todo Implement builder pattern that will not use unqiue_ptr to check if
+ *       parameters have been set or not.
+ *
+ * To build the density fitting force provider during simulation setup,
+ * the DensityFitting class needs access to parameters that become available
+ * only during simulation setup.
+ *
+ * This class collects these parameters via MdModuleNotifications in the
+ * simulation setup phase and provides a check if all necessary parameters have
+ * been provided.
+ */
+class DensityFittingSimulationParameterSetup
+{
+    public:
+        DensityFittingSimulationParameterSetup() = default;
+        /*! \brief Set the local atom set for the density fitting.
+         * \param[in] localAtomSet of atoms to be fitted
+         */
+        void setLocalAtomSet(const LocalAtomSet &localAtomSet)
+        {
+            localAtomSet_ = std::make_unique<LocalAtomSet>(localAtomSet);
+        }
+
+        /*! \brief Return local atom set for density fitting.
+         * \throws InternalError if local atom set is not set
+         * \returns local atom set for density fitting
+         */
+        const LocalAtomSet &localAtomSet() const
+        {
+            if (localAtomSet_ == nullptr)
+            {
+                GMX_THROW(
+                        InternalError("Transformation to reference density not set for density "
+                                      "guided simulation."));
+            }
+            return *localAtomSet_;
+        }
+
+        /*! \brief Return transformation into density lattice.
+         * \throws InternalError if transformation into density lattice is not set
+         * \returns transormation into density lattice
+         */
+        const TranslateAndScale &transformationToDensityLattice() const
+        {
+            if (transformationToDensityLattice_ == nullptr)
+            {
+                GMX_THROW(
+                        InternalError("Transformation to reference density not set for density guided simulation."));
+            }
+            return *transformationToDensityLattice_;
+        }
+        /*! \brief Return reference density
+         * \throws InternalError if reference density is not set
+         * \returns the reference density
+         */
+        const basic_mdspan<const float, dynamicExtents3D> &referenceDensity() const
+        {
+            if (referenceDensity_ == nullptr)
+            {
+                GMX_THROW(InternalError("Reference density not set for density guided simulation."));
+            }
+            return *referenceDensity_;
+        }
+
+    private:
+        //! The reference density to fit to
+        std::unique_ptr < basic_mdspan < const float, dynamicExtents3D>> referenceDensity_;
+        //! The coordinate transformation into the reference density
+        std::unique_ptr<TranslateAndScale> transformationToDensityLattice_;
+        //! The local atom set to act on
+        std::unique_ptr<LocalAtomSet>      localAtomSet_;
+        GMX_DISALLOW_COPY_AND_ASSIGN(DensityFittingSimulationParameterSetup);
+};
 
 /*! \internal
  * \brief Density fitting
@@ -82,6 +164,8 @@ class DensityFitting final : public IMDModule
          *     KeyValueTreeObjectBuilder as parameter
          *   - reading its internal parameters from a key-value-tree during
          *     simulation setup by taking a const KeyValueTreeObject & parameter
+         *   - constructing local atom sets in the simulation parameter setup
+         *     by taking a LocalAtomSetManager * as parameter
          */
         explicit DensityFitting(MdModulesNotifier *notifier)
         {
@@ -106,6 +190,12 @@ class DensityFitting final : public IMDModule
                     densityFittingOptions_.readInternalParametersFromKvt(tree);
                 };
             notifier->notifier_.subscribe(readInternalParametersFunction);
+            // constructing local atom sets during simulation setup
+            const auto setLocalAtomSetFunction = [this](LocalAtomSetManager *localAtomSetManager) {
+                    this->constructLocalAtomSet(localAtomSetManager);
+                };
+            notifier->notifier_.subscribe(setLocalAtomSetFunction);
+
         }
 
         //! From IMDModule; this class provides the mdpOptions itself
@@ -117,13 +207,30 @@ class DensityFitting final : public IMDModule
             if (densityFittingOptions_.active())
             {
                 const auto &parameters = densityFittingOptions_.buildParameters();
-                forceProvider_ = std::make_unique<DensityFittingForceProvider>(parameters);
+                forceProvider_ = std::make_unique<DensityFittingForceProvider>(
+                            parameters,
+                            densityFittingSimulationParameters_.referenceDensity(),
+                            densityFittingSimulationParameters_.transformationToDensityLattice(),
+                            densityFittingSimulationParameters_.localAtomSet());
                 forceProviders->addForceProvider(forceProvider_.get());
             }
         }
 
         //! This MDModule provides its own output
         IMDOutputProvider *outputProvider() override { return &densityFittingOutputProvider_; }
+
+        /*! \brief Set up the local atom sets that are used by this module.
+         *
+         * \note When density fitting is set up with MdModuleNotification in
+         *       the constructor, this function is called back.
+         *
+         * \param[in] localAtomSetManager the manager to add local atom sets.
+         */
+        void constructLocalAtomSet(LocalAtomSetManager * localAtomSetManager)
+        {
+            LocalAtomSet atomSet = localAtomSetManager->add(densityFittingOptions_.buildParameters().indices_);
+            densityFittingSimulationParameters_.setLocalAtomSet(atomSet);
+        }
 
     private:
         //! The output provider
@@ -132,6 +239,11 @@ class DensityFitting final : public IMDModule
         DensityFittingOptions                        densityFittingOptions_;
         //! Object that evaluates the forces
         std::unique_ptr<DensityFittingForceProvider> forceProvider_;
+        /*! \brief Parameters for density fitting that become available at
+         * simulation setup time.
+         */
+        DensityFittingSimulationParameterSetup       densityFittingSimulationParameters_;
+        GMX_DISALLOW_COPY_AND_ASSIGN(DensityFitting);
 };
 
 }   // namespace

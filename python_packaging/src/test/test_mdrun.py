@@ -56,6 +56,9 @@ gmx.logger.setLevel(logging.WARNING)
 
 # from .pytesthelpers import withmpi_only
 
+import gmxapi as gmx
+gmx.logger.setLevel(logging.WARNING)
+
 # Configure the `logging` module before and non-built-in packages start to use it.
 logging.getLogger().setLevel(logging.WARNING)
 # create console handler
