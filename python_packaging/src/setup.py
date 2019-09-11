@@ -60,7 +60,10 @@ setup(
 
     packages=['gmxapi', 'gmxapi.simulation'],
     cmake_args=['-DCMAKE_OSX_DEPLOYMENT_TARGET:STRING=10.9',
-                '-DCMAKE_OSX_ARCHITECTURES:STRING=x86_64'],
+                '-DCMAKE_OSX_ARCHITECTURES:STRING=x86_64',
+                ]
+    # + ['-DCMAKE_TOOLCHAIN_FILE=/Users/eric/gromacs-tmpi-debug/share/cmake/CMakeToolchain.txt']
+    ,
 
     author='M. Eric Irrgang',
     author_email='info@gmxapi.org',
