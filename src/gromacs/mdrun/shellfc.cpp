@@ -259,8 +259,8 @@ static void predict_shells(FILE *fplog, rvec x[], rvec v[], real dt,
  * \param[in]  mtop  Molecular topology.
  * \returns Array holding the number of particles of a type
  */
-static std::array<int, eptNR> countPtypes(FILE             *fplog,
-                                          const gmx_mtop_t *mtop)
+std::array<int, eptNR> countPtypes(FILE             *fplog,
+                                   const gmx_mtop_t *mtop)
 {
     std::array<int, eptNR> nptype = { { 0 } };
     /* Count number of shells, and find their indices */
@@ -893,7 +893,7 @@ static void init_adir(gmx_shellfc_t            *shfc,
                       rvec                     *x,
                       rvec                     *f,
                       rvec                     *acc_dir,
-                      matrix                    box,
+                      const matrix              box,
                       gmx::ArrayRef<const real> lambda,
                       real                     *dvdlambda)
 {
@@ -987,7 +987,7 @@ void relax_shell_flexcon(FILE                                     *fplog,
                          int                                       natoms,
                          gmx::ArrayRefWithPadding<gmx::RVec>       x,
                          gmx::ArrayRefWithPadding<gmx::RVec>       v,
-                         matrix                                    box,
+                         const matrix                              box,
                          gmx::ArrayRef<real>                       lambda,
                          history_t                                *hist,
                          gmx::ArrayRefWithPadding<gmx::RVec>       f,
@@ -998,7 +998,7 @@ void relax_shell_flexcon(FILE                                     *fplog,
                          t_graph                                  *graph,
                          gmx_shellfc_t                            *shfc,
                          t_forcerec                               *fr,
-                         gmx::PpForceWorkload                     *ppForceWorkload,
+                         gmx::MdScheduleWorkload                  *mdScheduleWork,
                          double                                    t,
                          rvec                                      mu_tot,
                          const gmx_vsite_t                        *vsite,
@@ -1134,7 +1134,7 @@ void relax_shell_flexcon(FILE                                     *fplog,
              box, x, hist,
              forceWithPadding[Min], force_vir, md, enerd, fcd,
              lambda, graph,
-             fr, ppForceWorkload, vsite, mu_tot, t, nullptr,
+             fr, mdScheduleWork, vsite, mu_tot, t, nullptr,
              (bDoNS ? GMX_FORCE_NS : 0) | shellfc_flags,
              ddBalanceRegionHandler);
 
@@ -1245,7 +1245,7 @@ void relax_shell_flexcon(FILE                                     *fplog,
                  top, box, posWithPadding[Try], hist,
                  forceWithPadding[Try], force_vir,
                  md, enerd, fcd, lambda, graph,
-                 fr, ppForceWorkload, vsite, mu_tot, t, nullptr,
+                 fr, mdScheduleWork, vsite, mu_tot, t, nullptr,
                  shellfc_flags,
                  ddBalanceRegionHandler);
         sum_epot(&(enerd->grpp), enerd->term);

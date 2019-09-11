@@ -89,3 +89,10 @@ class SimulationInput(abc.ABC):
                 return False
         else:
             return NotImplemented
+
+
+class ModuleObject(abc.ABC):
+    """Extended interface for objects in the gmaxpi.simulation module.
+
+    Implies availability of additional binding details.
+    """

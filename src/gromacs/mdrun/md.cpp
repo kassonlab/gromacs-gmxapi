@@ -257,7 +257,7 @@ void gmx::LegacySimulator::do_md()
     }
     gmx_mdoutf       *outf = init_mdoutf(fplog, nfile, fnm, mdrunOptions, cr, outputProvider, mdModulesNotifier, ir, top_global, oenv, wcycle,
                                          StartingBehavior::NewSimulation);
-    gmx::EnergyOutput energyOutput(mdoutf_get_fp_ene(outf), top_global, ir, pull_work, mdoutf_get_fp_dhdl(outf), false);
+    gmx::EnergyOutput energyOutput(mdoutf_get_fp_ene(outf), top_global, ir, pull_work, mdoutf_get_fp_dhdl(outf), false, mdModulesNotifier);
 
     gstat = global_stat_init(ir);
 
@@ -454,7 +454,11 @@ void gmx::LegacySimulator::do_md()
         if (constr)
         {
             /* Constrain the initial coordinates and velocities */
-            do_constrain_first(fplog, constr, ir, mdatoms, state);
+            do_constrain_first(fplog, constr, ir, mdatoms,
+                               state->natoms,
+                               state->x.arrayRefWithPadding(),
+                               state->v.arrayRefWithPadding(),
+                               state->box, state->lambda[efptBONDED]);
         }
         if (vsite)
         {
@@ -737,7 +741,7 @@ void gmx::LegacySimulator::do_md()
             pme_loadbal_do(pme_loadbal, cr,
                            (mdrunOptions.verbose && MASTER(cr)) ? stderr : nullptr,
                            fplog, mdlog,
-                           *ir, fr, *state,
+                           *ir, fr, state->box, state->x,
                            wcycle,
                            step, step_rel,
                            &bPMETunePrinting);
@@ -906,7 +910,7 @@ void gmx::LegacySimulator::do_md()
                                 &state->hist,
                                 f.arrayRefWithPadding(), force_vir, mdatoms,
                                 nrnb, wcycle, graph,
-                                shellfc, fr, ppForceWorkload, t, mu_tot,
+                                shellfc, fr, mdScheduleWork, t, mu_tot,
                                 vsite,
                                 ddBalanceRegionHandler);
         }
@@ -936,7 +940,7 @@ void gmx::LegacySimulator::do_md()
                      state->box, state->x.arrayRefWithPadding(), &state->hist,
                      f.arrayRefWithPadding(), force_vir, mdatoms, enerd, fcd,
                      state->lambda, graph,
-                     fr, ppForceWorkload, vsite, mu_tot, t, ed ? ed->getLegacyED() : nullptr,
+                     fr, mdScheduleWork, vsite, mu_tot, t, ed ? ed->getLegacyED() : nullptr,
                      (bNS ? GMX_FORCE_NS : 0) | force_flags,
                      ddBalanceRegionHandler);
         }

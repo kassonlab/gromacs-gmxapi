@@ -66,6 +66,16 @@ Developer Note:
     composed objects mimicking C++ template specializations are not distinguishable
     at the class level.
 
+Note: This module overly specifies the API. As we figure out the relationships.
+    As we clarify interactions, we should trim these specifications or migrate them
+    to gmxapi.typing and focus on developing to functions and function interfaces
+    rather than classes or types. In the mean time, these types help to illustrate
+    the entities that can exist in the implementation. Just keep in mind that
+    these ABCs describe the existence of "protocols" more than the details of
+    the protocols, which may take longer to define.
+
+..  todo:: Clarify protocol checks, ABCs, and mix-ins.
+
 """
 # Note that the Python typing module defines generic classes in terms of abstract
 # base classes defined in other modules (namely `collections`), but without
@@ -91,10 +101,15 @@ Developer Note:
 # time type checking. Use `isinstance` and `issubclass` checking against
 # non-generic abstract base classes when the valid interface is complicated or
 # unknown in the caller's context.
+#
+# Also, note that abstract base classes cannot assert that a simple data member
+# is provided by a subclass, but class data members of Generic classes are
+# interpreted by the type checker as instance members (unless annotated ClassVar).
+
 import typing
-from abc import ABC, ABCMeta, abstractmethod
+from abc import ABC, abstractmethod
 import collections
-from typing import TypeVar, Generic, NewType, Type, Callable
+from typing import Type, Callable
 
 
 class EnsembleDataSource(ABC):
@@ -147,34 +162,105 @@ class NDArray(collections.abc.Sequence, ABC):
 
 
     """
+    # TODO: Fix the data model and ABC vs. type-checking conflicts so that we can
+    #       recognize NDArrays and NDArray futures as compatible data in data flow operations.
+    # We cannot do the following because of the forward reference to Future:
+    # @classmethod
+    # def __subclasshook__(cls, subclass):
+    #     """Determine whether gmxapi should consider the provided type to be consistent with an NDArray."""
+    #     if subclass is cls:
+    #         return True
+    #     if cls is NDArray:
+    #         # For the purposes of gmxapi data flow, a Future[NDArray] is equivalent to an NDArray.
+    #         if Future in subclass.__mro__:
+    #             return issubclass(subclass.dtype, cls)
+    #         else:
+    #             def is_compatible(candidate):
+    #                 if issubclass(candidate, collections.abc.Sequence) \
+    #                         and not issubclass(candidate, (str, bytes)):
+    #                     return True
+    #                 return False
+    #             any(is_compatible(base) for base in subclass.__mro__)
+    #             return True
+    #     return NotImplemented
 
 
-# Use SourceTypeVar and ResultTypeVar for static type hints, annotations, and as a parameter to generics.
-# Use valid_source_types and valid_result_types for run-time type checking.
-ResultTypeVar = TypeVar('ResultTypeVar', *(str, bool, int, float, dict, NDArray))
-valid_result_types = ResultTypeVar.__constraints__
-
-SourceTypeVar = TypeVar('SourceTypeVar',
-                        *(str, bool, int, float, dict, NDArray, EnsembleDataSource))
-valid_source_types = SourceTypeVar.__constraints__
-
-# Place holder for type annotations of Context objects.
-# TODO: Expand to support some static type checking.
-_Context = TypeVar('_Context')
-# Type variable that binds to subclasses of the forward referenced OperationImplentation ABC.
-_Op = TypeVar('_Op', bound='OperationImplementation')
+# TODO: Define an enumeration.
+SourceProtocol = typing.NewType('SourceProtocol', str)
 
 
-class Future(ABC):
-    """Generic result data."""
+class Resource(ABC):
+    """gmxapi resource object interface.
+
+    Resources are generally provided by Operation instances, but may be provided
+    by the framework, or abstractly as the outputs of other scripts.
+
+    A resource is owned in a specific Context. A resource handle may be created
+    in a different Context than that in which the resource is owned. The Context
+    instances negotiate the resource availability in the new Context.
+    """
+    # No public interface is yet defined for the Resource API.
+
+    # Resource instances should have an attribute serving as a sequence of available
+    # source protocols in decreasing order of preference.
+    # TODO: Clarify. Define an enumeration with the allowed values.
+    # TODO: Enforce. The existence of this attribute cannot be confirmed by the abc.ABC machinery.
+    # TODO: Consider leaving this off of the ABC specification and make it an implementation
+    #  detail of a single_dispatch function.
+    # TODO: Similarly, find a way for the subscriber to have a chain of handlers.
+    _gmxapi_source_protocol = typing.Sequence[SourceProtocol]
+
+
+class Future(Resource):
+    """Data source that may represent Operation output that does not yet exist.
+
+    Futures represent "immutable resources," or fixed points in the data flow.
+    """
     @property
     @abstractmethod
-    def dtype(self) -> Type[typing.Union[valid_result_types]]:
+    def dtype(self) -> type:
         ...
 
     @abstractmethod
-    def result(self) -> typing.Union[valid_result_types]:
+    def result(self) -> typing.Any:
         ...
+
+    # TODO: abstractmethod(subscribe)
+
+
+class MutableResourceSubscriber(ABC):
+    """Required interface for subscriber of a MutableResource.
+
+    A MutableResource is bound to a collaborating object by passing a valid
+    Subscriber to the resource's *subscribe()* method.
+    """
+
+
+class MutableResource(Resource):
+    """An Operation interface that does not represent a fixed point in a data flow.
+
+    Providers and consumers of mutable resources are more tightly coupled than
+    data edge terminals and have additional machinery for binding at run time.
+    Examples include the simulation plugin interface, binary payloads outside of
+    the standard gmxapi types, and any operation interaction that the current
+    context must defer to lower-level details.
+
+    There is not yet a normative interface for MutableResources, but a consumer
+    of MutableResources has chance to bind directly to the provider of a
+    MutableResource without the mediation of a DataEdge. Accordingly, providers
+    and consumers of MutableResources must be able to be instantiated in the
+    same Context.
+    """
+    def subscribe(self, subscriber: MutableResourceSubscriber):
+        """Create a dependency on this resource.
+
+        Allows a gmxapi compatible operation to bind to this resource.
+        The subscribing object will be provided with a lower-level registration
+        interface at run time, as computing elements are being initialized.
+        The nature of this registration interface is particular to the type of
+        resource and its participants. See, for instance, the MD plugin binding
+        interface.
+        """
 
 
 class OutputDataProxy(ABC):
@@ -211,12 +297,19 @@ class OutputDataProxy(ABC):
     # and discoverability.
 
 
-class AbstractOperationReference(ABC):
+class OperationReference(ABC):
     """Client interface to an element of computational work already configured.
 
     An "instance" of an operation is assumed to be a node in a computational
     work graph, owned and managed by a Context. This class describes the
     interface of the reference held by a client once the node exists.
+
+    The convergence of OperationReferences with Nodes as the results of the action
+    of a Director implies that a Python user should also be able to "subscribe"
+    to an operation handle (or its member resources). This could be a handy feature
+    with which a user could register a call-back. Note that we will want to provide
+    an optional way for the call-back (as with any subscriber) to assert a chain
+    of prioritized Contexts to find the optimal path of subscription.
     """
 
     @abstractmethod
@@ -236,37 +329,216 @@ class AbstractOperationReference(ABC):
         output data from other operation handle attributes and we should consider
         whether it is actually necessary or helpful. To facilitate its possible
         future removal, do not enrich its interface beyond that of a collection
-        of OutputDescriptor attributes.
+        of OutputDescriptor attributes. The OutputDataProxy also serves as a Mapping,
+        with keys matching the attributes. We may choose to keep only this aspect
+        of the interface instead of trying to keep track of the set of attributes.
         """
         ...
 
 
-class OperationReference(AbstractOperationReference, Generic[_Op]):
-    """Object with an OperationReference interface.
+class Fingerprint(ABC):
+    """Unique global identifier for an Operation node.
 
-    Generic version of AbstractOperationReference, parameterized by operation
-    implementation.
+    Represents the operation and operation inputs.
+
+    No public interface.
     """
 
 
-class NodeBuilder(ABC):
-    """Add an element of computational work to be managed by a gmxapi Context."""
+class OutputDescription(ABC):
+    """
+
+    There may not be a single OutputDescription base class, since the requirements
+    are related to the Context implementation.
+    """
+
+
+class Edge(ABC):
+    """Reference to the state and description of a data flow edge.
+
+    A DataEdge connects a data source collection to a data sink. A sink is an
+    input or collection of inputs of an operation (or fused operation). An operation's
+    inputs may be fed from multiple data source collections, but an operation
+    cannot be fully instantiated until all of its inputs are bound, so the DataEdge
+    is instantiated at the same time the operation is instantiated because the
+    required topology of a graph edge may be determined by the required topology
+    of another graph edge.
+
+    A data edge has a well-defined topology only when it is terminated by both
+    a source and sink. Creation requires that a source collection is compared to
+    a sink description.
+
+    Calling code initiates edge creation by passing well-described data sources
+    to an operation factory. The data sources may be annotated with explicit scatter
+    or gather commands.
+
+    The resource manager for the new operation determines the
+    required shape of the sink to handle all of the offered input.
+
+    Broadcasting
+    and transformations of the data sources are then determined and the edge is
+    established.
+
+    At that point, the fingerprint of the input data at each operation
+    becomes available to the resource manager for the operation. The fingerprint
+    has sufficient information for the resource manager of the operation to
+    request and receive data through the execution context.
+
+    Instantiating operations and data edges implicitly involves collaboration with
+    a Context instance. The state of a given Context or the availability of a
+    default Context through a module function may affect the ability to instantiate
+    an operation or edge. In other words, behavior may be different for connections
+    being made in the scripting environment versus the running Session, and implementation
+    details can determine whether or not new operations or data flow can occur in
+    different code environments.
+
+    A concrete Edge is a likely related to the consuming Context, and a single
+    abstract base class may not be possible or appropriate. Possible Context-agnostic
+    use cases for a global abstract Edge (along with Node) include topological aspects of data
+    flow graphs or user-friendly inspection.
+    """
+
+
+class Node(ABC):
+    """Object oriented interface to nodes configured in a Context.
+
+    In gmxapi.operation Contexts, this functionality is implemented by subclasses
+    of SourceResource.
+
+    Likely additional interfaces for Node include subscribers(), label(), and
+    (weak) reference helpers like context() and identifier().
+
+    .. todo:: Converge. A Node is to a concrete Context what an operation handle is to the None (Python UI) Context.
+    """
+    @abstractmethod
+    def handle(self, context: 'Context') -> OperationReference:
+        """Get a reference to the Operation in the indicated Context.
+
+        This is equivalent to the reference obtained from the helper function
+        or factory that added the node if and only if the Contexts are the same.
+        Otherwise, a new node is created in *context* that subscribes to the
+        original node.
+        """
+        # Note that a member function like this is the same as dispatching a
+        # director that translates from the Node's Context to *context*
 
     @abstractmethod
-    def build(self) -> AbstractOperationReference:
+    def output_description(self, context: 'Context') -> OutputDescription:
+        """Get a description of the output available from this node.
+
+        Returns a subset of the information available through handle(), but
+        without creating a subscription relationship. Allows data sources and
+        consumers to determine compatibility and requirements for connecting
+        two nodes.
+        """
+
+    @abstractmethod
+    def input(self) -> Edge:
+        """Describe the bound data sources.
+
+        The returned object represents the data edge in the Context managing
+        the node, though the data sources may be from other Contexts.
+        """
+
+    @abstractmethod
+    def fingerprint(self) -> Fingerprint:
+        """Uniquely identify this Node.
+
+        Used internally to manage resources, check-point recovery, and messaging
+        between Contexts. The fingerprint is dependent on the operation and the
+        operation inputs, and is independent of the Context.
+
+        Returns:
+            Opaque identifier describing the unique output of this node.
+        """
+
+    @abstractmethod
+    def operation(self) -> 'OperationImplementation':
+        """Get a reference to the registered operation that produces nodes like this.
+        """
+        # Note that the uniqueness of a node is such that Node.operation() and
+        # Node.input() used to get an OperationReference in the same Context
+        # should result in a handle to the same Node.
+
+
+class NodeBuilder(ABC):
+    """Add an element of computational work to be managed by a gmxapi Context.
+
+    A Node generally represents an instance of a registered Operation, but the
+    only real requirement is that it contains sufficient information to run an
+    operation and to direct the instantiation of an equivalent node in a
+    different consumer Context.
+
+    In the near future, Node and NodeBuilder will participate in check-pointing
+    and in a serialization/deserialization scheme.
+
+    .. todo:: As the NodeBuilder interface is minimized, we can look for a normative
+              way to initialize a Generic NodeBuilder that supports the sorts of
+              type inference and hinting we would like.
+    """
+
+    @abstractmethod
+    def build(self) -> OperationReference:
         """Finalize the creation of the operation instance and get a reference."""
         ...
 
     @abstractmethod
-    def add_input(self, name: str, source):
-        """Attach a client-provided data source to the named input."""
+    def set_input_description(self, input_description):
+        """Add the details related to the operation input.
+
+        Example: In gmxapi.operation, includes signature() and make_uid()
+
+        .. todo:: This can probably be moved to an aspect of the resource factory.
+        """
         ...
 
     @abstractmethod
-    def add_resource_factory(self, factory: Callable):
+    def set_output_factory(self, output_factory):
+        """Set the factory that gives output description and resources for the Node.
+
+        Output is not fully describable until the input is known and the Node is
+        ready to be instantiated. This is the resource that can be used by the
+        Context to finish completely describing the Node. The interface of the
+        factory and of any object it produces is a lower level detail of the
+        Context and Operation implementations in that Context.
+
+        .. todo:: This can probably be moved to an aspect of the resource factory.
+        """
+
+    @abstractmethod
+    def add_input(self, name: str, source):
+        """Attach a client-provided data source to the named input.
+
+        .. todo:: Generalize to add_resource().
+        """
+        ...
+
+    @abstractmethod
+    def set_handle(self, handle_builder):
+        """Set the factory that gives a builder for a handle to the operation.
+
+        .. todo:: Stabilize interface to handle_builder and move to an aspect of the
+                  operation registrant.
+        """
+
+    @abstractmethod
+    def set_runner_director(self, runner_builder):
+        """Set the factory that gives a builder for the run-time callable.
+
+        .. todo:: This should be a specialized Director obtained from the registrant
+                  by the Context when translating a Node for execution.
+        """
+
+    @abstractmethod
+    def set_resource_factory(self, factory: Callable):
         """Register a resource factory for the operation run-time resources.
 
         The factory will be called within the Context
+
+        .. todo:: Along with the merged set_runner/Director, the resource factory
+                  is the other core aspect of an operation implementation registrant
+                  that the Context should fetch rather than receiving through the
+                  NodeBuilder.
         """
         # The factory function takes input in the form the Context will provide it
         # and produces a resource object that will be passed to the callable that
@@ -278,8 +550,17 @@ class NodeBuilder(ABC):
 class Context(ABC):
     """API Context.
 
-    All gmxapi data and operations are owned by a Context instance. The Context
-    manages the details of how work is run and how data is managed.
+    A Context instance manages the details of the computing environment and
+    provides for the allocation of resources.
+    All gmxapi data and operations are owned by a Context instance.
+    The Context manages the details of how work is run and how data is managed.
+
+    Additionally, a concrete Context implementation determines some details of
+    the interfaces used to manage operation execution and data flow. Thus, API
+    calls may depend on multiple Contexts when, for instance, there is a source
+    Context, a caller Context, and/or a destination Context. For Python data
+    types and external interfaces to the gmxapi package (such as public function
+    signatures) is equal to *None*.
 
     This abstract base class (ABC) defines the required interface of a Context
     implementation. Client code should use this ABC for type hints. Concrete
@@ -299,30 +580,84 @@ class Context(ABC):
         """
         ...
 
+    @abstractmethod
+    def node(self, node_id) -> Node:
+        """Get the indicated node from the Context.
 
-class OperationDirector(Generic[_Op, _Context]):
-    """Generic abstract operation director.
+        node_id may be an opaque identifier or a label used when the node was
+        added.
+        """
+
+
+class ResourceFactory(ABC):
+    """Packager for run time resources for a particular Operation in a particular Context.
+
+    TODO: refine interface.
+    """
+    @abstractmethod
+    def input_description(self, context: Context):
+        """Get an input description in a form usable by the indicated Context."""
+
+
+class OperationDirector(ABC):
+    """Interface for Operation entry points.
 
     An operation director is instantiated for a specific operation and context
-    by a dispatching factory to add a computational element to the work managed
-    by the context.
-
-    Note:
-        This is a generic class, as defined with the Python `typing` module.
-        If used as a base class, re-expression of the TypeVar parameters in class
-        subscripts will cause the derived class to be generic unless regular
-        classes (non-TypeVar) are given. Omission of the subscripts causes `Any`
-        to be bound, which also results in a non-generic subclass.
+    (by a dispatching factory) to update the work managed by the context
+    (add a computational element).
     """
+    # TODO: How to handle subscriptions? Should the subscription itself be represented
+    #  as a type of resource that is passed to __call__, or should the director be
+    #  able to subscribe to resources as an alternative to passing with __call__?
+    #  Probably the subscription is represented by a Future passed to __call__.
 
-    # TODO: Annotate `input`, whose validity is determined by both context and operation.
+    # TODO: Annotate `resources`, whose validity is determined by both context and operation.
     @abstractmethod
-    def __call__(self, input):
-        """Add an element of work (node) and return a handle to the client."""
+    def __call__(self, resources, label: typing.Optional[str]):
+        """Add an element of work (node) and return a handle to the client.
+
+        Implements the client behavior in terms of the NodeBuilder interface
+        for a NodeBuilder in the target Context. Return a handle to the resulting
+        operation instance (node) that may be specialized to provide additional
+        interface particular to the operation.
+        """
         ...
 
-    def handle_type(self) -> Type[OperationReference[_Op]]:
-        """Get the class used for operation references in this Context."""
+    @abstractmethod
+    def handle_type(self, context: Context) -> Type[OperationReference]:
+        """Get the class used for operation references in this Context.
+
+        Convenience function. May not be needed.
+        """
+        ...
+
+    @abstractmethod
+    def resource_factory(self,
+                         source: typing.Union[Context, None],
+                         target: typing.Optional[Context] = None) \
+            -> typing.Union[ResourceFactory, typing.Callable]:
+        """Get an appropriate resource factory.
+
+        The ResourceFactor converts resources (in the form produced by the *source* Context)
+        to the form consumed by the operation in the *target* Context.
+
+        A *source* of None indicates that the source is an arbitrary Python function
+        signature, or to try to detect appropriate dispatching. A *target* of
+        None indicates that the Context of the Director instance is the target.
+
+        As we merge the interface for a NodeBuilder and a RunnerBuilder, this
+        will not need to be specified in multiple places, but it is not yet
+        clear where.
+
+        Generally, the client should not need to call the resource_factory directly.
+        The director should dispatch an appropriate factory. C++ versions need
+        the resource_factory dispatcher to be available for reasons of compilation
+        dependencies. Clients may want to use a specific resource_factory to explicitly
+        control when and where data flow is resolved. Also, the resource_factory
+        for the None Context can be used to set the function signature of the Python
+        package helper function. As such, it may be appropriate to make it a "static"
+        member function in Python.
+        """
         ...
 
 
@@ -332,16 +667,27 @@ class OperationImplementation(ABC):
     Describe the essential features of an Operation that can be registered with
     gmxapi to support building and executing work graphs in gmxapi compatible
     execution contexts.
+
+    An Operation is usable in gmxapi when an OperationImplementation is registered
+    with a valid identifier, consisting of a *namespace* and a *name*.
+
+    Generally, the *namespace* is the module implementing the Operation
+    and the *name* is a factory or helper importable from the same module that
+    triggers the OperationDirector to configure a new instance of the Operation.
+
+    The registered object must be able to describe its namespace and name, and
+    to dispatch an OperationDirector appropriate for a given Context.
     """
-    # The executable part of an operation consumes a distinct resource type.
-    # The resource type may be opaque, because it is created through a factory
-    # and only used in passing to a function object.
-    ResourceType = NewType('ResourceType', object)
+    # TODO: Either OperationImplementations should be composed or subclasses should
+    #  each be singletons. We can still consider that OperationReferences are instances
+    #  of OperationImplementations or its subclasses, or that OperationReference classes
+    #  have a class data member pointing to a single OperationImplementation instance
+    #  or operation_registry value.
 
     # TODO: Consider a data descriptor and metaclass to validate the name and namespace.
     @classmethod
     @abstractmethod
-    def name(cls) -> str:
+    def name(self) -> str:
         """The name of the operation.
 
         Generally, this corresponds to a callable attribute of a Python module
@@ -354,20 +700,19 @@ class OperationImplementation(ABC):
     # TODO: Consider a data descriptor and metaclass to validate the name and namespace.
     @classmethod
     @abstractmethod
-    def namespace(cls) -> str:
+    def namespace(self) -> str:
         """The namespace of the operation.
 
         Generally, the namespace corresponds to a Python module importable in
         the execution environment.
         """
 
-    # Note that this indicates that the ABC requires subclasses to provide a generic function,
-    # which _is_ the factory behavior we are trying to specify.
-    # TODO: Confirm that this type-checks correctly.
-    # We may need to look more at how the type checking is implemented to see how
-    # to do this right.
+    # TODO: Allow this to be an instance method, and register instances.
+    # Consider not storing an actual OperationImplementation in the registry.
+    # Note, though, that if we want to automatically register on import via
+    # base class (meta-class), the functionality must be in the class definition.
     @classmethod
     @abstractmethod
-    def director(cls: Type[_Op], context: _Context) -> OperationDirector[_Op, _Context]:
+    def director(cls, context: Context) -> OperationDirector:
         """Factory to get an OperationDirector appropriate for the context."""
         ...

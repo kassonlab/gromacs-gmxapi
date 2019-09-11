@@ -992,7 +992,6 @@ int Mdrunner::mdrunner()
                                            &mtop, inputrec,
                                            box, positionsFromStatePointer(globalState.get()),
                                            &atomSets);
-        mdModulesNotifier.notify(&atomSets);
         // Note that local state still does not exist yet.
     }
     else
@@ -1279,6 +1278,8 @@ int Mdrunner::mdrunner()
     if (thisRankHasDuty(cr, DUTY_PP))
     {
         mdModulesNotifier.notify(*cr);
+        mdModulesNotifier.notify(&atomSets);
+        mdModulesNotifier.notify(PeriodicBoundaryConditionType {inputrec->ePBC});
         /* Initiate forcerecord */
         fr                 = new t_forcerec;
         fr->forceProviders = mdModules_->initForceProviders();
@@ -1490,10 +1491,8 @@ int Mdrunner::mdrunner()
 
         // TODO This is not the right place to manage the lifetime of
         // this data structure, but currently it's the easiest way to
-        // make it work. Later, it should probably be made/updated
-        // after the workload for the lifetime of a PP domain is
-        // understood.
-        PpForceWorkload ppForceWorkload;
+        // make it work.
+        MdScheduleWorkload mdScheduleWork;
 
         GMX_ASSERT(stopHandlerBuilder_, "Runner must provide StopHandlerBuilder to simulator.");
         SimulatorBuilder simulatorBuilder;
@@ -1516,7 +1515,7 @@ int Mdrunner::mdrunner()
                     mdAtoms.get(), &nrnb, wcycle, fr,
                     &enerd,
                     &ekind,
-                    &ppForceWorkload,
+                    &mdScheduleWork,
                     replExParams,
                     membed,
                     walltime_accounting,
@@ -1606,8 +1605,6 @@ int Mdrunner::mdrunner()
     {
         tMPI_Finalize();
     }
-    //TODO free commrec in MPI simulations
-    done_commrec(cr);
 #endif
     return rc;
 }
@@ -1654,8 +1651,7 @@ class Mdrunner::BuilderImplementation
 {
     public:
         BuilderImplementation() = delete;
-        BuilderImplementation(std::unique_ptr<MDModules> mdModules,
-                              SimulationContext        * context);
+        BuilderImplementation(std::unique_ptr<MDModules> mdModules);
         ~BuilderImplementation();
 
         BuilderImplementation &setExtraMdrunOptions(const MdrunOptions &options,
@@ -1669,6 +1665,8 @@ class Mdrunner::BuilderImplementation
         void addReplicaExchange(const ReplicaExchangeParameters &params);
 
         void addMultiSim(gmx_multisim_t* multisim);
+
+        void addCommunicationRecord(t_commrec *cr);
 
         void addNonBonded(const char* nbpu_opt);
 
@@ -1707,8 +1705,11 @@ class Mdrunner::BuilderImplementation
         //! Command-line override for the duration of a neighbor list with the Verlet scheme.
         int         nstlist_ = 0;
 
-        //! Non-owning multisim communicator handle.
+        //! Multisim communicator handle.
         std::unique_ptr<gmx_multisim_t*>      multisim_ = nullptr;
+
+        //! Non-owning communication record (only used when building command-line mdrun)
+        t_commrec *communicationRecord_ = nullptr;
 
         //! Print a warning if any force is larger than this (in kJ/mol nm).
         real forceWarningThreshold_ = -1;
@@ -1718,17 +1719,6 @@ class Mdrunner::BuilderImplementation
 
         //! The modules that comprise the functionality of mdrun.
         std::unique_ptr<MDModules> mdModules_;
-
-        /*! \brief  Non-owning pointer to SimulationContext (owned and managed by client)
-         *
-         * \internal
-         * \todo Establish robust protocol to make sure resources remain valid.
-         * SimulationContext will likely be separated into multiple layers for
-         * different levels of access and different phases of execution. Ref
-         * https://redmine.gromacs.org/issues/2375
-         * https://redmine.gromacs.org/issues/2587
-         */
-        SimulationContext* context_ = nullptr;
 
         //! \brief Parallelism information.
         gmx_hw_opt_t hardwareOptions_;
@@ -1758,12 +1748,9 @@ class Mdrunner::BuilderImplementation
         std::unique_ptr<StopHandlerBuilder> stopHandlerBuilder_ = nullptr;
 };
 
-Mdrunner::BuilderImplementation::BuilderImplementation(std::unique_ptr<MDModules> mdModules,
-                                                       SimulationContext        * context) :
-    mdModules_(std::move(mdModules)),
-    context_(context)
+Mdrunner::BuilderImplementation::BuilderImplementation(std::unique_ptr<MDModules> mdModules) :
+    mdModules_(std::move(mdModules))
 {
-    GMX_ASSERT(context_, "Bug found. It should not be possible to construct builder without a valid context.");
 }
 
 Mdrunner::BuilderImplementation::~BuilderImplementation() = default;
@@ -1799,11 +1786,14 @@ void Mdrunner::BuilderImplementation::addMultiSim(gmx_multisim_t* multisim)
     multisim_ = std::make_unique<gmx_multisim_t*>(multisim);
 }
 
+void Mdrunner::BuilderImplementation::addCommunicationRecord(t_commrec *cr)
+{
+    communicationRecord_ = cr;
+}
+
 Mdrunner Mdrunner::BuilderImplementation::build()
 {
     auto newRunner = Mdrunner(std::move(mdModules_));
-
-    GMX_ASSERT(context_, "Bug found. It should not be possible to call build() without a valid context.");
 
     newRunner.mdrunOptions          = mdrunOptions_;
     newRunner.pforce                = forceWarningThreshold_;
@@ -1820,8 +1810,8 @@ Mdrunner Mdrunner::BuilderImplementation::build()
 
     newRunner.filenames = filenames_;
 
-    GMX_ASSERT(context_->communicationRecord_, "SimulationContext communications not initialized.");
-    newRunner.cr = context_->communicationRecord_;
+    GMX_ASSERT(communicationRecord_, "Bug found. It should not be possible to call build() without a valid communicationRecord_.");
+    newRunner.cr = communicationRecord_;
 
     if (multisim_)
     {
@@ -1931,9 +1921,8 @@ void Mdrunner::BuilderImplementation::addStopHandlerBuilder(std::unique_ptr<Stop
     stopHandlerBuilder_ = std::move(builder);
 }
 
-MdrunnerBuilder::MdrunnerBuilder(std::unique_ptr<MDModules>           mdModules,
-                                 compat::not_null<SimulationContext*> context) :
-    impl_ {std::make_unique<Mdrunner::BuilderImplementation>(std::move(mdModules), context)}
+MdrunnerBuilder::MdrunnerBuilder(std::unique_ptr<MDModules>           mdModules) :
+    impl_ {std::make_unique<Mdrunner::BuilderImplementation>(std::move(mdModules))}
 {
 }
 
@@ -1968,6 +1957,12 @@ MdrunnerBuilder &MdrunnerBuilder::addReplicaExchange(const ReplicaExchangeParame
 MdrunnerBuilder &MdrunnerBuilder::addMultiSim(gmx_multisim_t* multisim)
 {
     impl_->addMultiSim(multisim);
+    return *this;
+}
+
+MdrunnerBuilder &MdrunnerBuilder::addCommunicationRecord(t_commrec *cr)
+{
+    impl_->addCommunicationRecord(cr);
     return *this;
 }
 

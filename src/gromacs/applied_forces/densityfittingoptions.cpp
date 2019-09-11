@@ -86,9 +86,9 @@ void densityfittingMdpTransformFromString(IKeyValueTreeTransformRules * rules,
 }
 /*! \brief Helper to declare mdp output.
  *
- * Enforces uniform mdp options output sting that are always prepended with the
- * correct string for the densityfitting mdp options and is consistent with the
- * options name and transformation.
+ * Enforces uniform mdp options output strings that are always prepended with the
+ * correct string for the densityfitting mdp options and are consistent with the
+ * options name and transformation type.
  *
  * \tparam OptionType the type of the mdp option
  * \param[in] builder the KVT builder to generate the output
@@ -105,6 +105,23 @@ void addDensityFittingMdpOutputValue(KeyValueTreeObjectBuilder *builder,
                                   option);
 }
 
+/*! \brief Helper to declare mdp output comments.
+ *
+ * Enforces uniform mdp options comment output strings that are always prepended
+ * with the correct string for the densityfitting mdp options and are consistent
+ * with the options name and transformation type.
+ *
+ * \param[in] builder the KVT builder to generate the output
+ * \param[in] comment on the mdp option
+ * \param[in] optionTag string tag that describes the mdp option
+ */
+void addDensityFittingMdpOutputValueComment(KeyValueTreeObjectBuilder *builder,
+                                            const std::string         &comment,
+                                            const std::string         &optionTag)
+{
+    builder->addValue<std::string>("comment-" + DensityFittingModuleInfo::name_ + "-" + optionTag, comment);
+}
+
 }   // namespace
 
 void DensityFittingOptions::initMdpTransform(IKeyValueTreeTransformRules * rules)
@@ -119,18 +136,28 @@ void DensityFittingOptions::initMdpTransform(IKeyValueTreeTransformRules * rules
     densityfittingMdpTransformFromString<real>(rules, &fromStdString<real>, c_forceConstantTag_);
     densityfittingMdpTransformFromString<real>(rules, &fromStdString<real>, c_gaussianTransformSpreadingWidthTag_);
     densityfittingMdpTransformFromString<real>(rules, &fromStdString<real>, c_gaussianTransformSpreadingRangeInMultiplesOfWidthTag_);
+    densityfittingMdpTransformFromString<std::string>(rules, stringIdentityTransform, c_referenceDensityFileNameTag_);
+    densityfittingMdpTransformFromString<std::int64_t>(rules, &fromStdString<std::int64_t>, c_everyNStepsTag_);
+    densityfittingMdpTransformFromString<bool>(rules, &fromStdString<bool>, c_normalizeDensitiesTag_);
 }
 
 void DensityFittingOptions::buildMdpOutput(KeyValueTreeObjectBuilder *builder) const
 {
+
+    addDensityFittingMdpOutputValueComment(builder, "", "empty-line");
+    addDensityFittingMdpOutputValueComment(builder, "; Density guided simulation", "module");
+
     addDensityFittingMdpOutputValue(builder, parameters_.active_, c_activeTag_);
     if (parameters_.active_)
     {
         addDensityFittingMdpOutputValue(builder, groupString_, c_groupTag_);
+
+        addDensityFittingMdpOutputValueComment(builder, "; Similarity measure between densities: inner-product, or relative-entropy", c_similarityMeasureTag_);
         addDensityFittingMdpOutputValue<std::string>(builder,
                                                      c_densitySimilarityMeasureMethodNames[parameters_.similarityMeasureMethod_],
                                                      c_similarityMeasureTag_);
 
+        addDensityFittingMdpOutputValueComment(builder, "; Atom amplitude for spreading onto grid: unity, mass, or charges", c_amplitudeMethodTag_);
         addDensityFittingMdpOutputValue<std::string>(builder,
                                                      c_densityFittingAmplitudeMethodNames[parameters_.amplitudeLookupMethod_],
                                                      c_amplitudeMethodTag_);
@@ -138,6 +165,11 @@ void DensityFittingOptions::buildMdpOutput(KeyValueTreeObjectBuilder *builder) c
         addDensityFittingMdpOutputValue(builder, parameters_.forceConstant_, c_forceConstantTag_);
         addDensityFittingMdpOutputValue(builder, parameters_.gaussianTransformSpreadingWidth_, c_gaussianTransformSpreadingWidthTag_);
         addDensityFittingMdpOutputValue(builder, parameters_.gaussianTransformSpreadingRangeInMultiplesOfWidth_, c_gaussianTransformSpreadingRangeInMultiplesOfWidthTag_);
+        addDensityFittingMdpOutputValueComment(builder, "; Reference density file location as absolute path or relative to the gmx mdrun calling location", c_referenceDensityFileNameTag_);
+        addDensityFittingMdpOutputValue(builder, referenceDensityFileName_, c_referenceDensityFileNameTag_);
+        addDensityFittingMdpOutputValue(builder, parameters_.calculationIntervalInSteps_, c_everyNStepsTag_);
+        addDensityFittingMdpOutputValueComment(builder, "; Normalize the sum of density voxel values to one", c_normalizeDensitiesTag_);
+        addDensityFittingMdpOutputValue(builder, parameters_.normalizeDensities_, c_normalizeDensitiesTag_);
     }
 }
 
@@ -159,6 +191,9 @@ void DensityFittingOptions::initMdpOptions(IOptionsContainerWithSections *option
     section.addOption(RealOption(c_forceConstantTag_.c_str()).store(&parameters_.forceConstant_));
     section.addOption(RealOption(c_gaussianTransformSpreadingWidthTag_.c_str()).store(&parameters_.gaussianTransformSpreadingWidth_));
     section.addOption(RealOption(c_gaussianTransformSpreadingRangeInMultiplesOfWidthTag_.c_str()).store(&parameters_.gaussianTransformSpreadingRangeInMultiplesOfWidth_));
+    section.addOption(StringOption(c_referenceDensityFileNameTag_.c_str()).store(&referenceDensityFileName_));
+    section.addOption(Int64Option(c_everyNStepsTag_.c_str()).store(&parameters_.calculationIntervalInSteps_));
+    section.addOption(BooleanOption(c_normalizeDensitiesTag_.c_str()).store(&parameters_.normalizeDensities_));
 }
 
 bool DensityFittingOptions::active() const
@@ -168,6 +203,12 @@ bool DensityFittingOptions::active() const
 
 const DensityFittingParameters &DensityFittingOptions::buildParameters()
 {
+    // the options modules does not know unsigned integers so any input of this
+    // kind is rectified here
+    if (parameters_.calculationIntervalInSteps_ < 1)
+    {
+        parameters_.calculationIntervalInSteps_ = 1;
+    }
     return parameters_;
 }
 
@@ -182,7 +223,7 @@ void DensityFittingOptions::setFitGroupIndices(const IndexGroupsAndNames &indexG
 
 void DensityFittingOptions::writeInternalParametersToKvt(KeyValueTreeObjectBuilder treeBuilder)
 {
-    auto groupIndexAdder = treeBuilder.addUniformArray<index>(DensityFittingModuleInfo::name_ + "-" + c_groupTag_);
+    auto groupIndexAdder = treeBuilder.addUniformArray<std::int64_t>(DensityFittingModuleInfo::name_ + "-" + c_groupTag_);
     for (const auto &indexValue : parameters_.indices_)
     {
         groupIndexAdder.addValue(indexValue);
@@ -204,7 +245,11 @@ void DensityFittingOptions::readInternalParametersFromKvt(const KeyValueTreeObje
     auto kvtIndexArray = tree[DensityFittingModuleInfo::name_ + "-" + c_groupTag_].asArray().values();
     parameters_.indices_.resize(kvtIndexArray.size());
     std::transform(std::begin(kvtIndexArray), std::end(kvtIndexArray), std::begin(parameters_.indices_),
-                   [](const KeyValueTreeValue &val) { return val.cast<index>(); });
+                   [](const KeyValueTreeValue &val) { return val.cast<std::int64_t>(); });
 }
 
+const std::string &DensityFittingOptions::referenceDensityFileName() const
+{
+    return referenceDensityFileName_;
+}
 } // namespace gmx

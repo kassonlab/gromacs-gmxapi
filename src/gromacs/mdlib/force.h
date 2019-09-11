@@ -68,8 +68,9 @@ namespace gmx
 class Awh;
 class ForceWithVirial;
 class ImdSession;
-class PpForceWorkload;
+class MdScheduleWorkload;
 class MDLogger;
+class ForceFlags;
 }
 
 void do_force(FILE                                     *log,
@@ -95,12 +96,12 @@ void do_force(FILE                                     *log,
               gmx::ArrayRef<real>                       lambda,
               t_graph                                  *graph,
               t_forcerec                               *fr,
-              gmx::PpForceWorkload                     *ppForceWorkload,
+              gmx::MdScheduleWorkload                  *mdScheduleWork,
               const gmx_vsite_t                        *vsite,
               rvec                                      mu_tot,
               double                                    t,
               gmx_edsam                                *ed,
-              int                                       flags,
+              int                                       legacyFlags,
               const DDBalanceRegionHandler             &ddBalanceRegionHandler);
 
 /* Communicate coordinates (if parallel).
@@ -131,7 +132,7 @@ do_force_lowlevel(t_forcerec                               *fr,
                   const real                               *lambda,
                   const t_graph                            *graph,
                   const rvec                               *mu_tot,
-                  int                                       flags,
+                  const gmx::ForceFlags                    &forceFlags,
                   const DDBalanceRegionHandler             &ddBalanceRegionHandler);
 /* Call all the force routines */
 

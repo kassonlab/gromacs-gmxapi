@@ -282,10 +282,10 @@ static void dd_move_cellx(gmx_domdec_t      *dd,
                     {
                         c = 0;
                     }
-                    real det = (1 + c*c)*comm->cutoff*comm->cutoff - dist_d*dist_d;
+                    real det = (1 + c*c)*gmx::square(comm->systemInfo.cutoff) - dist_d*dist_d;
                     if (det > 0)
                     {
-                        dh[d1] = comm->cutoff - (c*dist_d + std::sqrt(det))/(1 + c*c);
+                        dh[d1] = comm->systemInfo.cutoff - (c*dist_d + std::sqrt(det))/(1 + c*c);
                     }
                     else
                     {
@@ -582,7 +582,7 @@ static void check_index_consistency(gmx_domdec_t *dd,
 
     const int numAtomsInZones = dd->comm->atomRanges.end(DDAtomRanges::Type::Zones);
 
-    if (dd->comm->DD_debug > 1)
+    if (dd->comm->ddSettings.DD_debug > 1)
     {
         std::vector<int> have(natoms_sys);
         for (int a = 0; a < numAtomsInZones; a++)
@@ -732,12 +732,12 @@ static float dd_force_load(gmx_domdec_comm_t *comm)
 {
     float load;
 
-    if (comm->eFlop)
+    if (comm->ddSettings.eFlop)
     {
         load = comm->flop;
-        if (comm->eFlop > 1)
+        if (comm->ddSettings.eFlop > 1)
         {
-            load *= 1.0 + (comm->eFlop - 1)*(0.1*rand()/RAND_MAX - 0.05);
+            load *= 1.0 + (comm->ddSettings.eFlop - 1)*(0.1*rand()/RAND_MAX - 0.05);
         }
     }
     else
@@ -823,7 +823,7 @@ static void comm_dd_ns_cell_sizes(gmx_domdec_t *dd,
         dd_move_cellx(dd, ddbox, cell_ns_x0, cell_ns_x1);
         if (isDlbOn(dd->comm) && dd->ndim > 1)
         {
-            check_grid_jump(step, dd, dd->comm->cutoff, ddbox, TRUE);
+            check_grid_jump(step, dd, dd->comm->systemInfo.cutoff, ddbox, TRUE);
         }
     }
 }
@@ -1057,7 +1057,7 @@ static void print_dd_load_av(FILE *fplog, gmx_domdec_t *dd)
 
     char  buf[STRLEN];
     int   numPpRanks   = dd->nnodes;
-    int   numPmeRanks  = (dd->pme_nodeid >= 0) ? comm->npmenodes : 0;
+    int   numPmeRanks  = (comm->ddRankSetup.usePmeOnlyRanks ? comm->ddRankSetup.numRanksDoingPme : 0);
     int   numRanks     = numPpRanks + numPmeRanks;
     float lossFraction = 0;
 
@@ -1645,7 +1645,7 @@ get_zone_pulse_cgs(gmx_domdec_t *dd,
 
     comm = dd->comm;
 
-    bScrew = (dd->bScrewPBC && dim == XX);
+    bScrew = (dd->unitCellInfo.haveScrewPBC && dim == XX);
 
     bDistMB_pulse = (bDistMB && bDistBonded);
 
@@ -1913,16 +1913,16 @@ static void setup_dd_communication(gmx_domdec_t *dd,
         comm->dth.resize(numThreads);
     }
 
-    bBondComm = comm->bBondComm;
+    bBondComm = comm->systemInfo.filterBondedCommunication;
 
     /* Do we need to determine extra distances for multi-body bondeds? */
-    bDistMB = (comm->haveInterDomainMultiBodyBondeds && isDlbOn(dd->comm) && dd->ndim > 1);
+    bDistMB = (comm->systemInfo.haveInterDomainMultiBodyBondeds && isDlbOn(dd->comm) && dd->ndim > 1);
 
     /* Do we need to determine extra distances for only two-body bondeds? */
     bDist2B = (bBondComm && !bDistMB);
 
-    const real r_comm2  = gmx::square(domainToDomainIntoAtomToDomainCutoff(*comm, comm->cutoff));
-    const real r_bcomm2 = gmx::square(domainToDomainIntoAtomToDomainCutoff(*comm, comm->cutoff_mbody));
+    const real r_comm2  = gmx::square(domainToDomainIntoAtomToDomainCutoff(comm->systemInfo, comm->systemInfo.cutoff));
+    const real r_bcomm2 = gmx::square(domainToDomainIntoAtomToDomainCutoff(comm->systemInfo, comm->cutoff_mbody));
 
     if (debug)
     {
@@ -2296,7 +2296,9 @@ static void set_zones_size(gmx_domdec_t *dd,
     zones = &comm->zones;
 
     /* Do we need to determine extra distances for multi-body bondeds? */
-    bDistMB = (comm->haveInterDomainMultiBodyBondeds && isDlbOn(dd->comm) && dd->ndim > 1);
+    bDistMB = (comm->systemInfo.haveInterDomainMultiBodyBondeds &&
+               isDlbOn(dd->comm) &&
+               dd->ndim > 1);
 
     for (z = zone_start; z < zone_end; z++)
     {
@@ -2331,7 +2333,7 @@ static void set_zones_size(gmx_domdec_t *dd,
             }
         }
 
-        rcs   = comm->cutoff;
+        rcs   = comm->systemInfo.cutoff;
         rcmbs = comm->cutoff_mbody;
         if (ddbox->tric_dir[dim])
         {
@@ -2447,7 +2449,7 @@ static void set_zones_size(gmx_domdec_t *dd,
             {
                 corner[ZZ] = zones->size[z].x1[ZZ];
             }
-            if (dd->ndim == 1 && dd->dim[0] < ZZ && ZZ < dd->npbcdim &&
+            if (dd->ndim == 1 && dd->dim[0] < ZZ && ZZ < dd->unitCellInfo.npbcdim &&
                 box[ZZ][1 - dd->dim[0]] != 0)
             {
                 /* With 1D domain decomposition the cg's are not in
@@ -2713,7 +2715,7 @@ void print_dd_statistics(const t_commrec *cr, const t_inputrec *ir, FILE *fplog)
     }
     fprintf(fplog, "\n");
 
-    if (comm->bRecordLoad && EI_DYNAMICS(ir->eI))
+    if (comm->ddSettings.recordLoad && EI_DYNAMICS(ir->eI))
     {
         print_dd_load_av(fplog, cr->dd);
     }
@@ -2811,7 +2813,7 @@ void dd_partition_system(FILE                    *fplog,
     }
 
     /* Check if we have recorded loads on the nodes */
-    if (comm->bRecordLoad && dd_load_count(comm) > 0)
+    if (comm->ddSettings.recordLoad && dd_load_count(comm) > 0)
     {
         bCheckWhetherToTurnDlbOn = dd_dlb_get_should_check_whether_to_turn_dlb_on(dd);
 
@@ -2919,7 +2921,7 @@ void dd_partition_system(FILE                    *fplog,
                          * cost on the PME ranks, which will then surely result
                          * in lower total performance.
                          */
-                        if (cr->npmenodes > 0 &&
+                        if (comm->ddRankSetup.usePmeOnlyRanks &&
                             dd_pme_f_ratio(dd) > 1 - DD_PERF_LOSS_DLB_ON)
                         {
                             turnOnDlb = FALSE;
@@ -3032,15 +3034,15 @@ void dd_partition_system(FILE                    *fplog,
     copy_rvec(ddbox.box0, comm->box0    );
     copy_rvec(ddbox.box_size, comm->box_size);
 
-    set_dd_cell_sizes(dd, &ddbox, dynamic_dd_box(*dd), bMasterState, bDoDLB,
+    set_dd_cell_sizes(dd, &ddbox, dd->unitCellInfo.ddBoxIsDynamic, bMasterState, bDoDLB,
                       step, wcycle);
 
-    if (comm->nstDDDumpGrid > 0 && step % comm->nstDDDumpGrid == 0)
+    if (comm->ddSettings.nstDDDumpGrid > 0 && step % comm->ddSettings.nstDDDumpGrid == 0)
     {
         write_dd_grid_pdb("dd_grid", step, dd, state_local->box, &ddbox);
     }
 
-    if (comm->useUpdateGroups)
+    if (comm->systemInfo.useUpdateGroups)
     {
         comm->updateGroupsCog->addCogs(gmx::arrayRefFromArray(dd->globalAtomGroupIndices.data(), dd->ncg_home),
                                        state_local->x);
@@ -3066,7 +3068,7 @@ void dd_partition_system(FILE                    *fplog,
 
         GMX_RELEASE_ASSERT(bSortCG, "Sorting is required after redistribution");
 
-        if (comm->useUpdateGroups)
+        if (comm->systemInfo.useUpdateGroups)
         {
             comm->updateGroupsCog->addCogs(gmx::arrayRefFromArray(dd->globalAtomGroupIndices.data(), dd->ncg_home),
                                            state_local->x);
@@ -3145,7 +3147,7 @@ void dd_partition_system(FILE                    *fplog,
         }
     }
 
-    if (comm->useUpdateGroups)
+    if (comm->systemInfo.useUpdateGroups)
     {
         /* The update groups cog's are invalid after sorting
          * and need to be cleared before the next partitioning anyhow.
@@ -3186,7 +3188,7 @@ void dd_partition_system(FILE                    *fplog,
     {
         np[dd->dim[i]] = comm->cd[i].numPulses();
     }
-    dd_make_local_top(dd, &comm->zones, dd->npbcdim, state_local->box,
+    dd_make_local_top(dd, &comm->zones, dd->unitCellInfo.npbcdim, state_local->box,
                       comm->cellsize_min, np,
                       fr,
                       state_local->x.rvec_array(),
@@ -3210,7 +3212,7 @@ void dd_partition_system(FILE                    *fplog,
                 }
                 break;
             case DDAtomRanges::Type::Constraints:
-                if (dd->splitConstraints || dd->splitSettles)
+                if (dd->comm->systemInfo.haveSplitConstraints || dd->comm->systemInfo.haveSplitSettles)
                 {
                     /* Only for inter-cg constraints we need special code */
                     n = dd_make_local_constraints(dd, n, &top_global, fr->cginfo.data(),
@@ -3314,7 +3316,7 @@ void dd_partition_system(FILE                    *fplog,
 
     wallcycle_sub_stop(wcycle, ewcsDD_TOPOTHER);
 
-    if (comm->nstDDDump > 0 && step % comm->nstDDDump == 0)
+    if (comm->ddSettings.nstDDDump > 0 && step % comm->ddSettings.nstDDDump == 0)
     {
         dd_move_x(dd, state_local->box, state_local->x, nullWallcycle);
         write_dd_pdb("dd_dump", step, "dump", &top_global, cr,
@@ -3336,7 +3338,7 @@ void dd_partition_system(FILE                    *fplog,
         comm->master_cg_ddp_count = (bSortCG ? 0 : dd->ddp_count);
     }
 
-    if (comm->DD_debug > 0)
+    if (comm->ddSettings.DD_debug > 0)
     {
         /* Set the env var GMX_DD_DEBUG if you suspect corrupted indices */
         check_index_consistency(dd, top_global.natoms, ncg_mtop(&top_global),

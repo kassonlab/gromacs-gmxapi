@@ -67,6 +67,7 @@
 #include "gromacs/utility/real.h"
 
 struct cginfo_mb_t;
+struct DDSystemInfo;
 struct gmx_domdec_t;
 struct gmx_ddbox_t;
 struct gmx_domdec_zones_t;
@@ -152,6 +153,9 @@ int dd_pme_maxshift_x(const gmx_domdec_t *dd);
 /*! \brief Returns the maximum shift for coordinate communication in PME, dim y */
 int dd_pme_maxshift_y(const gmx_domdec_t *dd);
 
+/*! \brief Return whether constraints, not including settles, cross domain boundaries */
+bool ddHaveSplitConstraints(const gmx_domdec_t &dd);
+
 /*! \brief Initialized the domain decomposition, chooses the DD grid and PME ranks, return the DD struct */
 gmx_domdec_t *
 init_domain_decomposition(const gmx::MDLogger            &mdlog,
@@ -182,12 +186,14 @@ gmx_bool dd_bonded_molpbc(const gmx_domdec_t *dd, int ePBC);
  * then FALSE will be returned and the cut-off is not modified.
  *
  * \param[in] cr               Communication recrod
- * \param[in] state            State, used for computing the dimensions of the system
+ * \param[in] box              Box matrix, used for computing the dimensions of the system
+ * \param[in] x                Position vector, used for computing the dimensions of the system
  * \param[in] cutoffRequested  The requested atom to atom cut-off distance, usually the pair-list cutoff distance
  */
-gmx_bool change_dd_cutoff(t_commrec     *cr,
-                          const t_state &state,
-                          real           cutoffRequested);
+gmx_bool change_dd_cutoff(t_commrec                     *cr,
+                          const matrix                   box,
+                          gmx::ArrayRef<const gmx::RVec> x,
+                          real                           cutoffRequested);
 
 /*! \brief Set up communication for averaging GPU wait times over domains
  *
@@ -240,7 +246,7 @@ void dd_move_f_vsites(struct gmx_domdec_t *dd, rvec *f, rvec *fshift);
 void dd_clear_f_vsites(struct gmx_domdec_t *dd, rvec *f);
 
 /*! \brief Move x0 and also x1 if x1!=NULL. bX1IsCoord tells if to do PBC on x1 */
-void dd_move_x_constraints(struct gmx_domdec_t *dd, matrix box,
+void dd_move_x_constraints(struct gmx_domdec_t *dd, const matrix box,
                            rvec *x0, rvec *x1, gmx_bool bX1IsCoord);
 
 /*! \brief Communicates the coordinates involved in virtual sites */
@@ -313,26 +319,5 @@ void dd_bonded_cg_distance(const gmx::MDLogger &mdlog,
                            const rvec *x, const matrix box,
                            gmx_bool bBCheck,
                            real *r_2b, real *r_mb);
-
-
-/* In domdec_setup.c */
-
-/*! \brief Returns the volume fraction of the system that is communicated */
-real comm_box_frac(const ivec dd_nc, real cutoff, const gmx_ddbox_t *ddbox);
-
-/*! \brief Determines the optimal DD cell setup dd->nc and possibly npmenodes
- * for the system.
- *
- * On the master node returns the actual cellsize limit used.
- */
-real dd_choose_grid(const gmx::MDLogger &mdlog,
-                    t_commrec *cr, gmx_domdec_t *dd,
-                    const t_inputrec *ir,
-                    const gmx_mtop_t *mtop,
-                    const matrix box, const gmx_ddbox_t *ddbox,
-                    int nPmeRanks,
-                    gmx_bool bDynLoadBal, real dlb_scale,
-                    real cellsize_limit, real cutoff_dd,
-                    gmx_bool bInterCGBondeds);
 
 #endif

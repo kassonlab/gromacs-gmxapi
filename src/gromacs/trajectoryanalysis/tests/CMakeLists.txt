@@ -37,7 +37,9 @@ gmx_add_unit_test(TrajectoryAnalysisUnitTests trajectoryanalysis-test
                   clustsize.cpp
                   cmdlinerunner.cpp
                   angle.cpp
+                  convert_trj.cpp
                   distance.cpp
+                  extract_cluster.cpp
                   freevolume.cpp
                   pairdist.cpp
                   rdf.cpp

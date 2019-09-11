@@ -40,6 +40,7 @@ __all__ = ['ndarray', 'NDArray']
 
 import collections
 
+import gmxapi.abc
 from gmxapi import exceptions
 
 

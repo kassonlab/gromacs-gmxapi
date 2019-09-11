@@ -358,15 +358,15 @@ about the data that is written to file - it is only responsible
 to inform clients about trajectory steps, and providing a valid
 file pointer to the objects that need to write to trajectory.
 
-#### `MicroState`
-The `MicroState` takes part in the simulator run, as it might
+#### `StatePropagatorData`
+The `StatePropagatorData` takes part in the simulator run, as it might
 have to save a valid state at the right moment during the
-integration. Placing the MicroState correctly is for now the
+integration. Placing the StatePropagatorData correctly is for now the
 duty of the simulator builder - this might be automated later
 if we have enough meta-data of the variables (i.e., if
-`MicroState` knows at which time the variables currently are,
+`StatePropagatorData` knows at which time the variables currently are,
 and can decide when a valid state (full-time step of all
-variables) is reached. The `MicroState` is also a client of
+variables) is reached. The `StatePropagatorData` is also a client of
 both the trajectory signaller and writer - it will save a
 state for later writeout during the simulator step if it
 knows that trajectory writing will occur later in the step,
@@ -381,11 +381,61 @@ responsibility of the simulator builder to ensure that the
 `EnergyElement` is called at a point of the simulator run
 at which it has access to a valid energy state.
 
+#### `ComputeGlobalsElement`
+The `ComputeGlobalsElement` encapsulates the legacy calls to
+`compute_globals`. While a new approach to the global reduction
+operations has been discussed, it is currently not part of this
+effort. This element therefore aims at offering an interface
+to the legacy implementation which is compatible with the new
+simulator approach.
+
+The element currently comes in 3 (templated) flavors: the leap-frog case,
+the first call during a velocity-verlet integrator, and the second call
+during a velocity-verlet integrator. It is the responsibility of the
+simulator builder to place them at the right place of the
+integration algorithm.
+
+#### `ForceElement` and `ShellFCElement`
+The `ForceElement` and the `ShellFCElement` encapsulate the legacy
+calls to `do_force` and `do_shellfc`, respectively. It is the
+responsibility of the simulator builder to place them at the right
+place of the integration algorithm. Moving forward, a version of these
+elements which would allow to only calculate forces of subsets of
+degrees of freedom would be desirable to pave the way towards multiple
+time step integrators, allowing to integrate slower degrees of freedom
+at a different frequency than faster degrees of freedom.
+
+#### `ConstraintElement`
+The constraint element is implemented for the two cases of constraining
+both positions and velocities, and only velocities. It does not change the constraint
+implementation itself, but replaces the legacy `constrain_coordinates`
+and `constrain_velocities` calls from update.h by elements implementing
+the ISimulatorElement interface and using the new data management.
+
+#### `Propagator`
+The propagator element can, through templating, cover the different
+propagation types used in NVE MD. The combination of templating, static
+functions, and having only the inner-most operations in the static
+functions allows to have performance comparable to fused update elements
+while keeping easily re-orderable single instructions.
+
+Currently, the (templated) implementation covers four cases:
+ * *PositionsOnly:* Moves the position vector by the given time step
+ * *VelocitiesOnly:* Moves the velocity vector by the given time step
+ * *LeapFrog:* A manual fusion of the previous two propagators
+ * *VelocityVerletPositionsAndVelocities:* A manual fusion of VelocitiesOnly 
+    and PositionsOnly, where VelocitiesOnly is only propagated by half the 
+    time step of PositionsOnly.
+
+#### `CompositeSimulatorElement`
+The composite simulator element takes a list of elements and implements
+the ISimulatorElement interface, making a group of elements effectively
+behave as one. This simplifies building algorithms.
 
 ## Data structures
 
-### `MicroState`
-The `MicroState` contains a little more than the pure
+### `StatePropagatorData`
+The `StatePropagatorData` contains a little more than the pure
 statistical-physical micro state, namely the positions,
 velocities, forces, and box matrix, as well as a backup of
 the positions and box of the last time step. While it takes
@@ -393,11 +443,11 @@ part in the simulator loop to be able to backup positions /
 boxes and save the current state if needed, it's main purpose
 is to offer access to its data via getter methods. All elements
 reading or writing to this data need a pointer to the
-`MicroState` and need to request their data explicitly. This
+`StatePropagatorData` and need to request their data explicitly. This
 will later simplify the understanding of data dependencies
 between elements.
 
-Note that the `MicroState` can be converted to and from the
+Note that the `StatePropagatorData` can be converted to and from the
 legacy `t_state` object. This is useful when dealing with
 functionality which has not yet been adapted to use the new
 data approach - of the elements currently implemented, only
@@ -421,3 +471,29 @@ responsible to write energy data to trajectory.
 The EnergyElement offers an interface to add virial contributions,
 but also allows access to the raw pointers to tensor data, the
 dipole vector, and the legacy energy data structures.
+
+### `TopologyHolder`
+The topology object owns the local topology and holds a constant reference
+to the global topology owned by the ISimulator.
+
+The local topology is only infrequently changed if domain decomposition is
+on, and never otherwise. The topology holder therefore offers elements to register
+as ITopologyHolderClients. If they do so, they get a handle to the updated local 
+topology whenever it is changed, and can rely that their handle is valid 
+until the next update. The domain decomposition element is defined as friend 
+class to be able to update the local topology when needed.
+
+The topology holder is not a `ISimulatorElement`, i.e. it does not take part in the
+simulator loop.
+
+## Infrastructure
+### `DomDecHelper` and `PmeLoadBalanceHelper`
+These infrastructure elements are responsible for domain decomposition and 
+PME load balancing, respectively. They encapsulate function calls which are 
+important for performance, but outside the scope of this effort. They rely 
+on legacy data structures for the state (both) and the topology (domdec).
+    
+The elements do not implement the ISimulatorElement interface, as
+the Simulator is calling them explicitly between task queue population
+steps. This allows elements to receive the new topology / state before
+deciding what functionality they need to run.

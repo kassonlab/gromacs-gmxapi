@@ -199,6 +199,15 @@ class IndexGroupsAndNames;
 struct MdModulesCheckpointReadingDataOnMaster;
 struct MdModulesCheckpointReadingBroadcast;
 struct MdModulesWriteCheckpointData;
+struct PeriodicBoundaryConditionType
+{
+    int pbcType;
+};
+
+struct MdModulesEnergyOutputToDensityFittingRequestChecker
+{
+    bool energyOutputToDensityFitting_ = false;
+};
 
 struct MdModulesNotifier
 {
@@ -209,9 +218,11 @@ struct MdModulesNotifier
         KeyValueTreeObjectBuilder,
         const KeyValueTreeObject &,
         LocalAtomSetManager *,
+        MdModulesEnergyOutputToDensityFittingRequestChecker *,
         MdModulesCheckpointReadingDataOnMaster,
         MdModulesCheckpointReadingBroadcast,
-        MdModulesWriteCheckpointData>::type notifier_;
+        MdModulesWriteCheckpointData,
+        PeriodicBoundaryConditionType>::type notifier_;
 };
 
 } // namespace gmx

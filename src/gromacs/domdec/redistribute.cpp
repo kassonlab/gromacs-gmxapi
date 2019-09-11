@@ -117,7 +117,7 @@ copyMovedUpdateGroupCogs(gmx::ArrayRef<const int> move,
         if (m >= 0)
         {
             /* Copy to the communication buffer */
-            const gmx::RVec &cog = (comm->useUpdateGroups ?
+            const gmx::RVec &cog = (comm->systemInfo.useUpdateGroups ?
                                     comm->updateGroupsCog->cogForAtom(g) :
                                     coordinates[g]);
             copy_rvec(cog, comm->cgcm_state[m][pos_vec[m]]);
@@ -163,7 +163,7 @@ static void print_cg_move(FILE *fplog,
 
     fprintf(fplog, "\nStep %" PRId64 ":\n", step);
 
-    if (comm->useUpdateGroups)
+    if (comm->systemInfo.useUpdateGroups)
     {
         mesg += "The update group starting at atom";
     }
@@ -328,7 +328,7 @@ static void calc_cg_move(FILE *fplog, int64_t step,
                          int cg_start, int cg_end,
                          gmx::ArrayRef<int> move)
 {
-    const int npbcdim = dd->npbcdim;
+    const int npbcdim = dd->unitCellInfo.npbcdim;
     auto      x       = makeArrayRef(state->x);
 
     for (int a = cg_start; a < cg_end; a++)
@@ -343,7 +343,7 @@ static void calc_cg_move(FILE *fplog, int64_t step,
         {
             if (dd->nc[d] > 1)
             {
-                bool bScrew = (dd->bScrewPBC && d == XX);
+                bool bScrew = (dd->unitCellInfo.haveScrewPBC && d == XX);
                 /* Determine the location of this cg in lattice coordinates */
                 real pos_d = cm_new[d];
                 if (tric_dir[d])
@@ -449,9 +449,9 @@ static void calcGroupMove(FILE *fplog, int64_t step,
                           int groupBegin, int groupEnd,
                           gmx::ArrayRef<PbcAndFlag> pbcAndFlags)
 {
-    GMX_RELEASE_ASSERT(!dd->bScrewPBC, "Screw PBC is not supported here");
+    GMX_RELEASE_ASSERT(!dd->unitCellInfo.haveScrewPBC, "Screw PBC is not supported here");
 
-    const int             npbcdim         = dd->npbcdim;
+    const int             npbcdim         = dd->unitCellInfo.npbcdim;
 
     gmx::UpdateGroupsCog *updateGroupsCog = dd->comm->updateGroupsCog.get();
 
@@ -555,7 +555,7 @@ void dd_redistribute_cg(FILE *fplog, int64_t step,
 {
     gmx_domdec_comm_t *comm = dd->comm;
 
-    if (dd->bScrewPBC)
+    if (dd->unitCellInfo.haveScrewPBC)
     {
         check_screw_box(state->box);
     }
@@ -567,7 +567,7 @@ void dd_redistribute_cg(FILE *fplog, int64_t step,
     DDBufferAccess<int> moveBuffer(comm->intBuffer, dd->ncg_home);
     gmx::ArrayRef<int>  move = moveBuffer.buffer;
 
-    const int           npbcdim = dd->npbcdim;
+    const int           npbcdim = dd->unitCellInfo.npbcdim;
 
     rvec                cell_x0, cell_x1;
     MoveLimits          moveLimits;
@@ -613,7 +613,7 @@ void dd_redistribute_cg(FILE *fplog, int64_t step,
     /* Compute the center of geometry for all home charge groups
      * and put them in the box and determine where they should go.
      */
-    std::vector<PbcAndFlag>  pbcAndFlags(comm->useUpdateGroups ? comm->updateGroupsCog->numCogs() : 0);
+    std::vector<PbcAndFlag>  pbcAndFlags(comm->systemInfo.useUpdateGroups ? comm->updateGroupsCog->numCogs() : 0);
 
 #pragma omp parallel num_threads(nthread)
     {
@@ -621,7 +621,7 @@ void dd_redistribute_cg(FILE *fplog, int64_t step,
         {
             const int thread = gmx_omp_get_thread_num();
 
-            if (comm->useUpdateGroups)
+            if (comm->systemInfo.useUpdateGroups)
             {
                 const auto &updateGroupsCog = *comm->updateGroupsCog;
                 const int   numGroups       = updateGroupsCog.numCogs();

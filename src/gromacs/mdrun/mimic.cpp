@@ -228,7 +228,7 @@ void gmx::LegacySimulator::do_mimic()
 
     gmx_mdoutf        *outf = init_mdoutf(fplog, nfile, fnm, mdrunOptions, cr, outputProvider, mdModulesNotifier, ir, top_global, oenv, wcycle,
                                           StartingBehavior::NewSimulation);
-    gmx::EnergyOutput  energyOutput(mdoutf_get_fp_ene(outf), top_global, ir, pull_work, mdoutf_get_fp_dhdl(outf), true);
+    gmx::EnergyOutput  energyOutput(mdoutf_get_fp_ene(outf), top_global, ir, pull_work, mdoutf_get_fp_dhdl(outf), true, mdModulesNotifier);
 
     gstat = global_stat_init(ir);
 
@@ -436,7 +436,7 @@ void gmx::LegacySimulator::do_mimic()
                                 &state->hist,
                                 f.arrayRefWithPadding(), force_vir, mdatoms,
                                 nrnb, wcycle, graph,
-                                shellfc, fr, ppForceWorkload, t, mu_tot,
+                                shellfc, fr, mdScheduleWork, t, mu_tot,
                                 vsite,
                                 ddBalanceRegionHandler);
         }
@@ -455,7 +455,7 @@ void gmx::LegacySimulator::do_mimic()
                      state->box, state->x.arrayRefWithPadding(), &state->hist,
                      f.arrayRefWithPadding(), force_vir, mdatoms, enerd, fcd,
                      state->lambda, graph,
-                     fr, ppForceWorkload, vsite, mu_tot, t, ed,
+                     fr, mdScheduleWork, vsite, mu_tot, t, ed,
                      GMX_FORCE_NS | force_flags,
                      ddBalanceRegionHandler);
         }
