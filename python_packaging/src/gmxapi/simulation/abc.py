@@ -49,7 +49,7 @@ For more on type hinting, see https://docs.python.org/3/library/typing.html
 import abc
 from typing import Mapping
 
-from gmxapi.abc import SourceTypeVar
+from gmxapi.typing import SourceTypeVar
 
 
 class SimulationInput(abc.ABC):

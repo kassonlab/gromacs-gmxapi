@@ -48,7 +48,10 @@ __all__ = ['commandline_operation',
            'logger',
            'logical_not',
            'make_constant',
+           'mdrun',
+           'modify_input',
            'ndarray',
+           'read_tpr',
            'subgraph',
            'while_loop',
            'NDArray',
@@ -58,7 +61,6 @@ from ._logging import logger
 from .version import __version__
 
 # Import utilities
-from . import abc
 from .operation import computed_result, function_wrapper
 # Import public types
 from .datamodel import NDArray
@@ -66,7 +68,7 @@ from .datamodel import NDArray
 from .datamodel import ndarray
 from .operation import concatenate_lists, join_arrays, logical_not, make_constant
 from .commandline import commandline_operation
-from .simulation import mdrun
+from .simulation import mdrun, modify_input, read_tpr
 # TODO: decide where this lives
 from .operation import subgraph
 # TODO: decide where this lives
