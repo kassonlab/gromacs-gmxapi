@@ -117,6 +117,7 @@
 #include "gromacs/mdtypes/observableshistory.h"
 #include "gromacs/mdtypes/pullhistory.h"
 #include "gromacs/mdtypes/state.h"
+#include "gromacs/modularsimulator/energyelement.h"
 #include "gromacs/nbnxm/nbnxm.h"
 #include "gromacs/pbcutil/mshift.h"
 #include "gromacs/pbcutil/pbc.h"
@@ -147,9 +148,6 @@
 
 using gmx::SimulationSignaller;
 
-//! Whether the GPU versions of Leap-Frog integrator and LINCS and SETTLE constraints
-static const bool c_useGpuUpdateConstrain = (getenv("GMX_UPDATE_CONSTRAIN_GPU") != nullptr);
-
 void gmx::LegacySimulator::do_md()
 {
     // TODO Historically, the EM and MD "integrators" used different
@@ -158,40 +156,40 @@ void gmx::LegacySimulator::do_md()
     // alias to avoid a large ripple of nearly useless changes.
     // t_inputrec is being replaced by IMdpOptionsProvider, so this
     // will go away eventually.
-    t_inputrec             *ir   = inputrec;
-    int64_t                 step, step_rel;
-    double                  t, t0 = ir->init_t, lam0[efptNR];
-    gmx_bool                bGStatEveryStep, bGStat, bCalcVir, bCalcEnerStep, bCalcEner;
-    gmx_bool                bNS, bNStList, bStopCM,
-                            bFirstStep, bInitStep, bLastStep = FALSE;
-    gmx_bool                bDoDHDL = FALSE, bDoFEP = FALSE, bDoExpanded = FALSE;
-    gmx_bool                do_ene, do_log, do_verbose;
-    gmx_bool                bMasterState;
-    unsigned int            force_flags;
-    tensor                  force_vir = {{0}}, shake_vir = {{0}}, total_vir = {{0}},
-                            tmp_vir   = {{0}}, pres = {{0}};
-    int                     i, m;
-    rvec                    mu_tot;
-    matrix                  parrinellorahmanMu, M;
-    gmx_repl_ex_t           repl_ex = nullptr;
-    gmx_localtop_t          top;
-    PaddedVector<gmx::RVec> f {};
-    gmx_global_stat_t       gstat;
-    t_graph                *graph = nullptr;
-    gmx_shellfc_t          *shellfc;
-    gmx_bool                bSumEkinhOld, bDoReplEx, bExchanged, bNeedRepartition;
-    gmx_bool                bTemp, bPres, bTrotter;
-    real                    dvdl_constr;
-    std::vector<RVec>       cbuf;
-    matrix                  lastbox;
-    int                     lamnew  = 0;
+    t_inputrec                 *ir   = inputrec;
+    int64_t                     step, step_rel;
+    double                      t, t0 = ir->init_t, lam0[efptNR];
+    gmx_bool                    bGStatEveryStep, bGStat, bCalcVir, bCalcEnerStep, bCalcEner;
+    gmx_bool                    bNS, bNStList, bStopCM,
+                                bFirstStep, bInitStep, bLastStep = FALSE;
+    gmx_bool                    bDoDHDL = FALSE, bDoFEP = FALSE, bDoExpanded = FALSE;
+    gmx_bool                    do_ene, do_log, do_verbose;
+    gmx_bool                    bMasterState;
+    unsigned int                force_flags;
+    tensor                      force_vir     = {{0}}, shake_vir = {{0}}, total_vir = {{0}},
+                                tmp_vir       = {{0}}, pres = {{0}};
+    int                         i, m;
+    rvec                        mu_tot;
+    matrix                      parrinellorahmanMu, M;
+    gmx_repl_ex_t               repl_ex = nullptr;
+    gmx_localtop_t              top;
+    PaddedHostVector<gmx::RVec> f {};
+    gmx_global_stat_t           gstat;
+    t_graph                    *graph = nullptr;
+    gmx_shellfc_t              *shellfc;
+    gmx_bool                    bSumEkinhOld, bDoReplEx, bExchanged, bNeedRepartition;
+    gmx_bool                    bTemp, bPres, bTrotter;
+    real                        dvdl_constr;
+    std::vector<RVec>           cbuf;
+    matrix                      lastbox;
+    int                         lamnew  = 0;
     /* for FEP */
-    int                     nstfep = 0;
-    double                  cycles;
-    real                    saved_conserved_quantity = 0;
-    real                    last_ekin                = 0;
-    t_extmass               MassQ;
-    char                    sbuf[STEPSTRSIZE], sbuf2[STEPSTRSIZE];
+    int                         nstfep = 0;
+    double                      cycles;
+    real                        saved_conserved_quantity = 0;
+    real                        last_ekin                = 0;
+    t_extmass                   MassQ;
+    char                        sbuf[STEPSTRSIZE], sbuf2[STEPSTRSIZE];
 
     /* PME load balancing data for GPU kernels */
     gmx_bool              bPMETune         = FALSE;
@@ -249,8 +247,8 @@ void gmx::LegacySimulator::do_md()
     }
 
     initialize_lambdas(fplog, *ir, MASTER(cr), &state_global->fep_state, state_global->lambda, lam0);
-    Update upd(ir, deform);
-    bool   doSimulatedAnnealing = initSimulatedAnnealing(ir, &upd);
+    Update     upd(ir, deform);
+    const bool doSimulatedAnnealing = initSimulatedAnnealing(ir, &upd);
     if (startingBehavior != StartingBehavior::RestartWithAppending)
     {
         pleaseCiteCouplingAlgorithms(fplog, *ir);
@@ -317,7 +315,7 @@ void gmx::LegacySimulator::do_md()
         upd.setNumAtoms(state->natoms);
     }
 
-    if (c_useGpuUpdateConstrain)
+    if (useGpuForUpdate)
     {
         GMX_RELEASE_ASSERT(ir->eI == eiMD, "Only md integrator is supported on the GPU.");
         GMX_RELEASE_ASSERT(ir->etc != etcNOSEHOOVER, "Nose Hoover temperature coupling is not supported on the GPU.");
@@ -325,7 +323,7 @@ void gmx::LegacySimulator::do_md()
         GMX_RELEASE_ASSERT(!mdatoms->haveVsites, "Virtual sites are not supported on the GPU");
         GMX_RELEASE_ASSERT(ed == nullptr, "Essential dynamics is not supported with GPU-based update constraints.");
         GMX_LOG(mdlog.info).asParagraph().
-            appendText("Using CUDA GPU-based update and constraints module.");
+            appendText("Updating coordinates on the GPU.");
         integrator = std::make_unique<UpdateConstrainCuda>(*ir, *top_global);
         integrator->set(top.idef, *mdatoms, ekind->ngtc);
         t_pbc pbc;
@@ -358,44 +356,8 @@ void gmx::LegacySimulator::do_md()
 
     if (MASTER(cr))
     {
-        if (startingBehavior != StartingBehavior::NewSimulation)
-        {
-            /* Restore from energy history if appending to output files */
-            if (startingBehavior == StartingBehavior::RestartWithAppending)
-            {
-                /* If no history is available (because a checkpoint is from before
-                 * it was written) make a new one later, otherwise restore it.
-                 */
-                if (observablesHistory->energyHistory)
-                {
-                    energyOutput.restoreFromEnergyHistory(*observablesHistory->energyHistory);
-                }
-            }
-            else if (observablesHistory->energyHistory)
-            {
-                /* We might have read an energy history from checkpoint.
-                 * As we are not appending, we want to restart the statistics.
-                 * Free the allocated memory and reset the counts.
-                 */
-                observablesHistory->energyHistory = {};
-                /* We might have read a pull history from checkpoint.
-                 * We will still want to keep the statistics, so that the files
-                 * can be joined and still be meaningful.
-                 * This means that observablesHistory->pullHistory
-                 * should not be reset.
-                 */
-            }
-        }
-        if (!observablesHistory->energyHistory)
-        {
-            observablesHistory->energyHistory = std::make_unique<energyhistory_t>();
-        }
-        if (!observablesHistory->pullHistory)
-        {
-            observablesHistory->pullHistory = std::make_unique<PullHistory>();
-        }
-        /* Set the initial energy history */
-        energyOutput.fillEnergyHistory(observablesHistory->energyHistory.get());
+        EnergyElement::initializeEnergyHistory(
+                startingBehavior, observablesHistory, &energyOutput);
     }
 
     preparePrevStepPullCom(ir, pull_work, mdatoms, state, state_global, cr,
@@ -756,7 +718,7 @@ void gmx::LegacySimulator::do_md()
         if (ir->efep != efepNO || ir->bSimTemp)
         {
             /* find and set the current lambdas */
-            setCurrentLambdasLocal(step, ir->fepvals, lam0, state);
+            setCurrentLambdasLocal(step, ir->fepvals, lam0, state->lambda, state->fep_state);
 
             bDoDHDL      = do_per_step(step, ir->fepvals->nstdhdl);
             bDoFEP       = ((ir->efep != efepNO) && do_per_step(step, nstfep));
@@ -910,7 +872,7 @@ void gmx::LegacySimulator::do_md()
                                 &state->hist,
                                 f.arrayRefWithPadding(), force_vir, mdatoms,
                                 nrnb, wcycle, graph,
-                                shellfc, fr, mdScheduleWork, t, mu_tot,
+                                shellfc, fr, runScheduleWork, t, mu_tot,
                                 vsite,
                                 ddBalanceRegionHandler);
         }
@@ -940,7 +902,7 @@ void gmx::LegacySimulator::do_md()
                      state->box, state->x.arrayRefWithPadding(), &state->hist,
                      f.arrayRefWithPadding(), force_vir, mdatoms, enerd, fcd,
                      state->lambda, graph,
-                     fr, mdScheduleWork, vsite, mu_tot, t, ed ? ed->getLegacyED() : nullptr,
+                     fr, runScheduleWork, vsite, mu_tot, t, ed ? ed->getLegacyED() : nullptr,
                      (bNS ? GMX_FORCE_NS : 0) | force_flags,
                      ddBalanceRegionHandler);
         }
@@ -1099,7 +1061,7 @@ void gmx::LegacySimulator::do_md()
             /* sum up the foreign energy and dhdl terms for vv.  currently done every step so that dhdl is correct in the .edr */
             if (ir->efep != efepNO)
             {
-                sum_dhdl(enerd, state->lambda, ir->fepvals);
+                sum_dhdl(enerd, state->lambda, *ir->fepvals);
             }
         }
 
@@ -1221,7 +1183,7 @@ void gmx::LegacySimulator::do_md()
             std::copy(state->x.begin(), state->x.end(), cbuf.begin());
         }
 
-        if (c_useGpuUpdateConstrain)
+        if (useGpuForUpdate)
         {
             if (bNS)
             {
@@ -1399,7 +1361,7 @@ void gmx::LegacySimulator::do_md()
         {
             /* Sum up the foreign energy and dhdl terms for md and sd.
                Currently done every step so that dhdl is correct in the .edr */
-            sum_dhdl(enerd, state->lambda, ir->fepvals);
+            sum_dhdl(enerd, state->lambda, *ir->fepvals);
         }
 
         update_pcouple_after_coordinates(fplog, step, ir, mdatoms,
@@ -1469,11 +1431,17 @@ void gmx::LegacySimulator::do_md()
             gmx_bool do_dr  = do_per_step(step, ir->nstdisreout);
             gmx_bool do_or  = do_per_step(step, ir->nstorireout);
 
-            energyOutput.printAnnealingTemperatures(do_log ? fplog : nullptr, groups, &(ir->opts));
-            energyOutput.printStepToEnergyFile(mdoutf_get_fp_ene(outf), do_ene, do_dr, do_or,
-                                               do_log ? fplog : nullptr,
-                                               step, t,
-                                               fcd, awh.get());
+            if (doSimulatedAnnealing)
+            {
+                energyOutput.printAnnealingTemperatures(do_log ? fplog : nullptr, groups, &(ir->opts));
+            }
+            if (do_log || do_ene || do_dr || do_or)
+            {
+                energyOutput.printStepToEnergyFile(mdoutf_get_fp_ene(outf), do_ene, do_dr, do_or,
+                                                   do_log ? fplog : nullptr,
+                                                   step, t,
+                                                   fcd, awh.get());
+            }
 
             if (ir->bPull)
             {

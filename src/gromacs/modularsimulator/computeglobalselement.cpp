@@ -54,23 +54,27 @@
 #include "gromacs/mdtypes/md_enums.h"
 #include "gromacs/topology/topology.h"
 
+#include "freeenergyperturbationelement.h"
+
 namespace gmx
 {
 template <ComputeGlobalsAlgorithm algorithm>
 ComputeGlobalsElement<algorithm>::ComputeGlobalsElement(
-        StatePropagatorData *statePropagatorData,
-        EnergyElement       *energyElement,
-        int                  nstglobalcomm,
-        FILE                *fplog,
-        const MDLogger      &mdlog,
-        t_commrec           *cr,
-        t_inputrec          *inputrec,
-        const MDAtoms       *mdAtoms,
-        t_nrnb              *nrnb,
-        gmx_wallcycle       *wcycle,
-        t_forcerec          *fr,
-        const gmx_mtop_t    *global_top,
-        Constraints         *constr) :
+        StatePropagatorData           *statePropagatorData,
+        EnergyElement                 *energyElement,
+        FreeEnergyPerturbationElement *freeEnergyPerturbationElement,
+        int                            nstglobalcomm,
+        FILE                          *fplog,
+        const MDLogger                &mdlog,
+        t_commrec                     *cr,
+        t_inputrec                    *inputrec,
+        const MDAtoms                 *mdAtoms,
+        t_nrnb                        *nrnb,
+        gmx_wallcycle                 *wcycle,
+        t_forcerec                    *fr,
+        const gmx_mtop_t              *global_top,
+        Constraints                   *constr,
+        bool                           hasReadEkinState) :
     energyReductionStep_(-1),
     virialReductionStep_(-1),
     doStopCM_(inputrec->comm_mode != ecmNO),
@@ -78,12 +82,13 @@ ComputeGlobalsElement<algorithm>::ComputeGlobalsElement(
     nstglobalcomm_(nstglobalcomm),
     initStep_(inputrec->init_step),
     nullSignaller_(std::make_unique<SimulationSignaller>(nullptr, nullptr, nullptr, false, false)),
+    hasReadEkinState_(hasReadEkinState),
     totalNumberOfBondedInteractions_(0),
     shouldCheckNumberOfBondedInteractions_(false),
-    needToSumEkinhOld_(false),
     statePropagatorData_(statePropagatorData),
     energyElement_(energyElement),
     localTopology_(nullptr),
+    freeEnergyPerturbationElement_(freeEnergyPerturbationElement),
     vcm_(global_top->groups, *inputrec),
     signals_(),
     fplog_(fplog),
@@ -116,23 +121,23 @@ void ComputeGlobalsElement<algorithm>::elementSetup()
     if (algorithm == ComputeGlobalsAlgorithm::LeapFrog ||
         algorithm == ComputeGlobalsAlgorithm::VelocityVerletAtFullTimeStep)
     {
-        // TODO: When reintroducing checkpointing:
-        //      * add CGLO_READEKIN if we read ekin
-        //      * don't remove com motion if we read from checkpoint
         unsigned int        cglo_flags =
             (CGLO_TEMPERATURE | CGLO_GSTAT
-             | (shouldCheckNumberOfBondedInteractions_ ? CGLO_CHECK_NUMBER_OF_BONDED_INTERACTIONS : 0));
+             | (shouldCheckNumberOfBondedInteractions_ ? CGLO_CHECK_NUMBER_OF_BONDED_INTERACTIONS : 0)
+             | (hasReadEkinState_ ? CGLO_READEKIN : 0));
 
         if (algorithm == ComputeGlobalsAlgorithm::VelocityVerletAtFullTimeStep)
         {
             cglo_flags |= CGLO_PRESSURE | CGLO_CONSTRAINT;
         }
 
+        const bool stopCM = doStopCM_ && !inputrec_->bContinuation;
+
         // To minimize communication, compute_globals computes the COM velocity
         // and the kinetic energy for the velocities without COM motion removed.
         // Thus to get the kinetic energy without the COM contribution, we need
         // to call compute_globals twice.
-        for (int cgloIteration = 0; cgloIteration < (doStopCM_ ? 2 : 1); cgloIteration++)
+        for (int cgloIteration = 0; cgloIteration < (stopCM ? 2 : 1); cgloIteration++)
         {
             unsigned int cglo_flags_iteration = cglo_flags;
             if (doStopCM_ && cgloIteration == 0)
@@ -228,7 +233,7 @@ void ComputeGlobalsElement<algorithm>::scheduleTask(
             return;
         }
 
-        const bool doTemperature = step != initStep_;
+        const bool doTemperature = step != initStep_ || inputrec_->bContinuation;
         const bool doEnergy      = step == energyReductionStep_;
 
         int        flags =
@@ -282,15 +287,17 @@ void ComputeGlobalsElement<algorithm>::compute(
         SimulationSignaller *signaller,
         bool useLastBox, bool isInit)
 {
-    auto x       = as_rvec_array(statePropagatorData_->positionsView().paddedArrayRef().data());
-    auto v       = as_rvec_array(statePropagatorData_->velocitiesView().paddedArrayRef().data());
-    auto box     = statePropagatorData_->constBox();
-    auto lastbox = useLastBox ? statePropagatorData_->constPreviousBox() : statePropagatorData_->constBox();
-    real lambda  = 0;
+    auto       x       = as_rvec_array(statePropagatorData_->positionsView().paddedArrayRef().data());
+    auto       v       = as_rvec_array(statePropagatorData_->velocitiesView().paddedArrayRef().data());
+    auto       box     = statePropagatorData_->constBox();
+    auto       lastbox = useLastBox ? statePropagatorData_->constPreviousBox() : statePropagatorData_->constBox();
+
+    const real vdwLambda = freeEnergyPerturbationElement_ ?
+        freeEnergyPerturbationElement_->constLambdaView()[efptVDW] : 0;
 
     compute_globals(gstat_, cr_, inputrec_, fr_,
                     energyElement_->ekindata(),
-                    x, v, box, lambda,
+                    x, v, box, vdwLambda,
                     mdAtoms_->mdatoms(), nrnb_, &vcm_,
                     step != -1 ? wcycle_ : nullptr,
                     energyElement_->enerdata(),
@@ -300,7 +307,7 @@ void ComputeGlobalsElement<algorithm>::compute(
                     energyElement_->pressure(step),
                     energyElement_->muTot(),
                     constr_, signaller, lastbox,
-                    &totalNumberOfBondedInteractions_, &needToSumEkinhOld_, flags);
+                    &totalNumberOfBondedInteractions_, energyElement_->needToSumEkinhOld(), flags);
     checkNumberOfBondedInteractions(mdlog_, cr_, totalNumberOfBondedInteractions_,
                                     top_global_, localTopology_, x, box,
                                     &shouldCheckNumberOfBondedInteractions_);

@@ -71,7 +71,7 @@ namespace gmx
 enum class StartingBehavior;
 class BoxDeformation;
 class Constraints;
-class MdScheduleWorkload;
+class MdrunScheduleWorkload;
 class IMDOutputProvider;
 struct MdModulesNotifier;
 class ImdSession;
@@ -129,12 +129,13 @@ class ISimulator
             t_forcerec                         *fr,
             gmx_enerdata_t                     *enerd,
             gmx_ekindata_t                     *ekind,
-            MdScheduleWorkload                 *mdScheduleWork,
+            MdrunScheduleWorkload              *runScheduleWork,
             const ReplicaExchangeParameters    &replExParams,
             gmx_membed_t                       *membed,
             gmx_walltime_accounting            *walltime_accounting,
             std::unique_ptr<StopHandlerBuilder> stopHandlerBuilder,
-            bool                                doRerun) :
+            bool                                doRerun,
+            bool                                useGpuForUpdate) :
             fplog(fplog),
             cr(cr),
             ms(ms),
@@ -164,12 +165,13 @@ class ISimulator
             fr(fr),
             enerd(enerd),
             ekind(ekind),
-            mdScheduleWork(mdScheduleWork),
+            runScheduleWork(runScheduleWork),
             replExParams(replExParams),
             membed(membed),
             walltime_accounting(walltime_accounting),
             stopHandlerBuilder(std::move(stopHandlerBuilder)),
-            doRerun(doRerun)
+            doRerun(doRerun),
+            useGpuForUpdate(useGpuForUpdate)
         {}
 
     protected:
@@ -232,7 +234,7 @@ class ISimulator
         //! Kinetic energy data.
         gmx_ekindata_t                     *ekind;
         //! Schedule of work for each MD step for this task.
-        MdScheduleWorkload                 *mdScheduleWork;
+        MdrunScheduleWorkload              *runScheduleWork;
         //! Parameters for replica exchange algorihtms.
         const ReplicaExchangeParameters    &replExParams;
         //! Parameters for membrane embedding.
@@ -243,6 +245,8 @@ class ISimulator
         std::unique_ptr<StopHandlerBuilder> stopHandlerBuilder;
         //! Whether we're doing a rerun.
         bool                                doRerun;
+        //! Whether we will use the GPU for calculating the update.
+        bool                                useGpuForUpdate;
 
 };
 

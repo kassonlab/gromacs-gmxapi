@@ -1882,7 +1882,7 @@ int gmx_grompp(int argc, char *argv[])
     {
         fprintf(stderr, "checking input for internal consistency...\n");
     }
-    check_ir(mdparin, ir, opts, wi);
+    check_ir(mdparin, mdModules.notifier(), ir, opts, wi);
 
     if (ir->ld_seed == -1)
     {
@@ -2248,14 +2248,7 @@ int gmx_grompp(int argc, char *argv[])
     /* make exclusions between QM atoms and remove charges if needed */
     if (ir->bQMMM)
     {
-        if (ir->QMMMscheme == eQMMMschemenormal && ir->ns_type == ensSIMPLE)
-        {
-            gmx_fatal(FARGS, "electrostatic embedding only works with grid neighboursearching, use ns-type=grid instead\n");
-        }
-        else
-        {
-            generate_qmexcl(&sys, ir, wi, GmxQmmmMode::GMX_QMMM_ORIGINAL);
-        }
+        generate_qmexcl(&sys, ir, wi, GmxQmmmMode::GMX_QMMM_ORIGINAL);
         if (ir->QMMMscheme != eQMMMschemeoniom)
         {
             std::vector<int> qmmmAtoms = qmmmAtomIndices(*ir, sys);
@@ -2384,7 +2377,7 @@ int gmx_grompp(int argc, char *argv[])
 
     if (EEL_PME(ir->coulombtype))
     {
-        float ratio = pme_load_estimate(&sys, ir, state.box);
+        float ratio = pme_load_estimate(sys, *ir, state.box);
         fprintf(stderr, "Estimate for the relative computational load of the PME mesh part: %.2f\n", ratio);
         /* With free energy we might need to do PME both for the A and B state
          * charges. This will double the cost, but the optimal performance will

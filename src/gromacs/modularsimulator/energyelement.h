@@ -43,22 +43,28 @@
 #define GMX_ENERGYELEMENT_MICROSTATE_H
 
 #include "gromacs/math/vectypes.h"
+#include "gromacs/mdtypes/state.h"
 
 #include "modularsimulatorinterfaces.h"
 
 struct gmx_ekindata_t;
 struct gmx_enerdata_t;
 struct gmx_mtop_t;
+struct ObservablesHistory;
 struct t_fcdata;
 struct t_inputrec;
 struct SimulationGroups;
 
 namespace gmx
 {
+enum class StartingBehavior;
 class Constraints;
 class EnergyOutput;
+class FreeEnergyPerturbationElement;
 class MDAtoms;
+class ParrinelloRahmanBarostat;
 class StatePropagatorData;
+class VRescaleThermostat;
 struct MdModulesNotifier;
 
 //! \addtogroup module_modularsimulator
@@ -89,22 +95,26 @@ class EnergyElement final :
     public          ITrajectoryWriterClient,
     public          ITrajectorySignallerClient,
     public          IEnergySignallerClient,
-    public          ILoggingSignallerClient
+    public          ILoggingSignallerClient,
+    public          ICheckpointHelperClient
 {
     public:
         //! Constructor
         EnergyElement(
-            StatePropagatorData *statePropagatorData,
-            const gmx_mtop_t  *globalTopology,
-            const t_inputrec  *inputrec,
-            const MDAtoms     *mdAtoms,
-            gmx_enerdata_t    *enerd,
-            gmx_ekindata_t    *ekind,
-            const Constraints *constr,
-            FILE              *fplog,
-            t_fcdata          *fcd,
-            const MdModulesNotifier &mdModulesNotifier,
-            bool               isMaster);
+            StatePropagatorData           *statePropagatorData,
+            FreeEnergyPerturbationElement *freeEnergyPerturbationElement,
+            const gmx_mtop_t              *globalTopology,
+            const t_inputrec              *inputrec,
+            const MDAtoms                 *mdAtoms,
+            gmx_enerdata_t                *enerd,
+            gmx_ekindata_t                *ekind,
+            const Constraints             *constr,
+            FILE                          *fplog,
+            t_fcdata                      *fcd,
+            const MdModulesNotifier       &mdModulesNotifier,
+            bool                           isMaster,
+            ObservablesHistory            *observablesHistory,
+            StartingBehavior               startingBehavior);
 
         /*! \brief Register run function for step / time
          *
@@ -189,6 +199,37 @@ class EnergyElement final :
          */
         gmx_ekindata_t* ekindata();
 
+        /*! \brief Get pointer to needToSumEkinhOld
+         *
+         */
+        bool* needToSumEkinhOld();
+
+        /*! \brief set vrescale thermostat
+         *
+         * This allows to set a pointer to the vrescale thermostat used to
+         * print the thermostat integral.
+         * TODO: This should be made obsolete my a more modular energy element
+         */
+        void setVRescaleThermostat(const VRescaleThermostat* vRescaleThermostat);
+
+        /*! \brief set Parrinello-Rahman barostat
+         *
+         * This allows to set a pointer to the Parrinello-Rahman barostat used to
+         * print the box velocities.
+         * TODO: This should be made obsolete my a more modular energy element
+         */
+        void setParrinelloRahamnBarostat(const ParrinelloRahmanBarostat* parrinelloRahmanBarostat);
+
+        /*! \brief Initialize energy history
+         *
+         * Kept as a static function to allow usage from legacy code
+         * \todo Make member function once legacy use is not needed anymore
+         */
+        static void initializeEnergyHistory(
+            StartingBehavior    startingBehavior,
+            ObservablesHistory *observablesHistory,
+            EnergyOutput       *energyOutput);
+
     private:
         /*! \brief Setup (needs file pointer)
          *
@@ -232,6 +273,9 @@ class EnergyElement final :
             gmx_mdoutf *outf,
             Step step, Time time);
 
+        //! ICheckpointHelperClient implementation
+        void writeCheckpoint(t_state *localState, t_state *globalState) override;
+
         /*
          * Data owned by EnergyElement
          */
@@ -264,38 +308,53 @@ class EnergyElement final :
         Step forceVirialStep_;
         //! The step number of the current constraint virial tensor
         Step shakeVirialStep_;
-#ifndef NDEBUG
         //! The step number of the current total virial tensor
         Step totalVirialStep_;
         //! The step number of the current pressure tensor
         Step pressureStep_;
-#endif
+
+        //! Whether ekinh_old needs to be summed up (set by compute globals)
+        bool needToSumEkinhOld_;
+
+        //! Describes how the simulation (re)starts
+        const StartingBehavior startingBehavior_;
+
+        //! Legacy state object used to communicate with energy output
+        t_state dummyLegacyState_;
 
         /*
          * Pointers to Simulator data
          */
-        //! The microstate
-        StatePropagatorData     *statePropagatorData_;
+        //! Pointer to the state propagator data
+        StatePropagatorData            *statePropagatorData_;
+        //! Pointer to the free energy perturbation element
+        FreeEnergyPerturbationElement  *freeEnergyPerturbationElement_;
+        //! Pointer to the vrescale thermostat
+        const VRescaleThermostat       *vRescaleThermostat_;
+        //! Pointer to the Parrinello-Rahman barostat
+        const ParrinelloRahmanBarostat *parrinelloRahmanBarostat_;
         //! Contains user input mdp options.
-        const t_inputrec        *inputrec_;
+        const t_inputrec               *inputrec_;
         //! Full system topology.
-        const gmx_mtop_t        *top_global_;
+        const gmx_mtop_t               *top_global_;
         //! Atom parameters for this domain.
-        const MDAtoms           *mdAtoms_;
+        const MDAtoms                  *mdAtoms_;
         //! Energy data structure
-        gmx_enerdata_t          *enerd_;
+        gmx_enerdata_t                 *enerd_;
         //! Kinetic energy data
-        gmx_ekindata_t          *ekind_;
+        gmx_ekindata_t                 *ekind_;
         //! Handles constraints.
-        const Constraints       *constr_;
+        const Constraints              *constr_;
         //! Handles logging.
-        FILE                    *fplog_;
+        FILE                           *fplog_;
         //! Helper struct for force calculations.
-        t_fcdata                *fcd_;
+        t_fcdata                       *fcd_;
         //! Notification to MD modules
-        const MdModulesNotifier &mdModulesNotifier_;
+        const MdModulesNotifier        &mdModulesNotifier_;
         //! Global topology groups
-        const SimulationGroups  *groups_;
+        const SimulationGroups         *groups_;
+        //! History of simulation observables.
+        ObservablesHistory             *observablesHistory_;
 };
 
 //! /}

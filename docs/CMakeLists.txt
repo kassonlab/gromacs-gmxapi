@@ -223,6 +223,7 @@ if (SPHINX_FOUND)
         reference-manual/special/vmd-imd.rst
         reference-manual/special/membrane-embedding.rst
         reference-manual/special/mimic-qmmm.rst
+        reference-manual/special/density-guided-simulation.rst
         # Analysis chapter
         reference-manual/analysis.rst
         reference-manual/analysis/using-groups.rst
@@ -415,7 +416,6 @@ if (SPHINX_FOUND)
         # if the documentation will be build with the full reference
         # manual or without.
         user-guide/cmdline.rst
-        user-guide/cutoff-schemes.rst
         user-guide/deprecation-policy.rst
         user-guide/environment-variables.rst
         user-guide/faq.rst

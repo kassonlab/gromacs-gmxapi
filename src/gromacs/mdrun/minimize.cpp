@@ -107,20 +107,22 @@
 #include "legacysimulator.h"
 #include "shellfc.h"
 
+using gmx::MdrunScheduleWorkload;
+
 //! Utility structure for manipulating states during EM
 typedef struct {
     //! Copy of the global state
-    t_state                 s;
+    t_state                     s;
     //! Force array
-    PaddedVector<gmx::RVec> f;
+    PaddedHostVector<gmx::RVec> f;
     //! Potential energy
-    real                    epot;
+    real                        epot;
     //! Norm of the force
-    real                    fnorm;
+    real                        fnorm;
     //! Maximum force
-    real                    fmax;
+    real                        fmax;
     //! Direction
-    int                     a_fmax;
+    int                         a_fmax;
 } em_state_t;
 
 //! Print the EM starting conditions
@@ -570,7 +572,7 @@ static void write_em_traj(FILE *fplog, const t_commrec *cr,
 // \returns true when the step succeeded, false when a constraint error occurred
 static bool do_em_step(const t_commrec *cr,
                        t_inputrec *ir, t_mdatoms *md,
-                       em_state_t *ems1, real a, const PaddedVector<gmx::RVec> *force,
+                       em_state_t *ems1, real a, const PaddedHostVector<gmx::RVec> *force,
                        em_state_t *ems2,
                        gmx::Constraints *constr,
                        int64_t count)
@@ -790,7 +792,7 @@ class EnergyEvaluator
         //! Handles how to calculate the forces.
         t_forcerec              *fr;
         //! Schedule of force-calculation work each step for this task.
-        gmx::MdScheduleWorkload *mdScheduleWork;
+        MdrunScheduleWorkload   *runScheduleWork;
         //! Stores the computed energies.
         gmx_enerdata_t          *enerd;
 };
@@ -849,7 +851,7 @@ EnergyEvaluator::run(em_state_t *ems, rvec mu_tot,
              count, nrnb, wcycle, top,
              ems->s.box, ems->s.x.arrayRefWithPadding(), &ems->s.hist,
              ems->f.arrayRefWithPadding(), force_vir, mdAtoms->mdatoms(), enerd, fcd,
-             ems->s.lambda, graph, fr, mdScheduleWork, vsite, mu_tot, t, nullptr,
+             ems->s.lambda, graph, fr, runScheduleWork, vsite, mu_tot, t, nullptr,
              GMX_FORCE_STATECHANGED | GMX_FORCE_ALLFORCES |
              GMX_FORCE_VIRIAL | GMX_FORCE_ENERGY |
              (bNS ? GMX_FORCE_NS : 0),
@@ -915,7 +917,7 @@ EnergyEvaluator::run(em_state_t *ems, rvec mu_tot,
     enerd->term[F_PRES] =
         calc_pres(fr->ePBC, inputrec->nwall, ems->s.box, ekin, vir, pres);
 
-    sum_dhdl(enerd, ems->s.lambda, inputrec->fepvals);
+    sum_dhdl(enerd, ems->s.lambda, *inputrec->fepvals);
 
     if (EI_ENERGY_MINIMIZATION(inputrec->eI))
     {
@@ -930,10 +932,6 @@ static double reorder_partsum(const t_commrec *cr, t_grpopts *opts,
                               gmx_mtop_t *top_global,
                               em_state_t *s_min, em_state_t *s_b)
 {
-    t_block       *cgs_gl;
-    int            ncg, *cg_gl, *index, c, cg, i, a0, a1, a, gf, m;
-    double         partsum;
-
     if (debug)
     {
         fprintf(debug, "Doing reorder_partsum\n");
@@ -942,59 +940,43 @@ static double reorder_partsum(const t_commrec *cr, t_grpopts *opts,
     const rvec *fm = s_min->f.rvec_array();
     const rvec *fb = s_b->f.rvec_array();
 
-    cgs_gl = dd_charge_groups_global(cr->dd);
-    index  = cgs_gl->index;
-
     /* Collect fm in a global vector fmg.
      * This conflicts with the spirit of domain decomposition,
      * but to fully optimize this a much more complicated algorithm is required.
      */
-    rvec *fmg;
-    snew(fmg, top_global->natoms);
+    const int  natoms = top_global->natoms;
+    rvec      *fmg;
+    snew(fmg, natoms);
 
-    ncg   = s_min->s.cg_gl.size();
-    cg_gl = s_min->s.cg_gl.data();
-    i     = 0;
-    for (c = 0; c < ncg; c++)
+    gmx::ArrayRef<const int> indicesMin = s_b->s.cg_gl;
+    int i = 0;
+    for (int a : indicesMin)
     {
-        cg = cg_gl[c];
-        a0 = index[cg];
-        a1 = index[cg+1];
-        for (a = a0; a < a1; a++)
-        {
-            copy_rvec(fm[i], fmg[a]);
-            i++;
-        }
+        copy_rvec(fm[i], fmg[a]);
     }
     gmx_sum(top_global->natoms*3, fmg[0], cr);
 
     /* Now we will determine the part of the sum for the cgs in state s_b */
-    ncg         = s_b->s.cg_gl.size();
-    cg_gl       = s_b->s.cg_gl.data();
-    partsum     = 0;
-    i           = 0;
-    gf          = 0;
+    gmx::ArrayRef<const int> indicesB = s_b->s.cg_gl;
+
+    double                   partsum = 0;
+    i              = 0;
+    int gf         = 0;
     gmx::ArrayRef<unsigned char> grpnrFREEZE = top_global->groups.groupNumbers[SimulationAtomGroupType::Freeze];
-    for (c = 0; c < ncg; c++)
+    for (int a : indicesB)
     {
-        cg = cg_gl[c];
-        a0 = index[cg];
-        a1 = index[cg+1];
-        for (a = a0; a < a1; a++)
+        if (!grpnrFREEZE.empty())
         {
-            if (!grpnrFREEZE.empty())
-            {
-                gf = grpnrFREEZE[i];
-            }
-            for (m = 0; m < DIM; m++)
-            {
-                if (!opts->nFreeze[gf][m])
-                {
-                    partsum += (fb[i][m] - fmg[a][m])*fb[i][m];
-                }
-            }
-            i++;
+            gf = grpnrFREEZE[i];
         }
+        for (int m = 0; m < DIM; m++)
+        {
+            if (!opts->nFreeze[gf][m])
+            {
+                partsum += (fb[i][m] - fmg[a][m])*fb[i][m];
+            }
+        }
+        i++;
     }
 
     sfree(fmg);
@@ -1137,7 +1119,7 @@ LegacySimulator::do_cg()
         top_global, &top,
         inputrec, imdSession, pull_work, nrnb, wcycle, gstat,
         vsite, constr, fcd, graph,
-        mdAtoms, fr, mdScheduleWork, enerd
+        mdAtoms, fr, runScheduleWork, enerd
     };
     /* Call the force routine and some auxiliary (neighboursearching etc.) */
     /* do_force always puts the charge groups in the box and shifts again
@@ -1817,7 +1799,7 @@ LegacySimulator::do_lbfgs()
         top_global, &top,
         inputrec, imdSession, pull_work, nrnb, wcycle, gstat,
         vsite, constr, fcd, graph,
-        mdAtoms, fr, mdScheduleWork, enerd
+        mdAtoms, fr, runScheduleWork, enerd
     };
     energyEvaluator.run(&ems, mu_tot, vir, pres, -1, TRUE);
 
@@ -2477,7 +2459,7 @@ LegacySimulator::do_steep()
         top_global, &top,
         inputrec, imdSession, pull_work, nrnb, wcycle, gstat,
         vsite, constr, fcd, graph,
-        mdAtoms, fr, mdScheduleWork, enerd
+        mdAtoms, fr, runScheduleWork, enerd
     };
 
     /**** HERE STARTS THE LOOP ****
@@ -2782,7 +2764,7 @@ LegacySimulator::do_nm()
         top_global, &top,
         inputrec, imdSession, pull_work, nrnb, wcycle, gstat,
         vsite, constr, fcd, graph,
-        mdAtoms, fr, mdScheduleWork, enerd
+        mdAtoms, fr, runScheduleWork, enerd
     };
     energyEvaluator.run(&state_work, mu_tot, vir, pres, -1, TRUE);
     cr->nnodes = nnodes;
@@ -2869,7 +2851,7 @@ LegacySimulator::do_nm()
                                         graph,
                                         shellfc,
                                         fr,
-                                        mdScheduleWork,
+                                        runScheduleWork,
                                         t,
                                         mu_tot,
                                         vsite,

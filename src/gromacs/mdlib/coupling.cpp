@@ -1473,8 +1473,8 @@ static real vrescale_sumnoises(real                           nn,
     return r;
 }
 
-static real vrescale_resamplekin(real kk, real sigma, real ndeg, real taut,
-                                 int64_t step, int64_t seed)
+real vrescale_resamplekin(real kk, real sigma, real ndeg, real taut,
+                          int64_t step, int64_t seed)
 {
 /*
  * Generates a new value for the kinetic energy,
@@ -1620,25 +1620,31 @@ void rescale_velocities(const gmx_ekindata_t *ekind, const t_mdatoms *mdatoms,
     }
 }
 
-// TODO If we keep simulated annealing, make a proper module that
-// does not rely on changing inputrec.
-bool initSimulatedAnnealing(t_inputrec  *ir,
-                            gmx::Update *upd)
+//! Check whether we're doing simulated annealing
+bool doSimulatedAnnealing(const t_inputrec *ir)
 {
-    bool doSimulatedAnnealing = false;
     for (int i = 0; i < ir->opts.ngtc; i++)
     {
         /* set bSimAnn if any group is being annealed */
         if (ir->opts.annealing[i] != eannNO)
         {
-            doSimulatedAnnealing = true;
+            return true;
         }
     }
-    if (doSimulatedAnnealing)
+    return false;
+}
+
+// TODO If we keep simulated annealing, make a proper module that
+// does not rely on changing inputrec.
+bool initSimulatedAnnealing(t_inputrec  *ir,
+                            gmx::Update *upd)
+{
+    bool doSimAnnealing = doSimulatedAnnealing(ir);
+    if (doSimAnnealing)
     {
         update_annealing_target_temp(ir, ir->init_t, upd);
     }
-    return doSimulatedAnnealing;
+    return doSimAnnealing;
 }
 
 /* set target temperatures if we are annealing */

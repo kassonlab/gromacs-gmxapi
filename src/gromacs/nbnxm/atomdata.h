@@ -38,6 +38,7 @@
 
 #include <cstdio>
 
+#include "gromacs/gpu_utils/devicebuffer_datatype.h"
 #include "gromacs/gpu_utils/hostallocator.h"
 #include "gromacs/math/vectypes.h"
 #include "gromacs/utility/basedefinitions.h"
@@ -309,69 +310,104 @@ void nbnxn_atomdata_copy_shiftvec(gmx_bool          dynamic_box,
                                   rvec             *shift_vec,
                                   nbnxn_atomdata_t *nbat);
 
-/* Copy x to nbat->x.
- * FillLocal tells if the local filler particle coordinates should be zeroed.
+/*! \brief Transform coordinates to xbat layout
+ *
+ * Creates a copy of the coordinates buffer using short-range ordering.
+ *
+ * \param[in] gridSet      The grids data.
+ * \param[in] locality     If the transformation should be applied to local or non local coordinates.
+ * \param[in] fillLocal    Tells if the local filler particle coordinates should be zeroed.
+ * \param[in] coordinates  Coordinates in plain rvec format.
+ * \param[in,out] nbat     Data in NBNXM format, used for mapping formats and to locate the output buffer.
  */
-template <bool useGpu>
 void nbnxn_atomdata_copy_x_to_nbat_x(const Nbnxm::GridSet       &gridSet,
                                      Nbnxm::AtomLocality         locality,
-                                     gmx_bool                    FillLocal,
-                                     const rvec                 *x,
-                                     nbnxn_atomdata_t           *nbat,
-                                     gmx_nbnxn_gpu_t            *gpu_nbv,
-                                     void                       *xPmeDevicePtr);
+                                     bool                        fillLocal,
+                                     const rvec                 *coordinates,
+                                     nbnxn_atomdata_t           *nbat);
 
-extern template
-void nbnxn_atomdata_copy_x_to_nbat_x<true>(const Nbnxm::GridSet &,
-                                           const Nbnxm::AtomLocality,
-                                           gmx_bool,
-                                           const rvec*,
-                                           nbnxn_atomdata_t *,
-                                           gmx_nbnxn_gpu_t*,
-                                           void *);
-extern template
-void nbnxn_atomdata_copy_x_to_nbat_x<false>(const Nbnxm::GridSet &,
-                                            const Nbnxm::AtomLocality,
-                                            gmx_bool,
-                                            const rvec*,
-                                            nbnxn_atomdata_t *,
-                                            gmx_nbnxn_gpu_t*,
-                                            void *);
+/*! \brief Copies the coordinates to the GPU (in plain rvec format)
+ *
+ *  This function copied data to the gpu so that the transformation to the NBNXM format can be done on the GPU.
+ *
+ * \param[in] gridSet          The grids data.
+ * \param[in] locality         If local or non local coordinates should be copied.
+ * \param[in] fillLocal        If the local filler particle coordinates should be zeroed.
+ * \param[in] nbat             Data in NBNXM format, used to zero coordinates of filler particles.
+ * \param[in] gpu_nbv          The NBNXM GPU data structure.
+ * \param[in] coordinatesHost  Coordinates to be copied (in plain rvec format).
+ */
+void nbnxn_atomdata_copy_x_to_gpu(const Nbnxm::GridSet     &gridSet,
+                                  Nbnxm::AtomLocality       locality,
+                                  bool                      fillLocal,
+                                  nbnxn_atomdata_t         *nbat,
+                                  gmx_nbnxn_gpu_t          *gpu_nbv,
+                                  const rvec               *coordinatesHost);
 
-//! Add the computed forces to \p f, an internal reduction might be performed as well
-template <bool  useGpu>
+/*!\brief Getter for the GPU coordinates buffer
+ *
+ * \param[in] gpu_nbv  The NBNXM GPU data structure.
+ */
+DeviceBuffer<float> nbnxn_atomdata_get_x_gpu(gmx_nbnxn_gpu_t *gpu_nbv);
+
+/*! \brief Transform coordinates to xbat layout on GPU
+ *
+ * Creates a GPU copy of the coordinates buffer using short-range ordering.
+ * As input, uses coordinates in plain rvec format in GPU memory.
+ *
+ * \param[in]     gridSet            The grids data.
+ * \param[in]     locality           If the transformation should be applied to local or non local coordinates.
+ * \param[in]     fillLocal          Tells if the local filler particle coordinates should be zeroed.
+ * \param[in,out] gpu_nbv            The NBNXM GPU data structure.
+ * \param[in]     coordinatesDevice  Coordinates to be copied (in plain rvec format).
+ */
+void nbnxn_atomdata_x_to_nbat_x_gpu(const Nbnxm::GridSet     &gridSet,
+                                    Nbnxm::AtomLocality       locality,
+                                    bool                      fillLocal,
+                                    gmx_nbnxn_gpu_t          *gpu_nbv,
+                                    DeviceBuffer<float>       coordinatesDevice);
+
+/*! \brief Add the computed forces to \p f, an internal reduction might be performed as well
+ *
+ * \param[in]  nbat        Atom data in NBNXM format.
+ * \param[in]  locality    If the reduction should be performed on local or non-local atoms.
+ * \param[in]  gridSet     The grids data.
+ * \param[out] totalForce  Buffer to accumulate resulting force
+ */
 void reduceForces(nbnxn_atomdata_t                   *nbat,
                   Nbnxm::AtomLocality                 locality,
                   const Nbnxm::GridSet               &gridSet,
-                  rvec                               *f,
-                  void                               *pmeFDeviceBuffer,
-                  GpuEventSynchronizer               *pmeForcesReady,
-                  gmx_nbnxn_gpu_t                    *gpu_nbv,
-                  bool                                useGpuFPmeReduction,
-                  bool                                accumulateForce);
+                  rvec                               *totalForce);
 
+/*! \brief Reduce forces on the GPU
+ *
+ * \param[in]  locality             If the reduction should be performed on local or non-local atoms.
+ * \param[out] totalForcesDevice    Device buffer to accumulate resulting force.
+ * \param[in]  gridSet              The grids data.
+ * \param[in]  pmeForcesDevice      Device buffer with PME forces.
+ * \param[in]  pmeForcesReady       Event that signals when the PME forces are ready for the reduction.
+ * \param[in]  gpu_nbv              The NBNXM GPU data structure.
+ * \param[in]  useGpuFPmeReduction  Whether PME forces should be added.
+ * \param[in]  accumulateForce      Whether there are usefull data already in the total force buffer.
+ */
+void reduceForcesGpu(Nbnxm::AtomLocality                 locality,
+                     DeviceBuffer<float>                 totalForcesDevice,
+                     const Nbnxm::GridSet               &gridSet,
+                     void                               *pmeForcesDevice,
+                     GpuEventSynchronizer               *pmeForcesReady,
+                     gmx_nbnxn_gpu_t                    *gpu_nbv,
+                     bool                                useGpuFPmeReduction,
+                     bool                                accumulateForce);
 
-extern template
-void reduceForces<true>(nbnxn_atomdata_t             *nbat,
-                        const Nbnxm::AtomLocality     locality,
-                        const Nbnxm::GridSet         &gridSet,
-                        rvec                         *f,
-                        void                         *pmeFDeviceBuffer,
-                        GpuEventSynchronizer         *pmeForcesReady,
-                        gmx_nbnxn_gpu_t              *gpu_nbv,
-                        bool                          useGpuFPmeReduction,
-                        bool                          accumulateForce);
-
-extern template
-void reduceForces<false>(nbnxn_atomdata_t             *nbat,
-                         const Nbnxm::AtomLocality     locality,
-                         const Nbnxm::GridSet         &gridSet,
-                         rvec                         *f,
-                         void                         *pmeFDeviceBuffer,
-                         GpuEventSynchronizer         *pmeForcesReady,
-                         gmx_nbnxn_gpu_t              *gpu_nbv,
-                         bool                          useGpuFPmeReduction,
-                         bool                          accumulateForce);
+/*!\brief Getter for the GPU forces buffer
+ *
+ * \todo Will be removed when the buffer management is lifted out of the NBNXM
+ *
+ * \param[in] gpu_nbv  The NBNXM GPU data structure.
+ *
+ * \returns Device forces buffer
+ */
+DeviceBuffer<float> nbnxn_atomdata_get_f_gpu(gmx_nbnxn_gpu_t *gpu_nbv);
 
 /* Add the fshift force stored in nbat to fshift */
 void nbnxn_atomdata_add_nbat_fshift_to_fshift(const nbnxn_atomdata_t   &nbat,

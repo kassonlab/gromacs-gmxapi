@@ -340,6 +340,253 @@ sqrt(SimdFloat x)
     }
 }
 
+/*! \brief Cube root for SIMD floats
+ *
+ * \param x      Argument to calculate cube root of. Can be negative or zero,
+ *               but NaN or Inf values are not supported. Denormal values will
+ *               be treated as 0.0.
+ * \return       Cube root of x.
+ */
+static inline SimdFloat gmx_simdcall
+cbrt(SimdFloat x)
+{
+    const SimdFloat    signBit(GMX_FLOAT_NEGZERO);
+    const SimdFloat    minFloat(std::numeric_limits<float>::min());
+    // Bias is 128-1 = 127, which is not divisible by 3. Since the largest-magnitude
+    // negative exponent from frexp() is -126, we can subtract one more unit to get 126
+    // as offset, which is divisible by 3 (result 42). To avoid clang warnings about fragile integer
+    // division mixed with FP, we let the divided value (42) be the original constant.
+    const std::int32_t offsetDiv3(42);
+    const SimdFloat    c2(-0.191502161678719066F);
+    const SimdFloat    c1(0.697570460207922770F);
+    const SimdFloat    c0(0.492659620528969547F);
+    const SimdFloat    one(1.0F);
+    const SimdFloat    two(2.0F);
+    const SimdFloat    three(3.0F);
+    const SimdFloat    oneThird(1.0F/3.0F);
+    const SimdFloat    cbrt2(1.2599210498948731648F);
+    const SimdFloat    sqrCbrt2(1.5874010519681994748F);
+
+    // To calculate cbrt(x) we first take the absolute value of x but save the sign,
+    // since cbrt(-x) = -cbrt(x). Then we only need to consider positive values for
+    // the main step.
+    // A number x is represented in IEEE754 as fraction*2^e. We rewrite this as
+    // x=fraction*2^(3*n)*2^m, where e=3*n+m, and m is a remainder.
+    // The cube root can the be evaluated by calculating the cube root of the fraction
+    // limited to the mantissa range, multiplied by 2^mod (which is either 1, +/-2^(1/3) or +/-2^(2/3),
+    // and then we load this into a new IEEE754 fp number with the exponent 2^n, where
+    // n is the integer part of the original exponent divided by 3.
+
+    SimdFloat  xSignBit   = x & signBit;        // create bit mask where the sign bit is 1 for x elements < 0
+    SimdFloat  xAbs       = andNot(signBit, x); // select everthing but the sign bit => abs(x)
+    SimdFBool  xIsNonZero = (minFloat <= xAbs); // treat denormals as 0
+
+    SimdFInt32 exponent;
+    SimdFloat  y         = frexp(xAbs, &exponent);
+    // For the mantissa (y) we will use a limited-range approximation of cbrt(y),
+    // by first using a polynomial and then evaluating
+    // Transform y to z = c2*y^2 + c1*y + c0, then w = z^3, and finally
+    // evaluate the quotient q = z * (w + 2 * y) / (2 * w + y).
+    SimdFloat  z         = fma(fma(y, c2, c1), y, c0);
+    SimdFloat  w         = z*z*z;
+    SimdFloat  nom       = z * fma(two, y, w);
+    SimdFloat  invDenom  = inv(fma(two, w, y));
+
+    // Handle the exponent. In principle there are beautiful ways to do this with custom 16-bit
+    // division converted to multiplication... but we can't do that since our SIMD layer cannot
+    // assume the presence of integer shift operations!
+    // However, when I first worked with the integer algorithm I still came up with a neat
+    // optimization, so I'll describe the full algorithm here in case we ever want to use it
+    // in the future:
+    //
+    // Our dividend is signed, which is a complication, but let's consider the unsigned case
+    // first: Division by 3 corresponds to multiplication by 1010101... Since we also know
+    // our dividend is less than 16 bits (exponent range) we can accomplish this by
+    // multiplying with 21845 (which is almost 2^16/3 - 21845.333 would be exact) and then
+    // right-shifting by 16 bits to divide out the 2^16 part.
+    // If we add 1 to the dividend to handle the extra 0.333, the integer result will be correct.
+    // To handle the signed exponent one alternative would be to take absolute values, saving
+    // signs, etc - but that gets a bit complicated with 2-complement integers.
+    // Instead, we remember that we don't really want the exact division per se - what we're
+    // really after is only rewriting e = 3*n+m. That will actually be *easier* to handle if
+    // we require that m must be positive (fewer cases to handle) instead of having n as the
+    // strict e/3.
+    // To handle this we start by adding 127 to the exponent. This value corresponds to the
+    // exponent bias, minus 1 because frexp() has a different standard for the value it returns,
+    // but then we add 1 back to handle the extra 0.333 in 21845. So, we have offsetExp = e+127
+    // and then multiply by 21845 to get a division result offsetExpDiv3.
+    // A (signed) value for n is then recovered by subtracting 42 (bias-1)/3 from k.
+    // To calculate a strict remainder we should evaluate offsetExp - 3*offsetExpDiv3 - 1, where
+    // the extra 1 corrects for the value we added to the exponent to get correct division.
+    // This remainder would have the value 0,1, or 2, but since we only use it to select
+    // other numbers we can skip the last step and just handle the cases as 1,2 or 3 instead.
+    //
+    // OK; end of long detour. Here's how we actually do it in our implementation by using
+    // floating-point for the exponent instead to avoid needing integer shifts:
+    //
+    // 1) Convert the exponent (obtained from frexp) to a float
+    // 2) Calculate offsetExp = exp + offset. Note that we should not add the extra 1 here since we
+    //    do floating-point division instead of our integer hack, so it's the exponent bias-1, or
+    //    the largest exponent minus 2.
+    // 3) Divide the float by 3 by multiplying with 1/3
+    // 4) Truncate it to an integer to get the division result. This is potentially dangerous in
+    //    combination with floating-point, because many integers cannot be represented exactly in
+    //    floating point, and if we are just epsilon below the result might be truncated to a lower
+    //    integer. I have not observed this on x86, but to have a safety margin we can add a small
+    //    fraction - since we already know the fraction part should be either 0, 0.333..., or 0.666...
+    //    We can even save this extra floating-point addition by adding a small fraction (0.1) when
+    //    we introduce the exponent offset - that will correspond to a safety margin of 0.1/3, which is plenty.
+    // 5) Get the remainder part by subtracting the truncated floating-point part.
+    //    Here too we will have a plain division, so the remainder is a strict modulus
+    //    and will have the values 0, 1 or 2.
+    //
+    // Before worrying about the few wasted cycles due to longer fp latency, this has the
+    // additional advantage that we don't use a single integer operation, so the algorithm
+    // will work just A-OK on all SIMD implementations, which avoids diverging code paths.
+
+    // The  0.1 here is the safety margin due to  truncation described in item 4 in the comments above.
+    SimdFloat  offsetExp      = cvtI2R(exponent) + SimdFloat(static_cast<float>(3*offsetDiv3) + 0.1);
+
+    SimdFloat  offsetExpDiv3  = trunc(offsetExp * oneThird); // important to truncate here to mimic integer division
+
+    SimdFInt32 expDiv3       = cvtR2I(offsetExpDiv3 - SimdFloat(static_cast<float>(offsetDiv3)));
+
+    SimdFloat  remainder     = offsetExp - offsetExpDiv3 * three;
+
+    // If remainder is 0 we should just have the factor 1.0,
+    // so first pick 1.0 if it is below 0.5, and 2^(1/3) if it's above 0.5 (i.e., 1 or 2)
+    SimdFloat factor         = blend(one, cbrt2, SimdFloat(0.5) < remainder);
+    // Second, we overwrite with 2^(2/3) if rem>1.5 (i.e., 2)
+    factor                   = blend(factor, sqrCbrt2, SimdFloat(1.5) < remainder);
+
+    // Assemble the non-signed fraction, and add the sign back by xor
+    SimdFloat fraction       = (nom * invDenom * factor) ^ xSignBit;
+    // Load to IEEE754 number, and set result to 0.0 if x was 0.0 or denormal
+    SimdFloat result         = selectByMask(ldexp(fraction, expDiv3), xIsNonZero);
+
+    return result;
+}
+
+/*! \brief Inverse cube root for SIMD floats
+ *
+ * \param x      Argument to calculate cube root of. Can be positive or
+ *               negative, but the magnitude cannot be lower than
+ *               the smallest normal number.
+ * \return       Cube root of x. Undefined for values that don't
+ *               fulfill the restriction of abs(x) > minFloat.
+ */
+static inline SimdFloat gmx_simdcall
+invcbrt(SimdFloat x)
+{
+    const SimdFloat    signBit(GMX_FLOAT_NEGZERO);
+    const SimdFloat    minFloat(std::numeric_limits<float>::min());
+    // Bias is 128-1 = 127, which is not divisible by 3. Since the largest-magnitude
+    // negative exponent from frexp() is -126, we can subtract one more unit to get 126
+    // as offset, which is divisible by 3 (result 42). To avoid clang warnings about fragile integer
+    // division mixed with FP, we let the divided value (42) be the original constant.
+    const std::int32_t offsetDiv3(42);
+    const SimdFloat    c2(-0.191502161678719066F);
+    const SimdFloat    c1(0.697570460207922770F);
+    const SimdFloat    c0(0.492659620528969547F);
+    const SimdFloat    one(1.0F);
+    const SimdFloat    two(2.0F);
+    const SimdFloat    three(3.0F);
+    const SimdFloat    oneThird(1.0F/3.0F);
+    const SimdFloat    invCbrt2(1.0F/1.2599210498948731648F);
+    const SimdFloat    invSqrCbrt2(1.0F/1.5874010519681994748F);
+
+    // We use pretty much exactly the same implementation as for cbrt(x),
+    // but to compute the inverse we swap the nominator/denominator
+    // in the quotient, and also swap the sign of the exponent parts.
+
+    SimdFloat  xSignBit   = x & signBit;        // create bit mask where the sign bit is 1 for x elements < 0
+    SimdFloat  xAbs       = andNot(signBit, x); // select everthing but the sign bit => abs(x)
+
+    SimdFInt32 exponent;
+    SimdFloat  y         = frexp(xAbs, &exponent);
+    // For the mantissa (y) we will use a limited-range approximation of cbrt(y),
+    // by first using a polynomial and then evaluating
+    // Transform y to z = c2*y^2 + c1*y + c0, then w = z^3, and finally
+    // evaluate the quotient q = z * (w + 2 * y) / (2 * w + y).
+    SimdFloat  z         = fma(fma(y, c2, c1), y, c0);
+    SimdFloat  w         = z*z*z;
+    SimdFloat  nom       = fma(two, w, y);
+    SimdFloat  invDenom  = inv(z * fma(two, y, w));
+
+    // The  0.1 here is the safety margin due to  truncation described in item 4 in the comments above.
+    SimdFloat offsetExp      = cvtI2R(exponent) + SimdFloat(static_cast<float>(3*offsetDiv3) + 0.1);
+    SimdFloat offsetExpDiv3  = trunc(offsetExp * oneThird); // important to truncate here to mimic integer division
+
+    // We should swap the sign here, so we change order of the terms in the subtraction
+    SimdFInt32 expDiv3       = cvtR2I(SimdFloat(static_cast<float>(offsetDiv3)) - offsetExpDiv3);
+
+    // Swap sign here too, so remainder is either 0, -1 or -2
+    SimdFloat remainder      = offsetExpDiv3 * three - offsetExp;
+
+    // If remainder is 0 we should just have the factor 1.0,
+    // so first pick 1.0 if it is above -0.5, and 2^(-1/3) if it's below -0.5 (i.e., -1 or -2)
+    SimdFloat factor         = blend(one, invCbrt2, remainder < SimdFloat(-0.5) );
+    // Second, we overwrite with 2^(-2/3) if rem<-1.5 (i.e., -2)
+    factor                   = blend(factor, invSqrCbrt2, remainder < SimdFloat(-1.5));
+
+    // Assemble the non-signed fraction, and add the sign back by xor
+    SimdFloat fraction       = (nom * invDenom * factor) ^ xSignBit;
+    // Load to IEEE754 number, and set result to 0.0 if x was 0.0 or denormal
+    SimdFloat result = ldexp(fraction, expDiv3);
+
+    return result;
+}
+
+/*! \brief SIMD float log2(x). This is the base-2 logarithm.
+ *
+ * \param x Argument, should be >0.
+ * \result The base-2 logarithm of x. Undefined if argument is invalid.
+ */
+static inline SimdFloat gmx_simdcall
+log2(SimdFloat x)
+{
+    // This implementation computes log2 by
+    // 1) Extracting the exponent and adding it to...
+    // 2) A 9th-order minimax approximation using only odd
+    //    terms of (x-1)/(x+1), where x is the mantissa.
+
+#if GMX_SIMD_HAVE_NATIVE_LOG_FLOAT
+    // Just rescale if native log2() is not present, but log() is.
+    return log(x) * SimdFloat(std::log2(std::exp(1.0)));
+#else
+    const SimdFloat  one(1.0F);
+    const SimdFloat  two(2.0F);
+    const SimdFloat  invsqrt2(1.0F/std::sqrt(2.0F));
+    const SimdFloat  CL9(0.342149508897807708152F);
+    const SimdFloat  CL7(0.411570606888219447939F);
+    const SimdFloat  CL5(0.577085979152320294183F);
+    const SimdFloat  CL3(0.961796550607099898222F);
+    const SimdFloat  CL1(2.885390081777926774009F);
+    SimdFloat        fExp, x2, p;
+    SimdFBool        m;
+    SimdFInt32       iExp;
+
+    x     = frexp(x, &iExp);
+    fExp  = cvtI2R(iExp);
+
+    m     = x < invsqrt2;
+    // Adjust to non-IEEE format for x<1/sqrt(2): exponent -= 1, mantissa *= 2.0
+    fExp  = fExp - selectByMask(one, m);
+    x     = x * blend(one, two, m);
+
+    x     = (x-one) * inv( x+one );
+    x2    = x * x;
+
+    p     = fma(CL9, x2, CL7);
+    p     = fma(p, x2, CL5);
+    p     = fma(p, x2, CL3);
+    p     = fma(p, x2, CL1);
+    p     = fma(p, x, fExp);
+
+    return p;
+#endif
+}
+
 #if !GMX_SIMD_HAVE_NATIVE_LOG_FLOAT
 /*! \brief SIMD float log(x). This is the natural logarithm.
  *
@@ -556,10 +803,63 @@ exp(SimdFloat x)
     p         = fma(p, x, CC1);
     p         = fma(p, x, CC0);
     p         = fma(x*x, p, x);
+#if GMX_SIMD_HAVE_FMA
     x         = fma(p, fexppart, fexppart);
+#else
+    x         = (p + one) * fexppart;
+#endif
     return x;
 }
 #endif
+
+/*! \brief SIMD float pow(x,y)
+ *
+ * This returns x^y for SIMD values.
+ *
+ * \tparam opt If this is changed from the default (safe) into the unsafe
+ *             option, there are no guarantees about correct results for x==0.
+ *
+ * \param x Base.
+ *
+ * \param y exponent.
+
+ * \result x^y. Overflowing arguments are likely to either return 0 or inf,
+ *         depending on the underlying implementation. If unsafe optimizations
+ *         are enabled, this is also true for x==0.
+ *
+ * \warning You cannot rely on this implementation returning inf for arguments
+ *          that cause overflow. If you have some very large
+ *          values and need to rely on getting a valid numerical output,
+ *          take the minimum of your variable and the largest valid argument
+ *          before calling this routine.
+ */
+template <MathOptimization opt = MathOptimization::Safe>
+static inline SimdFloat gmx_simdcall
+pow(SimdFloat x, SimdFloat y)
+{
+    SimdFloat xcorr;
+
+    if (opt == MathOptimization::Safe)
+    {
+        xcorr = max(x, SimdFloat(std::numeric_limits<float>::min()));
+    }
+    else
+    {
+        xcorr = x;
+    }
+
+    SimdFloat result = exp2<opt>(y * log2(xcorr));
+
+    if (opt == MathOptimization::Safe)
+    {
+        // if x==0 and y>0 we explicitly set the result to 0.0
+        // For any x with y==0, the result will already be 1.0 since we multiply by y (0.0) and call exp().
+        result = blend(result, setZero(), x == setZero() && setZero() < y );
+    }
+
+    return result;
+}
+
 
 /*! \brief SIMD float erf(x).
  *
@@ -1737,6 +2037,173 @@ sqrt(SimdDouble x)
     }
 }
 
+/*! \brief Cube root for SIMD doubles
+ *
+ * \param x      Argument to calculate cube root of. Can be negative or zero,
+ *               but NaN or Inf values are not supported. Denormal values will
+ *               be treated as 0.0.
+ * \return       Cube root of x.
+ */
+static inline SimdDouble gmx_simdcall
+cbrt(SimdDouble x)
+{
+    const SimdDouble    signBit(GMX_DOUBLE_NEGZERO);
+    const SimdDouble    minDouble(std::numeric_limits<double>::min());
+    // Bias is 1024-1 = 1023, which is divisible by 3, so no need to change it more.
+    // To avoid clang warnings about fragile integer division mixed with FP, we let
+    // the divided value (1023/3=341) be the original constant.
+    const std::int32_t  offsetDiv3(341);
+    const SimdDouble    c6(-0.145263899385486377);
+    const SimdDouble    c5(0.784932344976639262);
+    const SimdDouble    c4(-1.83469277483613086);
+    const SimdDouble    c3(2.44693122563534430);
+    const SimdDouble    c2(-2.11499494167371287);
+    const SimdDouble    c1(1.50819193781584896);
+    const SimdDouble    c0(0.354895765043919860);
+    const SimdDouble    one(1.0);
+    const SimdDouble    two(2.0);
+    const SimdDouble    three(3.0);
+    const SimdDouble    oneThird(1.0/3.0);
+    const SimdDouble    cbrt2(1.2599210498948731648);
+    const SimdDouble    sqrCbrt2(1.5874010519681994748);
+
+    // See the single precision routines for documentation of the algorithm
+
+    SimdDouble  xSignBit       = x & signBit;         // create bit mask where the sign bit is 1 for x elements < 0
+    SimdDouble  xAbs           = andNot(signBit, x);  // select everthing but the sign bit => abs(x)
+    SimdDBool   xIsNonZero     = (minDouble <= xAbs); // treat denormals as 0
+
+    SimdDInt32  exponent;
+    SimdDouble  y             = frexp(xAbs, &exponent);
+    SimdDouble  z             = fma(y, c6, c5);
+    z                         = fma(z, y, c4);
+    z                         = fma(z, y, c3);
+    z                         = fma(z, y, c2);
+    z                         = fma(z, y, c1);
+    z                         = fma(z, y, c0);
+    SimdDouble  w             = z*z*z;
+    SimdDouble  nom           = z * fma(two, y, w);
+    SimdDouble  invDenom      = inv(fma(two, w, y));
+
+    SimdDouble  offsetExp      = cvtI2R(exponent) + SimdDouble(static_cast<double>(3*offsetDiv3) + 0.1);
+    SimdDouble  offsetExpDiv3  = trunc(offsetExp * oneThird); // important to truncate here to mimic integer division
+    SimdDInt32  expDiv3        = cvtR2I(offsetExpDiv3 - SimdDouble(static_cast<double>(offsetDiv3)));
+    SimdDouble  remainder      = offsetExp - offsetExpDiv3 * three;
+    SimdDouble  factor         = blend(one, cbrt2, SimdDouble(0.5) < remainder);
+    factor                    = blend(factor, sqrCbrt2, SimdDouble(1.5) < remainder);
+    SimdDouble  fraction       = (nom * invDenom * factor) ^ xSignBit;
+    SimdDouble  result         = selectByMask(ldexp(fraction, expDiv3), xIsNonZero);
+    return result;
+}
+
+/*! \brief Inverse cube root for SIMD doubles.
+ *
+ * \param x      Argument to calculate cube root of. Can be positive or
+ *               negative, but the magnitude cannot be lower than
+ *               the smallest normal number.
+ * \return       Cube root of x. Undefined for values that don't
+ *               fulfill the restriction of abs(x) > minDouble.
+ */
+static inline SimdDouble gmx_simdcall
+invcbrt(SimdDouble x)
+{
+    const SimdDouble    signBit(GMX_DOUBLE_NEGZERO);
+    // Bias is 1024-1 = 1023, which is divisible by 3, so no need to change it more.
+    // To avoid clang warnings about fragile integer division mixed with FP, we let
+    // the divided value (1023/3=341) be the original constant.
+    const std::int32_t  offsetDiv3(341);
+    const SimdDouble    c6(-0.145263899385486377);
+    const SimdDouble    c5(0.784932344976639262);
+    const SimdDouble    c4(-1.83469277483613086);
+    const SimdDouble    c3(2.44693122563534430);
+    const SimdDouble    c2(-2.11499494167371287);
+    const SimdDouble    c1(1.50819193781584896);
+    const SimdDouble    c0(0.354895765043919860);
+    const SimdDouble    one(1.0);
+    const SimdDouble    two(2.0);
+    const SimdDouble    three(3.0);
+    const SimdDouble    oneThird(1.0/3.0);
+    const SimdDouble    invCbrt2(1.0/1.2599210498948731648);
+    const SimdDouble    invSqrCbrt2(1.0F/1.5874010519681994748);
+
+    // See the single precision routines for documentation of the algorithm
+
+    SimdDouble  xSignBit       = x & signBit;        // create bit mask where the sign bit is 1 for x elements < 0
+    SimdDouble  xAbs           = andNot(signBit, x); // select everthing but the sign bit => abs(x)
+
+    SimdDInt32  exponent;
+    SimdDouble  y             = frexp(xAbs, &exponent);
+    SimdDouble  z             = fma(y, c6, c5);
+    z                         = fma(z, y, c4);
+    z                         = fma(z, y, c3);
+    z                         = fma(z, y, c2);
+    z                         = fma(z, y, c1);
+    z                         = fma(z, y, c0);
+    SimdDouble  w              = z*z*z;
+    SimdDouble  nom            = fma(two, w, y);
+    SimdDouble  invDenom       = inv(z * fma(two, y, w));
+    SimdDouble  offsetExp      = cvtI2R(exponent) + SimdDouble(static_cast<double>(3*offsetDiv3) + 0.1);
+    SimdDouble  offsetExpDiv3  = trunc(offsetExp * oneThird); // important to truncate here to mimic integer division
+    SimdDInt32  expDiv3        = cvtR2I(SimdDouble(static_cast<double>(offsetDiv3)) - offsetExpDiv3);
+    SimdDouble  remainder      = offsetExpDiv3 * three - offsetExp;
+    SimdDouble  factor         = blend(one, invCbrt2, remainder < SimdDouble(-0.5) );
+    factor                    = blend(factor, invSqrCbrt2, remainder < SimdDouble(-1.5));
+    SimdDouble  fraction       = (nom * invDenom * factor) ^ xSignBit;
+    SimdDouble  result         = ldexp(fraction, expDiv3);
+    return result;
+}
+
+/*! \brief SIMD double log2(x). This is the base-2 logarithm.
+ *
+ * \param x Argument, should be >0.
+ * \result The base-2 logarithm of x. Undefined if argument is invalid.
+ */
+static inline SimdDouble gmx_simdcall
+log2(SimdDouble x)
+{
+#if GMX_SIMD_HAVE_NATIVE_LOG_DOUBLE
+    // Just rescale if native log2() is not present, but log is.
+    return log(x) * SimdDouble(std::log2(std::exp(1.0)));
+#else
+    const SimdDouble  one(1.0);
+    const SimdDouble  two(2.0);
+    const SimdDouble  invsqrt2(1.0/std::sqrt(2.0));
+    const SimdDouble  CL15(0.2138031565795550370534528);
+    const SimdDouble  CL13(0.2208884091496370882801159);
+    const SimdDouble  CL11(0.2623358279761824340958754);
+    const SimdDouble  CL9(0.3205984930182496084327681);
+    const SimdDouble  CL7(0.4121985864521960363227038);
+    const SimdDouble  CL5(0.5770780163410746954610886);
+    const SimdDouble  CL3(0.9617966939260027547931031);
+    const SimdDouble  CL1(2.885390081777926774009302);
+    SimdDouble        fExp, x2, p;
+    SimdDBool         m;
+    SimdDInt32        iExp;
+
+    x     = frexp(x, &iExp);
+    fExp  = cvtI2R(iExp);
+
+    m     = x < invsqrt2;
+    // Adjust to non-IEEE format for x<1/sqrt(2): exponent -= 1, mantissa *= 2.0
+    fExp  = fExp - selectByMask(one, m);
+    x     = x * blend(one, two, m);
+
+    x     = (x-one) * inv( x+one );
+    x2    = x * x;
+
+    p     = fma(CL15, x2, CL13);
+    p     = fma(p, x2, CL11);
+    p     = fma(p, x2, CL9);
+    p     = fma(p, x2, CL7);
+    p     = fma(p, x2, CL5);
+    p     = fma(p, x2, CL3);
+    p     = fma(p, x2, CL1);
+    p     = fma(p, x, fExp);
+
+    return p;
+#endif
+}
+
 #if !GMX_SIMD_HAVE_NATIVE_LOG_DOUBLE
 /*! \brief SIMD double log(x). This is the natural logarithm.
  *
@@ -1926,11 +2393,64 @@ exp(SimdDouble x)
     p         = fma(p, x, CE3);
     p         = fma(p, x, CE2);
     p         = fma(p, x * x, x);
+#if GMX_SIMD_HAVE_FMA
     x         = fma(p, fexppart, fexppart);
+#else
+    x         = (p + one) * fexppart;
+#endif
 
     return x;
 }
 #endif
+
+/*! \brief SIMD double pow(x,y)
+ *
+ * This returns x^y for SIMD values.
+ *
+ * \tparam opt If this is changed from the default (safe) into the unsafe
+ *             option, there are no guarantees about correct results for x==0.
+ *
+ * \param x Base.
+ *
+ * \param y exponent.
+ *
+ * \result x^y. Overflowing arguments are likely to either return 0 or inf,
+ *         depending on the underlying implementation. If unsafe optimizations
+ *         are enabled, this is also true for x==0.
+ *
+ * \warning You cannot rely on this implementation returning inf for arguments
+ *          that cause overflow. If you have some very large
+ *          values and need to rely on getting a valid numerical output,
+ *          take the minimum of your variable and the largest valid argument
+ *          before calling this routine.
+ */
+template <MathOptimization opt = MathOptimization::Safe>
+static inline SimdDouble gmx_simdcall
+pow(SimdDouble x, SimdDouble y)
+{
+    SimdDouble xcorr;
+
+    if (opt == MathOptimization::Safe)
+    {
+        xcorr = max(x, SimdDouble(std::numeric_limits<double>::min()));
+    }
+    else
+    {
+        xcorr = x;
+    }
+
+    SimdDouble result = exp2<opt>(y * log2(xcorr));
+
+    if (opt == MathOptimization::Safe)
+    {
+        // if x==0 and y>0 we explicitly set the result to 0.0
+        // For any x with y==0, the result will already be 1.0 since we multiply by y (0.0) and call exp().
+        result = blend(result, setZero(), x == setZero() && setZero() < y );
+    }
+
+    return result;
+}
+
 
 /*! \brief SIMD double erf(x).
  *
@@ -1995,6 +2515,7 @@ erf(SimdDouble x)
 
     const SimdDouble one(1.0);
     const SimdDouble two(2.0);
+    const SimdDouble minFloat(std::numeric_limits<float>::min());
 
     SimdDouble       xabs, x2, x4, t, t2, w, w2;
     SimdDouble       PolyAP0, PolyAP1, PolyAQ0, PolyAQ1;
@@ -2022,7 +2543,7 @@ erf(SimdDouble x)
     PolyAQ0  = fma(PolyAQ0, x4, one);
     PolyAQ0  = fma(PolyAQ1, x2, PolyAQ0);
 
-    res_erf  = PolyAP0 * maskzInv(PolyAQ0, mask_erf);
+    res_erf  = PolyAP0 * maskzInv(PolyAQ0, mask_erf && (minFloat <= abs(PolyAQ0) ) );
     res_erf  = CAoffset + res_erf;
     res_erf  = x * res_erf;
 
@@ -2046,12 +2567,12 @@ erf(SimdDouble x)
     PolyBQ0 = fma(PolyBQ1, t, PolyBQ0);
 
     // The denominator polynomial can be zero outside the range
-    res_erfcB = PolyBP0 * maskzInv(PolyBQ0, notmask_erf);
+    res_erfcB = PolyBP0 * maskzInv(PolyBQ0, notmask_erf && (minFloat <= abs(PolyBQ0) ) );
 
     res_erfcB = res_erfcB * xabs;
 
     // Calculate erfc() in range [4.5,inf]
-    w       = maskzInv(xabs, notmask_erf);
+    w       = maskzInv(xabs, notmask_erf && (minFloat <= xabs) );
     w2      = w * w;
 
     PolyCP0  = fma(CCP6, w2, CCP4);
@@ -2071,7 +2592,7 @@ erf(SimdDouble x)
     expmx2   = exp( -x2 );
 
     // The denominator polynomial can be zero outside the range
-    res_erfcC = PolyCP0 * maskzInv(PolyCQ0, notmask_erf);
+    res_erfcC = PolyCP0 * maskzInv(PolyCQ0, notmask_erf && (minFloat <= abs(PolyCQ0) ) );
     res_erfcC = res_erfcC + CCoffset;
     res_erfcC = res_erfcC * w;
 
@@ -2156,6 +2677,7 @@ erfc(SimdDouble x)
 
     const SimdDouble one(1.0);
     const SimdDouble two(2.0);
+    const SimdDouble minFloat(std::numeric_limits<float>::min());
 
     SimdDouble       xabs, x2, x4, t, t2, w, w2;
     SimdDouble       PolyAP0, PolyAP1, PolyAQ0, PolyAQ1;
@@ -2182,7 +2704,7 @@ erfc(SimdDouble x)
     PolyAQ0  = fma(PolyAQ0, x4, one);
     PolyAQ0  = fma(PolyAQ1, x2, PolyAQ0);
 
-    res_erf  = PolyAP0 * maskzInv(PolyAQ0, mask_erf);
+    res_erf  = PolyAP0 * maskzInv(PolyAQ0, mask_erf && (minFloat <= abs(PolyAQ0) ) );
     res_erf  = CAoffset + res_erf;
     res_erf  = x * res_erf;
 
@@ -2206,12 +2728,13 @@ erfc(SimdDouble x)
     PolyBQ0 = fma(PolyBQ1, t, PolyBQ0);
 
     // The denominator polynomial can be zero outside the range
-    res_erfcB = PolyBP0 * maskzInv(PolyBQ0, notmask_erf);
+    res_erfcB = PolyBP0 * maskzInv(PolyBQ0, notmask_erf && (minFloat <= abs(PolyBQ0) ) );
 
     res_erfcB = res_erfcB * xabs;
 
     // Calculate erfc() in range [4.5,inf]
-    w       = maskzInv(xabs, xabs != setZero());
+    // Note that 1/x can only handle single precision!
+    w       = maskzInv(xabs, minFloat <= xabs );
     w2      = w * w;
 
     PolyCP0  = fma(CCP6, w2, CCP4);
@@ -2231,7 +2754,7 @@ erfc(SimdDouble x)
     expmx2   = exp( -x2 );
 
     // The denominator polynomial can be zero outside the range
-    res_erfcC = PolyCP0 * maskzInv(PolyCQ0, notmask_erf);
+    res_erfcC = PolyCP0 * maskzInv(PolyCQ0, notmask_erf && (minFloat <= abs(PolyCQ0) ) );
     res_erfcC = res_erfcC + CCoffset;
     res_erfcC = res_erfcC * w;
 
@@ -2445,6 +2968,7 @@ tan(SimdDouble x)
     const SimdDouble  CT3(0.0539682539781298417636002);
     const SimdDouble  CT2(0.133333333333125941821962);
     const SimdDouble  CT1(0.333333333333334980164153);
+    const SimdDouble  minFloat(std::numeric_limits<float>::min());
 
     SimdDouble        x2, p, y, z;
     SimdDBool         m;
@@ -2467,6 +2991,7 @@ tan(SimdDouble x)
     const SimdDouble  quarter(0.25);
     const SimdDouble  half(0.5);
     const SimdDouble  threequarter(0.75);
+    const SimdDouble  minFloat(std::numeric_limits<float>::min());
     SimdDouble        w, q;
     SimdDBool         m1, m2, m3;
 
@@ -2505,7 +3030,7 @@ tan(SimdDouble x)
     p       = fma(p, x2, CT1);
     p       = fma(x2, p * x, x);
 
-    p       = blend( p, maskzInv(p, m), m);
+    p       = blend( p, maskzInv(p, m && (minFloat < abs(p) ) ), m);
     return p;
 }
 
@@ -2749,6 +3274,7 @@ atan2(SimdDouble y, SimdDouble x)
 {
     const SimdDouble pi(M_PI);
     const SimdDouble halfpi(M_PI/2.0);
+    const SimdDouble minFloat(std::numeric_limits<float>::min());
     SimdDouble       xinv, p, aoffset;
     SimdDBool        mask_xnz, mask_ynz, mask_xlt0, mask_ylt0;
 
@@ -2763,7 +3289,7 @@ atan2(SimdDouble y, SimdDouble x)
     aoffset   = blend(aoffset, pi, mask_xlt0);
     aoffset   = blend(aoffset, -aoffset, mask_ylt0);
 
-    xinv      = maskzInv(x, mask_xnz);
+    xinv      = maskzInv(x, mask_xnz && (minFloat <= abs(x) ) );
     p         = y * xinv;
     p         = atan(p);
     p         = p + aoffset;
@@ -3104,24 +3630,121 @@ sqrtSingleAccuracy(SimdDouble x)
     }
 }
 
-
-/*! \brief SIMD log(x). Double precision SIMD data, single accuracy.
+/*! \brief Cube root for SIMD doubles, single accuracy.
  *
- * \param x Argument, should be >0.
- * \result The natural logarithm of x. Undefined if argument is invalid.
+ * \param x      Argument to calculate cube root of. Can be negative or zero,
+ *               but NaN or Inf values are not supported. Denormal values will
+ *               be treated as 0.0.
+ * \return       Cube root of x.
  */
 static inline SimdDouble gmx_simdcall
-logSingleAccuracy(SimdDouble x)
+cbrtSingleAccuracy(SimdDouble x)
 {
+    const SimdDouble    signBit(GMX_DOUBLE_NEGZERO);
+    const SimdDouble    minDouble(std::numeric_limits<double>::min());
+    // Bias is 1024-1 = 1023, which is divisible by 3, so no need to change it more.
+    // Use the divided value as original constant to avoid division warnings.
+    const std::int32_t  offsetDiv3(341);
+    const SimdDouble    c2(-0.191502161678719066);
+    const SimdDouble    c1(0.697570460207922770);
+    const SimdDouble    c0(0.492659620528969547);
+    const SimdDouble    one(1.0);
+    const SimdDouble    two(2.0);
+    const SimdDouble    three(3.0);
+    const SimdDouble    oneThird(1.0/3.0);
+    const SimdDouble    cbrt2(1.2599210498948731648);
+    const SimdDouble    sqrCbrt2(1.5874010519681994748);
+
+    // See the single precision routines for documentation of the algorithm
+
+    SimdDouble  xSignBit       = x & signBit;         // create bit mask where the sign bit is 1 for x elements < 0
+    SimdDouble  xAbs           = andNot(signBit, x);  // select everthing but the sign bit => abs(x)
+    SimdDBool   xIsNonZero     = (minDouble <= xAbs); // treat denormals as 0
+
+    SimdDInt32  exponent;
+    SimdDouble  y             = frexp(xAbs, &exponent);
+    SimdDouble  z             = fma(fma(y, c2, c1), y, c0);
+    SimdDouble  w             = z*z*z;
+    SimdDouble  nom           = z * fma(two, y, w);
+    SimdDouble  invDenom      = inv(fma(two, w, y));
+
+    SimdDouble  offsetExp      = cvtI2R(exponent) + SimdDouble(static_cast<double>(3*offsetDiv3) + 0.1);
+    SimdDouble  offsetExpDiv3  = trunc(offsetExp * oneThird); // important to truncate here to mimic integer division
+    SimdDInt32  expDiv3        = cvtR2I(offsetExpDiv3 - SimdDouble(static_cast<double>(offsetDiv3)));
+    SimdDouble  remainder      = offsetExp - offsetExpDiv3 * three;
+    SimdDouble  factor         = blend(one, cbrt2, SimdDouble(0.5) < remainder);
+    factor                    = blend(factor, sqrCbrt2, SimdDouble(1.5) < remainder);
+    SimdDouble  fraction       = (nom * invDenom * factor) ^ xSignBit;
+    SimdDouble  result         = selectByMask(ldexp(fraction, expDiv3), xIsNonZero);
+    return result;
+}
+
+/*! \brief Inverse cube root for SIMD doubles, single accuracy.
+ *
+ * \param x      Argument to calculate cube root of. Can be positive or
+ *               negative, but the magnitude cannot be lower than
+ *               the smallest normal number.
+ * \return       Cube root of x. Undefined for values that don't
+ *               fulfill the restriction of abs(x) > minDouble.
+ */
+static inline SimdDouble gmx_simdcall
+invcbrtSingleAccuracy(SimdDouble x)
+{
+    const SimdDouble    signBit(GMX_DOUBLE_NEGZERO);
+    // Bias is 1024-1 = 1023, which is divisible by 3, so no need to change it more.
+    // Use the divided value as original constant to avoid division warnings.
+    const std::int32_t  offsetDiv3(341);
+    const SimdDouble    c2(-0.191502161678719066);
+    const SimdDouble    c1(0.697570460207922770);
+    const SimdDouble    c0(0.492659620528969547);
+    const SimdDouble    one(1.0);
+    const SimdDouble    two(2.0);
+    const SimdDouble    three(3.0);
+    const SimdDouble    oneThird(1.0/3.0);
+    const SimdDouble    invCbrt2(1.0/1.2599210498948731648);
+    const SimdDouble    invSqrCbrt2(1.0F/1.5874010519681994748);
+
+    // See the single precision routines for documentation of the algorithm
+
+    SimdDouble  xSignBit       = x & signBit;        // create bit mask where the sign bit is 1 for x elements < 0
+    SimdDouble  xAbs           = andNot(signBit, x); // select everthing but the sign bit => abs(x)
+
+    SimdDInt32  exponent;
+    SimdDouble  y              = frexp(xAbs, &exponent);
+    SimdDouble  z              = fma(fma(y, c2, c1), y, c0);
+    SimdDouble  w              = z*z*z;
+    SimdDouble  nom            = fma(two, w, y);
+    SimdDouble  invDenom       = inv(z * fma(two, y, w));
+    SimdDouble  offsetExp      = cvtI2R(exponent) + SimdDouble(static_cast<double>(3*offsetDiv3) + 0.1);
+    SimdDouble  offsetExpDiv3  = trunc(offsetExp * oneThird); // important to truncate here to mimic integer division
+    SimdDInt32  expDiv3        = cvtR2I(SimdDouble(static_cast<double>(offsetDiv3)) - offsetExpDiv3);
+    SimdDouble  remainder      = offsetExpDiv3 * three - offsetExp;
+    SimdDouble  factor         = blend(one, invCbrt2, remainder < SimdDouble(-0.5) );
+    factor                     = blend(factor, invSqrCbrt2, remainder < SimdDouble(-1.5));
+    SimdDouble  fraction       = (nom * invDenom * factor) ^ xSignBit;
+    SimdDouble  result         = ldexp(fraction, expDiv3);
+    return result;
+}
+
+/*! \brief SIMD log2(x). Double precision SIMD data, single accuracy.
+ *
+ * \param x Argument, should be >0.
+ * \result The base 2 logarithm of x. Undefined if argument is invalid.
+ */
+static inline SimdDouble gmx_simdcall
+log2SingleAccuracy(SimdDouble x)
+{
+#if GMX_SIMD_HAVE_NATIVE_LOG_DOUBLE
+    return log(x) * SimdDouble(std::log2(std::exp(1.0)));
+#else
     const SimdDouble  one(1.0);
     const SimdDouble  two(2.0);
     const SimdDouble  sqrt2(std::sqrt(2.0));
-    const SimdDouble  corr(0.693147180559945286226764);
-    const SimdDouble  CL9(0.2371599674224853515625);
-    const SimdDouble  CL7(0.285279005765914916992188);
-    const SimdDouble  CL5(0.400005519390106201171875);
-    const SimdDouble  CL3(0.666666567325592041015625);
-    const SimdDouble  CL1(2.0);
+    const SimdDouble  CL9(0.342149508897807708152F);
+    const SimdDouble  CL7(0.411570606888219447939F);
+    const SimdDouble  CL5(0.577085979152320294183F);
+    const SimdDouble  CL3(0.961796550607099898222F);
+    const SimdDouble  CL1(2.885390081777926774009F);
     SimdDouble        fexp, x2, p;
     SimdDInt32        iexp;
     SimdDBool         mask;
@@ -3141,9 +3764,55 @@ logSingleAccuracy(SimdDouble x)
     p     = fma(p, x2, CL5);
     p     = fma(p, x2, CL3);
     p     = fma(p, x2, CL1);
+    p     = fma(p, x, fexp);
+
+    return p;
+#endif
+}
+
+/*! \brief SIMD log(x). Double precision SIMD data, single accuracy.
+ *
+ * \param x Argument, should be >0.
+ * \result The natural logarithm of x. Undefined if argument is invalid.
+ */
+static inline SimdDouble gmx_simdcall
+logSingleAccuracy(SimdDouble x)
+{
+#if GMX_SIMD_HAVE_NATIVE_LOG_DOUBLE
+    return log(x);
+#else
+    const SimdDouble  one(1.0);
+    const SimdDouble  two(2.0);
+    const SimdDouble  invsqrt2(1.0/std::sqrt(2.0));
+    const SimdDouble  corr(0.693147180559945286226764);
+    const SimdDouble  CL9(0.2371599674224853515625);
+    const SimdDouble  CL7(0.285279005765914916992188);
+    const SimdDouble  CL5(0.400005519390106201171875);
+    const SimdDouble  CL3(0.666666567325592041015625);
+    const SimdDouble  CL1(2.0);
+    SimdDouble        fexp, x2, p;
+    SimdDInt32        iexp;
+    SimdDBool         mask;
+
+    x     = frexp(x, &iexp);
+    fexp  = cvtI2R(iexp);
+
+    mask  = x < invsqrt2;
+    // Adjust to non-IEEE format for x<1/sqrt(2): exponent -= 1, mantissa *= 2.0
+    fexp  = fexp - selectByMask(one, mask);
+    x     = x * blend(one, two, mask);
+
+    x     = (x - one) * invSingleAccuracy( x + one );
+    x2    = x * x;
+
+    p     = fma(CL9, x2, CL7);
+    p     = fma(p, x2, CL5);
+    p     = fma(p, x2, CL3);
+    p     = fma(p, x2, CL1);
     p     = fma(p, x, corr * fexp);
 
     return p;
+#endif
 }
 
 /*! \brief SIMD 2^x. Double precision SIMD, single accuracy.
@@ -3154,6 +3823,9 @@ template <MathOptimization opt = MathOptimization::Safe>
 static inline SimdDouble gmx_simdcall
 exp2SingleAccuracy(SimdDouble x)
 {
+#if GMX_SIMD_HAVE_NATIVE_EXP2_DOUBLE
+    return exp2(x);
+#else
     const SimdDouble  CC6(0.0001534581200287996416911311);
     const SimdDouble  CC5(0.001339993121934088894618990);
     const SimdDouble  CC4(0.009618488957115180159497841);
@@ -3201,6 +3873,7 @@ exp2SingleAccuracy(SimdDouble x)
     x         = ldexp<opt>(p, ix);
 
     return x;
+#endif
 }
 
 
@@ -3213,6 +3886,9 @@ template <MathOptimization opt = MathOptimization::Safe>
 static inline SimdDouble gmx_simdcall
 expSingleAccuracy(SimdDouble x)
 {
+#if GMX_SIMD_HAVE_NATIVE_EXP_DOUBLE
+    return exp(x);
+#else
     const SimdDouble  argscale(1.44269504088896341);
     // Lower bound: Clamp args that would lead to an IEEE fp exponent below -1023.
     const SimdDouble  smallArgLimit(-709.0895657128);
@@ -3268,8 +3944,56 @@ expSingleAccuracy(SimdDouble x)
     p         = p + one;
     x         = ldexp<opt>(p, iy);
     return x;
+#endif
 }
 
+/*! \brief SIMD pow(x,y). Double precision SIMD data, single accuracy.
+ *
+ * This returns x^y for SIMD values.
+ *
+ * \tparam opt If this is changed from the default (safe) into the unsafe
+ *             option, there are no guarantees about correct results for x==0.
+ *
+ * \param x Base.
+ *
+ * \param y exponent.
+
+ * \result x^y. Overflowing arguments are likely to either return 0 or inf,
+ *         depending on the underlying implementation. If unsafe optimizations
+ *         are enabled, this is also true for x==0.
+ *
+ * \warning You cannot rely on this implementation returning inf for arguments
+ *          that cause overflow. If you have some very large
+ *          values and need to rely on getting a valid numerical output,
+ *          take the minimum of your variable and the largest valid argument
+ *          before calling this routine.
+ */
+template <MathOptimization opt = MathOptimization::Safe>
+static inline SimdDouble gmx_simdcall
+powSingleAccuracy(SimdDouble x, SimdDouble y)
+{
+    SimdDouble xcorr;
+
+    if (opt == MathOptimization::Safe)
+    {
+        xcorr = max(x, SimdDouble(std::numeric_limits<double>::min()));
+    }
+    else
+    {
+        xcorr = x;
+    }
+
+    SimdDouble result = exp2SingleAccuracy<opt>(y * log2SingleAccuracy(xcorr));
+
+    if (opt == MathOptimization::Safe)
+    {
+        // if x==0 and y>0 we explicitly set the result to 0.0
+        // For any x with y==0, the result will already be 1.0 since we multiply by y (0.0) and call exp().
+        result = blend(result, setZero(), x == setZero() && setZero() < y );
+    }
+
+    return result;
+}
 
 /*! \brief SIMD erf(x). Double precision SIMD data, single accuracy.
  *
@@ -4357,6 +5081,37 @@ sqrtSingleAccuracy(SimdFloat x)
     return sqrt<opt>(x);
 }
 
+/*! \brief Calculate cbrt(x) for SIMD float, always targeting single accuracy.
+ *
+ * \copydetails cbrt(SimdFloat)
+ */
+static inline SimdFloat gmx_simdcall
+cbrtSingleAccuracy(SimdFloat x)
+{
+    return cbrt(x);
+}
+
+/*! \brief Calculate 1/cbrt(x) for SIMD float, always targeting single accuracy.
+ *
+ * \copydetails cbrt(SimdFloat)
+ */
+static inline SimdFloat gmx_simdcall
+invcbrtSingleAccuracy(SimdFloat x)
+{
+    return invcbrt(x);
+}
+
+/*! \brief SIMD float log2(x), only targeting single accuracy. This is the base-2 logarithm.
+ *
+ * \param x Argument, should be >0.
+ * \result The base-2 logarithm of x. Undefined if argument is invalid.
+ */
+static inline SimdFloat gmx_simdcall
+log2SingleAccuracy(SimdFloat x)
+{
+    return log2(x);
+}
+
 /*! \brief SIMD float log(x), only targeting single accuracy. This is the natural logarithm.
  *
  * \param x Argument, should be >0.
@@ -4390,6 +5145,16 @@ expSingleAccuracy(SimdFloat x)
     return exp<opt>(x);
 }
 
+/*! \brief SIMD pow(x,y), only targeting single accuracy.
+ *
+ * \copydetails pow(SimdFloat)
+ */
+template <MathOptimization opt = MathOptimization::Safe>
+static inline SimdFloat gmx_simdcall
+powSingleAccuracy(SimdFloat x, SimdFloat y)
+{
+    return pow<opt>(x, y);
+}
 
 /*! \brief SIMD float erf(x), only targeting single accuracy.
  *

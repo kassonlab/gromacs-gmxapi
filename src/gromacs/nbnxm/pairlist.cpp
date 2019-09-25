@@ -2243,7 +2243,7 @@ static void clear_pairlist(NbnxnPairlistGpu *nbl)
     nbl->nci_tot = 0;
 }
 
-/* Clears a group scheme pair list */
+/* Clears an atom-atom-style pair list */
 static void clear_pairlist_fep(t_nblist *nl)
 {
     nl->nri = 0;
@@ -4041,6 +4041,11 @@ PairlistSet::constructPairlists(const Nbnxm::GridSet          &gridSet,
 
     for (int zi = 0; zi < nzi; zi++)
     {
+        /* With TPI we do grid 1, the inserted molecule, versus grid 0, the rest */
+        if (gridSet.domainSetup().doTestParticleInsertion)
+        {
+            zi = 1;
+        }
         const Grid &iGrid = gridSet.grids()[zi];
 
         int                 zj0;

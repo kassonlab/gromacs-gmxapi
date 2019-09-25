@@ -51,6 +51,7 @@
 namespace gmx
 {
 
+class EnergyCalculationFrequencyErrors;
 class IndexGroupsAndNames;
 class KeyValueTreeObject;
 class KeyValueTreeBuilder;
@@ -101,6 +102,9 @@ class DensityFittingOptions final : public IMdpOptionProvider
         //! Return the file name of the reference density
         const std::string &referenceDensityFileName() const;
 
+        //! Check if input parameters are consistent with other simulation parameters
+        void checkEnergyCaluclationFrequency(EnergyCalculationFrequencyErrors * energyCalculationFrequencyErrors) const;
+
     private:
         const std::string c_activeTag_ = "active";
 
@@ -112,7 +116,7 @@ class DensityFittingOptions final : public IMdpOptionProvider
 
         const std::string c_similarityMeasureTag_ = "similarity-measure";
 
-        const std::string c_amplitudeMethodTag_ = "amplitude-method";
+        const std::string c_amplitudeMethodTag_ = "atom-spreading-weight";
 
         const std::string c_forceConstantTag_ = "force-constant";
 

@@ -57,6 +57,7 @@ struct t_mdatoms;
 namespace gmx
 {
 enum class ConstraintVariable;
+class FreeEnergyPerturbationElement;
 
 //! \addtogroup module_modularsimulator
 //! \{
@@ -100,22 +101,24 @@ enum class ConstraintVariable;
 class StatePropagatorData final :
     public                ISimulatorElement,
     public                ITrajectoryWriterClient,
-    public                ITrajectorySignallerClient
+    public                ITrajectorySignallerClient,
+    public                ICheckpointHelperClient
 {
     public:
         //! Constructor
         StatePropagatorData(
-            int               numAtoms,
-            FILE             *fplog,
-            const t_commrec  *cr,
-            t_state          *globalState,
-            int               nstxout,
-            int               nstvout,
-            int               nstfout,
-            int               nstxout_compressed,
-            bool              useGPU,
-            const t_inputrec *inputrec,
-            const t_mdatoms  *mdatoms);
+            int                             numAtoms,
+            FILE                           *fplog,
+            const t_commrec                *cr,
+            t_state                        *globalState,
+            int                             nstxout,
+            int                             nstvout,
+            int                             nstfout,
+            int                             nstxout_compressed,
+            bool                            useGPU,
+            FreeEnergyPerturbationElement *freeEnergyPerturbationElement,
+            const t_inputrec              *inputrec,
+            const t_mdatoms               *mdatoms);
 
         // Allow access to state
         //! Get write access to position vector
@@ -180,7 +183,6 @@ class StatePropagatorData final :
         // (doxygen doesn't like these)
         // Classes which need access to legacy state
         friend class DomDecHelper;
-        friend class PmeLoadBalanceHelper;
         //! @endcond
 
     private:
@@ -196,21 +198,21 @@ class StatePropagatorData final :
         int nstxout_compressed_;
 
         //! The local number of atoms
-        int                    localNAtoms_;
+        int                        localNAtoms_;
         //! The position vector
-        PaddedHostVector<RVec> x_;
+        PaddedHostVector<RVec>     x_;
         //! The position vector of the previous step
-        PaddedVector<RVec>     previousX_;
+        PaddedHostVector<RVec>     previousX_;
         //! The velocity vector
-        PaddedVector<RVec>     v_;
+        PaddedHostVector<RVec>     v_;
         //! The force vector
-        PaddedVector<RVec>     f_;
+        PaddedHostVector<RVec>     f_;
         //! The box matrix
-        matrix                 box_;
+        matrix                     box_;
         //! The box matrix of the previous step
-        matrix                 previousBox_;
+        matrix                     previousBox_;
         //! The DD partitioning count for legacy t_state compatibility
-        int                    ddpCount_;
+        int                        ddpCount_;
 
         //! Move x_ to previousX_
         void copyPosition();
@@ -225,7 +227,7 @@ class StatePropagatorData final :
         //! Get a pointer to the global state
         t_state *globalState();
         //! Get a force pointer
-        PaddedVector<gmx::RVec> *forcePointer();
+        PaddedHostVector<gmx::RVec> *forcePointer();
 
         //! Pointer to keep a backup of the state for later writeout
         std::unique_ptr<t_state> localStateBackup_;
@@ -242,15 +244,21 @@ class StatePropagatorData final :
         ITrajectoryWriterCallbackPtr
         registerTrajectoryWriterCallback(TrajectoryEvent event) override;
 
+        //! ICheckpointHelperClient implementation
+        void writeCheckpoint(t_state *localState, t_state *globalState) override;
+
         //! Callback writing the state to file
         void write(gmx_mdoutf *outf, Step step, Time time);
 
         //! Whether we're doing VV and need to reset velocities after the first half step
-        bool               vvResetVelocities_;
+        bool                   vvResetVelocities_;
         //! Velocities backup for VV
-        PaddedVector<RVec> velocityBackup_;
+        PaddedHostVector<RVec> velocityBackup_;
         //! Function resetting the velocities
         void resetVelocities();
+
+        //! Pointer to the free energy perturbation element (for trajectory writing only)
+        FreeEnergyPerturbationElement *freeEnergyPerturbationElement_;
 
         // Access to ISimulator data
         //! Handles logging.

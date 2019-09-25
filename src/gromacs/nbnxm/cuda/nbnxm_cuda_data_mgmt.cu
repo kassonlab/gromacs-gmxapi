@@ -51,6 +51,7 @@
 // TODO Remove this comment when the above order issue is resolved
 #include "gromacs/gpu_utils/cudautils.cuh"
 #include "gromacs/gpu_utils/gpu_utils.h"
+#include "gromacs/gpu_utils/gpueventsynchronizer.cuh"
 #include "gromacs/gpu_utils/pmalloc_cuda.h"
 #include "gromacs/hardware/gpu_hw_info.h"
 #include "gromacs/math/vectypes.h"
@@ -154,8 +155,9 @@ static void init_atomdata_first(cu_atomdata_t *ad, int ntypes)
 
 /*! Selects the Ewald kernel type, analytical on SM 3.0 and later, tabulated on
     earlier GPUs, single or twin cut-off. */
-static int pick_ewald_kernel_type(bool                     bTwinCut)
+static int pick_ewald_kernel_type(const interaction_const_t &ic)
 {
+    bool bTwinCut = (ic.rcoulomb != ic.rvdw);
     bool bUseAnalyticalEwald, bForceAnalyticalEwald, bForceTabulatedEwald;
     int  kernel_type;
 
@@ -308,8 +310,7 @@ static void init_nbparam(cu_nbparam_t                   *nbp,
     }
     else if ((EEL_PME(ic->eeltype) || ic->eeltype == eelEWALD))
     {
-        /* Initially rcoulomb == rvdw, so it's surely not twin cut-off. */
-        nbp->eeltype = pick_ewald_kernel_type(false);
+        nbp->eeltype = pick_ewald_kernel_type(*ic);
     }
     else
     {
@@ -353,7 +354,7 @@ void gpu_pme_loadbal_update_param(const nonbonded_verlet_t    *nbv,
 
     set_cutoff_parameters(nbp, ic, nbv->pairlistSets().params());
 
-    nbp->eeltype        = pick_ewald_kernel_type(ic->rcoulomb != ic->rvdw);
+    nbp->eeltype        = pick_ewald_kernel_type(*ic);
 
     GMX_RELEASE_ASSERT(ic->coulombEwaldTables, "Need valid Coulomb Ewald correction tables");
     init_ewald_coulomb_force_table(*ic->coulombEwaldTables, nbp);
@@ -480,6 +481,9 @@ gpu_init(const gmx_device_info_t   *deviceInfo,
     CU_RET_ERR(stat, "cudaEventCreate on nonlocal_done failed");
     stat = cudaEventCreateWithFlags(&nb->misc_ops_and_local_H2D_done, cudaEventDisableTiming);
     CU_RET_ERR(stat, "cudaEventCreate on misc_ops_and_local_H2D_done failed");
+
+    nb->xAvailableOnDevice   = new GpuEventSynchronizer();
+    nb->xNonLocalCopyD2HDone = new GpuEventSynchronizer();
 
     /* WARNING: CUDA timings are incorrect with multiple streams.
      *          This is the main reason why they are disabled by default.
@@ -899,6 +903,7 @@ void nbnxn_gpu_init_x_to_nbat_x(const Nbnxm::GridSet            &gridSet,
         const int           atomIndicesSize   = gridSet.atomIndices().size();
         const int          *cxy_na            = grid.cxy_na().data();
         const int          *cxy_ind           = grid.cxy_ind().data();
+        // TODO Should be done once per gridset
         const int           numRealAtomsTotal = gridSet.numRealAtomsTotal();
 
         reallocateDeviceBuffer(&gpu_nbv->xrvec, numRealAtomsTotal, &gpu_nbv->natoms, &gpu_nbv->natoms_alloc, nullptr);

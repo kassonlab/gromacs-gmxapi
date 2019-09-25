@@ -238,8 +238,8 @@ static void process_interaction_modifier(int *eintmod)
     }
 }
 
-void check_ir(const char *mdparin, t_inputrec *ir, t_gromppopts *opts,
-              warninp_t wi)
+void check_ir(const char *mdparin, const gmx::MdModulesNotifier &mdModulesNotifier,
+              t_inputrec *ir, t_gromppopts *opts, warninp_t wi)
 /* Check internal consistency.
  * NOTE: index groups are not set here yet, don't check things
  * like temperature coupling group options here, but in triple_check
@@ -368,7 +368,13 @@ void check_ir(const char *mdparin, t_inputrec *ir, t_gromppopts *opts,
 
         rc_max = std::max(ir->rvdw, ir->rcoulomb);
 
-        if (ir->verletbuf_tol <= 0)
+        if (EI_TPI(ir->eI))
+        {
+            /* With TPI we set the pairlist cut-off later using the radius of the insterted molecule */
+            ir->verletbuf_tol = 0;
+            ir->rlist         = rc_max;
+        }
+        else if (ir->verletbuf_tol <= 0)
         {
             if (ir->verletbuf_tol == 0)
             {
@@ -521,6 +527,17 @@ void check_ir(const char *mdparin, t_inputrec *ir, t_gromppopts *opts,
             check_nst("nstcalcenergy", ir->nstcalcenergy,
                       "nstenergy", &ir->nstenergy, wi);
         }
+
+        // Inquire all MdModules, if their parameters match with the energy
+        // calculation frequency
+        gmx::EnergyCalculationFrequencyErrors energyCalculationFrequencyErrors(ir->nstcalcenergy);
+        mdModulesNotifier.notifier_.notify(&energyCalculationFrequencyErrors);
+
+        // Emit all errors from the energy calculation frequency checks
+        for (const std::string &energyFrequencyErrorMessage : energyCalculationFrequencyErrors.errorMessages())
+        {
+            warning_error(wi, energyFrequencyErrorMessage);
+        }
     }
 
     if (ir->nsteps == 0 && !ir->bContinuation)
@@ -540,14 +557,10 @@ void check_ir(const char *mdparin, t_inputrec *ir, t_gromppopts *opts,
     {
         sprintf(err_buf, "TPI only works with pbc = %s", epbc_names[epbcXYZ]);
         CHECK(ir->ePBC != epbcXYZ);
-        sprintf(err_buf, "TPI only works with ns = %s", ens_names[ensGRID]);
-        CHECK(ir->ns_type != ensGRID);
         sprintf(err_buf, "with TPI nstlist should be larger than zero");
         CHECK(ir->nstlist <= 0);
         sprintf(err_buf, "TPI does not work with full electrostatics other than PME");
         CHECK(EEL_FULL(ir->coulombtype) && !EEL_PME(ir->coulombtype));
-        sprintf(err_buf, "TPI does not work (yet) with the Verlet cut-off scheme");
-        CHECK(ir->cutoff_scheme == ecutsVERLET);
     }
 
     /* SHAKE / LINCS */
@@ -1012,17 +1025,7 @@ void check_ir(const char *mdparin, t_inputrec *ir, t_gromppopts *opts,
         }
     }
 
-    if (EI_VV(ir->eI))
-    {
-        if (ir->epc > epcNO)
-        {
-            if ((ir->epc != epcBERENDSEN) && (ir->epc != epcMTTK))
-            {
-                warning_error(wi, "for md-vv and md-vv-avek, can only use Berendsen and Martyna-Tuckerman-Tobias-Klein (MTTK) equations for pressure control; MTTK is equivalent to Parrinello-Rahman.");
-            }
-        }
-    }
-    else
+    if (!EI_VV(ir->eI))
     {
         if (ir->epc == epcMTTK)
         {
@@ -1188,18 +1191,14 @@ void check_ir(const char *mdparin, t_inputrec *ir, t_gromppopts *opts,
     }
     if ((ir->epsilon_surface != 0) && EEL_FULL(ir->coulombtype))
     {
-        if (ir->cutoff_scheme == ecutsVERLET)
-        {
-            sprintf(warn_buf, "Since molecules/charge groups are broken using the Verlet scheme, you can not use a dipole correction to the %s electrostatics.",
-                    eel_names[ir->coulombtype]);
-            warning(wi, warn_buf);
-        }
-        else
-        {
-            sprintf(warn_buf, "Dipole corrections to %s electrostatics only work if all charge groups that can cross PBC boundaries are dipoles. If this is not the case set epsilon_surface to 0",
-                    eel_names[ir->coulombtype]);
-            warning_note(wi, warn_buf);
-        }
+        sprintf(err_buf, "Cannot have periodic molecules with epsilon_surface > 0");
+        CHECK(ir->bPeriodicMols);
+        sprintf(warn_buf, "With epsilon_surface > 0 all molecules should be neutral.");
+        warning_note(wi, warn_buf);
+        sprintf(warn_buf,
+                "With epsilon_surface > 0 you can only use domain decomposition "
+                "when there are only small molecules with all bonds constrained (mdrun will check for this).");
+        warning_note(wi, warn_buf);
     }
 
     if (ir_vdw_switched(ir))
@@ -1753,6 +1752,7 @@ void get_ir(const char *mdparin, const char *mdparout,
     replace_inp_entry(inp, "gb-dielectric-offset", nullptr);
     replace_inp_entry(inp, "sa-algorithm", nullptr);
     replace_inp_entry(inp, "sa-surface-tension", nullptr);
+    replace_inp_entry(inp, "ns-type", nullptr);
 
     /* replace the following commands with the clearer new versions*/
     replace_inp_entry(inp, "unconstrained-start", "continuation");
@@ -1834,8 +1834,6 @@ void get_ir(const char *mdparin, const char *mdparout,
     ir->cutoff_scheme = get_eeenum(&inp, "cutoff-scheme",    ecutscheme_names, wi);
     printStringNoNewline(&inp, "nblist update frequency");
     ir->nstlist = get_eint(&inp, "nstlist",    10, wi);
-    printStringNoNewline(&inp, "ns algorithm (simple or grid)");
-    ir->ns_type = get_eeenum(&inp, "ns-type",    ens_names, wi);
     printStringNoNewline(&inp, "Periodic boundary conditions: xyz, no, xy");
     ir->ePBC          = get_eeenum(&inp, "pbc",       epbc_names, wi);
     ir->bPeriodicMols = get_eeenum(&inp, "periodic-molecules", yesno_names, wi) != 0;
@@ -4159,7 +4157,6 @@ void double_check(t_inputrec *ir, matrix box,
                   bool bHasAnyConstraints,
                   warninp_t wi)
 {
-    real        min_size;
     char        warn_buf[STRLEN];
     const char *ptr;
 
@@ -4218,26 +4215,10 @@ void double_check(t_inputrec *ir, matrix box,
         {
             warning(wi, "With nstlist=0 atoms are only put into the box at step 0, therefore drifting atoms might cause the simulation to crash.");
         }
-        if (ir->ns_type == ensGRID)
+        if (gmx::square(ir->rlist) >= max_cutoff2(ir->ePBC, box))
         {
-            if (gmx::square(ir->rlist) >= max_cutoff2(ir->ePBC, box))
-            {
-                sprintf(warn_buf, "ERROR: The cut-off length is longer than half the shortest box vector or longer than the smallest box diagonal element. Increase the box size or decrease rlist.\n");
-                warning_error(wi, warn_buf);
-            }
-        }
-        else
-        {
-            min_size = std::min(box[XX][XX], std::min(box[YY][YY], box[ZZ][ZZ]));
-            if (2*ir->rlist >= min_size)
-            {
-                sprintf(warn_buf, "ERROR: One of the box lengths is smaller than twice the cut-off length. Increase the box size or decrease rlist.");
-                warning_error(wi, warn_buf);
-                if (TRICLINIC(box))
-                {
-                    fprintf(stderr, "Grid search might allow larger cut-off's than simple search with triclinic boxes.");
-                }
-            }
+            sprintf(warn_buf, "ERROR: The cut-off length is longer than half the shortest box vector or longer than the smallest box diagonal element. Increase the box size or decrease rlist.\n");
+            warning_error(wi, warn_buf);
         }
     }
 }

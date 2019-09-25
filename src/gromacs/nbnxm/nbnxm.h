@@ -100,6 +100,7 @@
 
 #include <memory>
 
+#include "gromacs/gpu_utils/devicebuffer_datatype.h"
 #include "gromacs/math/vectypes.h"
 #include "gromacs/utility/arrayref.h"
 #include "gromacs/utility/enumerationhelpers.h"
@@ -251,12 +252,54 @@ struct nonbonded_verlet_t
         void setAtomProperties(const t_mdatoms          &mdatoms,
                                gmx::ArrayRef<const int>  atomInfo);
 
-        //! Updates the coordinates in Nbnxm for the given locality
-        void setCoordinates(Nbnxm::AtomLocality             locality,
-                            bool                            fillLocal,
-                            gmx::ArrayRef<const gmx::RVec>  x,
-                            BufferOpsUseGpu                 useGpu,
-                            void                           *xPmeDevicePtr);
+        /*!\brief Convert the coordinates to NBNXM format for the given locality.
+         *
+         * The API function for the transformation of the coordinates from one layout to another.
+         *
+         * \param[in] locality     Whether coordinates for local or non-local atoms should be transformed.
+         * \param[in] fillLocal    If the coordinates for filler particles should be zeroed.
+         * \param[in] coordinates  Coordinates in plain rvec format to be transformed.
+         */
+        void convertCoordinates(Nbnxm::AtomLocality             locality,
+                                bool                            fillLocal,
+                                gmx::ArrayRef<const gmx::RVec>  coordinates);
+
+        /*!\brief Copy coordinates to the GPU memory.
+         *
+         * This function uses the internal NBNXM GPU pointer to copy coordinates in the plain rvec format
+         * into the GPU memory.
+         *
+         * \todo This function will be removed in future patches as the management of the device buffers
+         *       is moved to a separate object.
+         *
+         * \param[in] locality         Whether coordinates for local or non-local atoms should be transformed.
+         * \param[in] fillLocal        If the coordinates for filler particles should be zeroed.
+         * \param[in] coordinatesHost  Coordinates in plain rvec format to be transformed.
+         */
+        void copyCoordinatesToGpu(Nbnxm::AtomLocality             locality,
+                                  bool                            fillLocal,
+                                  gmx::ArrayRef<const gmx::RVec>  coordinatesHost);
+
+        /*!\brief Getter for the GPU coordinates buffer.
+         *
+         * \todo This function will be removed in future patches as the management of the device buffers
+         *       is moved to a separate object.
+         *
+         * \returns The coordinates buffer in plain rvec format.
+         */
+        DeviceBuffer<float> getDeviceCoordinates();
+
+        /*!\brief Convert the coordinates to NBNXM format on the GPU for the given locality
+         *
+         * The API function for the transformation of the coordinates from one layout to another in the GPU memory.
+         *
+         * \param[in] locality           Whether coordinates for local or non-local atoms should be transformed.
+         * \param[in] fillLocal          If the coordinates for filler particles should be zeroed.
+         * \param[in] coordinatesDevice  GPU coordinates buffer in plain rvec format to be transformed.
+         */
+        void convertCoordinatesGpu(Nbnxm::AtomLocality             locality,
+                                   bool                            fillLocal,
+                                   DeviceBuffer<float>             coordinatesDevice);
 
         //! Init for GPU version of setup coordinates in Nbnxm
         void atomdata_init_copy_x_to_nbat_x_gpu();
@@ -286,7 +329,7 @@ struct nonbonded_verlet_t
         //! \brief Executes the non-bonded kernel of the GPU or launches it on the GPU
         void dispatchNonbondedKernel(Nbnxm::InteractionLocality  iLocality,
                                      const interaction_const_t  &ic,
-                                     const gmx::ForceFlags      &forceFlags,
+                                     const gmx::StepWorkload    &stepWork,
                                      int                         clearF,
                                      const t_forcerec           &fr,
                                      gmx_enerdata_t             *enerd,
@@ -301,7 +344,7 @@ struct nonbonded_verlet_t
                                       t_lambda                   *fepvals,
                                       real                       *lambda,
                                       gmx_enerdata_t             *enerd,
-                                      const gmx::ForceFlags      &forceFlags,
+                                      const gmx::StepWorkload    &stepWork,
                                       t_nrnb                     *nrnb);
 
         /*! \brief Add the forces stored in nbat to f, zeros the forces in nbat
@@ -311,22 +354,30 @@ struct nonbonded_verlet_t
         void atomdata_add_nbat_f_to_f(Nbnxm::AtomLocality                 locality,
                                       gmx::ArrayRef<gmx::RVec>            force);
 
-        /*! \brief Add the forces stored in nbat to f, allowing for possibility that GPU buffer ops are active
-         * \param [in] locality         Local or non-local
-         * \param [inout] force         Force to be added to
-         * \param [in] fPme             Force from PME calculation
-         * \param [in] pmeForcesReady   Event triggered when PME force calculation has completed
-         * \param [in] useGpu           Whether GPU buffer ops are active
-         * \param [in] useGpuFPmeReduction   Whether PME force reduction is on GPU
-         * \param [in] accumulateForce  Whether force should be accumulated or stored
+        /*! \brief Add the forces stored in nbat to total force using GPU buffer opse
+         *
+         * \param [in]     locality             Local or non-local
+         * \param [in,out] totalForcesDevice    Force to be added to
+         * \param [in]     forcesPmeDevice      Device buffer with PME forces
+         * \param [in]     pmeForcesReady       Event triggered when PME force calculation has completed
+         * \param [in]     useGpuFPmeReduction  Whether PME forces should be added
+         * \param [in]     accumulateForce      If the total force buffer already contains data
          */
-        void atomdata_add_nbat_f_to_f(Nbnxm::AtomLocality                 locality,
-                                      gmx::ArrayRef<gmx::RVec>            force,
-                                      void                               *fPme,
-                                      GpuEventSynchronizer               *pmeForcesReady,
-                                      BufferOpsUseGpu                     useGpu,
-                                      bool                                useGpuFPmeReduction,
-                                      bool                                accumulateForce);
+        void atomdata_add_nbat_f_to_f_gpu(Nbnxm::AtomLocality                 locality,
+                                          DeviceBuffer<float>                 totalForcesDevice,
+                                          void                               *forcesPmeDevice,
+                                          GpuEventSynchronizer               *pmeForcesReady,
+                                          bool                                useGpuFPmeReduction,
+                                          bool                                accumulateForce);
+
+        /*!\brief Getter for the GPU force buffer.
+         *
+         * \todo This function will be removed in future patches as the management of the device buffers
+         *       is moved to a separate object.
+         *
+         * \returns The force buffer in plain rvec format.
+         */
+        DeviceBuffer<float> getDeviceForces();
 
         /*! \brief Outer body of function to perform initialization for F buffer operations on GPU. */
         void atomdata_init_add_nbat_f_to_f_gpu();
@@ -337,11 +388,29 @@ struct nonbonded_verlet_t
         /*! \brief D2H transfer of force buffer*/
         void launch_copy_f_from_gpu(rvec *f, Nbnxm::AtomLocality locality);
 
+        /*! \brief D2H transfer of coordinate buffer*/
+        void launch_copy_x_from_gpu(rvec *f, Nbnxm::AtomLocality locality);
+
         /*! \brief Wait for GPU force reduction task and D2H transfer of its results to complete
          *
          * FIXME: need more details: when should be called / after which operation, etc.
          */
         void wait_for_gpu_force_reduction(Nbnxm::AtomLocality locality);
+
+        /*! \brief return GPU pointer to x in rvec format */
+        void* get_gpu_xrvec();
+
+        /*! \brief return pointer to GPU event recorded when coordinates have been copied to device */
+        void* get_x_on_device_event();
+
+        /*! \brief Wait for non-local copy of coordinate buffer from device to host */
+        void wait_nonlocal_x_copy_D2H_done();
+
+        /*! \brief return GPU pointer to f in rvec format */
+        void* get_gpu_frvec();
+
+        /*! \brief Ensure local stream waits for non-local stream */
+        void stream_local_wait_for_nonlocal();
 
         //! Return the kernel setup
         const Nbnxm::KernelSetup &kernelSetup() const

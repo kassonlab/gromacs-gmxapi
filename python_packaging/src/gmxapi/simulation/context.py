@@ -380,11 +380,11 @@ def _get_ensemble_communicator(communicator, ensemble_size):
 
     # For trivial cases, don't bother trying to use MPI
     # Note: all ranks in communicator must agree on the size of the work!
-    # Note: If running with a Mock session communicator in an MPI session (user error)
+    # Note: If running with a dummy session communicator in an MPI session (user error)
     # every rank will think it is the only rank and will try to perform the
     # same work.
     if communicator.Get_size() <= 1 or ensemble_size <= 1:
-        message = "Getting TrivialEnsembleCommunicator for ensemble of size {}".format((ensemble_size))
+        message = "Getting trivial ensemble communicator for ensemble of size {}".format((ensemble_size))
         message += " for session rank {} in session communicator of size {}".format(
             communicator.Get_rank(),
             communicator.Get_size())

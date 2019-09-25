@@ -55,20 +55,23 @@
 #include "gromacs/mdtypes/state.h"
 #include "gromacs/topology/atoms.h"
 
+#include "freeenergyperturbationelement.h"
+
 namespace gmx
 {
 StatePropagatorData::StatePropagatorData(
-        int               numAtoms,
-        FILE             *fplog,
-        const t_commrec  *cr,
-        t_state          *globalState,
-        int               nstxout,
-        int               nstvout,
-        int               nstfout,
-        int               nstxout_compressed,
-        bool              useGPU,
-        const t_inputrec *inputrec,
-        const t_mdatoms  *mdatoms) :
+        int                            numAtoms,
+        FILE                          *fplog,
+        const t_commrec               *cr,
+        t_state                       *globalState,
+        int                            nstxout,
+        int                            nstvout,
+        int                            nstfout,
+        int                            nstxout_compressed,
+        bool                           useGPU,
+        FreeEnergyPerturbationElement *freeEnergyPerturbationElement,
+        const t_inputrec              *inputrec,
+        const t_mdatoms               *mdatoms) :
     totalNumAtoms_(numAtoms),
     nstxout_(nstxout),
     nstvout_(nstvout),
@@ -78,6 +81,7 @@ StatePropagatorData::StatePropagatorData(
     ddpCount_(0),
     writeOutStep_(-1),
     vvResetVelocities_(false),
+    freeEnergyPerturbationElement_(freeEnergyPerturbationElement),
     fplog_(fplog),
     cr_(cr),
     globalState_(globalState)
@@ -92,10 +96,6 @@ StatePropagatorData::StatePropagatorData(
     if (DOMAINDECOMP(cr))
     {
         auto localState = std::make_unique<t_state>();
-        if (useGPU)
-        {
-            changePinningPolicy(&x_, gmx::PinningPolicy::PinnedIfSupported);
-        }
         dd_init_local_state(cr->dd, globalState, localState.get());
         stateHasVelocities = static_cast<unsigned int>(localState->flags) & (1u << estV);
         setLocalState(std::move(localState));
@@ -110,7 +110,12 @@ StatePropagatorData::StatePropagatorData(
         copy_mat(globalState->box, box_);
         stateHasVelocities = static_cast<unsigned int>(globalState->flags) & (1u << estV);
         previousX_.resizeWithPadding(localNAtoms_);
+        ddpCount_ = globalState->ddp_count;
         copyPosition();
+    }
+    if (useGPU)
+    {
+        changePinningPolicy(&x_, gmx::PinningPolicy::PinnedIfSupported);
     }
 
     if (!inputrec->bContinuation)
@@ -138,11 +143,10 @@ StatePropagatorData::StatePropagatorData(
                 }
             }
         }
-    }
-
-    if (inputrec->eI == eiVV)
-    {
-        vvResetVelocities_ = true;
+        if (inputrec->eI == eiVV)
+        {
+            vvResetVelocities_ = true;
+        }
     }
 }
 
@@ -214,7 +218,7 @@ int StatePropagatorData::localNumAtoms()
 std::unique_ptr<t_state> StatePropagatorData::localState()
 {
     auto state = std::make_unique<t_state>();
-    state->flags = estX | estV | estBOX;
+    state->flags = (1u << estX) | (1u << estV) | (1u << estBOX);
     state_change_natoms(state.get(), localNAtoms_);
     state->x = x_;
     state->v = v_;
@@ -234,6 +238,18 @@ void StatePropagatorData::setLocalState(std::unique_ptr<t_state> state)
     copy_mat(state->box, box_);
     copyPosition();
     ddpCount_ = state->ddp_count;
+
+    if (vvResetVelocities_)
+    {
+        /* DomDec runs twice early in the simulation, once at setup time, and once before the first step.
+         * Every time DD runs, it sets a new local state here. We are saving a backup during setup time
+         * (ok for non-DD cases), so we need to update our backup to the DD state before the first step
+         * here to avoid resetting to an earlier DD state. This is done before any propagation that needs
+         * to be reset, so it's not very safe but correct for now.
+         * TODO: Get rid of this once input is assumed to be at half steps
+         */
+        velocityBackup_ = v_;
+    }
 }
 
 t_state* StatePropagatorData::globalState()
@@ -241,7 +257,7 @@ t_state* StatePropagatorData::globalState()
     return globalState_;
 }
 
-PaddedVector<RVec>* StatePropagatorData::forcePointer()
+PaddedHostVector<RVec>* StatePropagatorData::forcePointer()
 {
     return &f_;
 }
@@ -304,6 +320,16 @@ void StatePropagatorData::saveState()
             !localStateBackup_,
             "Save state called again before previous state was written.");
     localStateBackup_ = localState();
+    if (freeEnergyPerturbationElement_)
+    {
+        localStateBackup_->fep_state = freeEnergyPerturbationElement_->currentFEPState();
+        for (unsigned long i = 0; i < localStateBackup_->lambda.size(); ++i)
+        {
+            localStateBackup_->lambda[i] =
+                freeEnergyPerturbationElement_->constLambdaView()[i];
+        }
+        localStateBackup_->flags |= (1u<<estLAMBDA) | (1u<<estFEPSTATE);
+    }
 }
 
 SignallerCallbackPtr
@@ -385,6 +411,9 @@ void StatePropagatorData::elementSetup()
 {
     if (vvResetVelocities_)
     {
+        // MD-VV does the first velocity half-step only to calculate the constraint virial,
+        // then resets the velocities since the input is assumed to be positions and velocities
+        // at full time step. TODO: Change this to have input at half time steps.
         velocityBackup_ = v_;
     }
 }
@@ -392,6 +421,16 @@ void StatePropagatorData::elementSetup()
 void StatePropagatorData::resetVelocities()
 {
     v_ = velocityBackup_;
+}
+
+void StatePropagatorData::writeCheckpoint(t_state *localState, t_state gmx_unused *globalState)
+{
+    state_change_natoms(localState, localNAtoms_);
+    localState->x = x_;
+    localState->v = v_;
+    copy_mat(box_, localState->box);
+    localState->ddp_count = ddpCount_;
+    localState->flags    |= (1u << estX) | (1u << estV) | (1u << estBOX);
 }
 
 }  // namespace gmx

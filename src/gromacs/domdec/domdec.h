@@ -102,9 +102,6 @@ struct MdrunOptions;
  */
 int ddglatnr(const gmx_domdec_t *dd, int i);
 
-/*! \brief Return a block struct for the charge groups of the whole system */
-t_block *dd_charge_groups_global(struct gmx_domdec_t *dd);
-
 /*! \brief Returns a list of update group partitioning for each molecule type or empty when update groups are not used */
 gmx::ArrayRef<const gmx::RangePartitioning> getUpdateGroupingPerMoleculetype(const gmx_domdec_t &dd);
 
@@ -116,10 +113,6 @@ void dd_store_state(struct gmx_domdec_t *dd, t_state *state);
 
 /*! \brief Returns a pointer to the gmx_domdec_zones_t struct */
 struct gmx_domdec_zones_t *domdec_zones(struct gmx_domdec_t *dd);
-
-/*! \brief Sets the j-charge-group range for i-charge-group \p icg */
-void dd_get_ns_ranges(const gmx_domdec_t *dd, int icg,
-                      int *jcg0, int *jcg1, ivec shift0, ivec shift1);
 
 /*! \brief Returns the number of home atoms */
 int dd_numHomeAtoms(const gmx_domdec_t &dd);
@@ -162,11 +155,19 @@ init_domain_decomposition(const gmx::MDLogger            &mdlog,
                           t_commrec                      *cr,
                           const gmx::DomdecOptions       &options,
                           const gmx::MdrunOptions        &mdrunOptions,
+                          bool                            prefer1DAnd1Pulse,
                           const gmx_mtop_t               *mtop,
                           const t_inputrec               *ir,
                           const matrix                    box,
                           gmx::ArrayRef<const gmx::RVec>  xGlobal,
                           gmx::LocalAtomSetManager       *atomSets);
+
+/*! \brief Return whether the DD has a single dimension with a single pulse
+ *
+ * The GPU halo exchange code requires a 1D single-pulse DD, and its
+ * setup code can use the returned value to understand what it should
+ * do. */
+bool is1DAnd1PulseDD(const gmx_domdec_t &dd);
 
 /*! \brief Initialize data structures for bonded interactions */
 void dd_init_bondeds(FILE              *fplog,
@@ -176,6 +177,9 @@ void dd_init_bondeds(FILE              *fplog,
                      const t_inputrec  *ir,
                      gmx_bool           bBCheck,
                      cginfo_mb_t       *cginfo_mb);
+
+/*! \brief Returns whether molecules are always whole, i.e. not broken by PBC */
+bool dd_moleculesAreAlwaysWhole(const gmx_domdec_t &dd);
 
 /*! \brief Returns if we need to do pbc for calculating bonded interactions */
 gmx_bool dd_bonded_molpbc(const gmx_domdec_t *dd, int ePBC);
@@ -202,7 +206,7 @@ gmx_bool change_dd_cutoff(t_commrec                     *cr,
  * GPU finish. Therefore there wait times need to be averaged over the ranks
  * sharing the same GPU. This function sets up the communication for that.
  */
-void dd_setup_dlb_resource_sharing(t_commrec           *cr,
+void dd_setup_dlb_resource_sharing(const t_commrec     *cr,
                                    int                  gpu_id);
 
 /*! \brief Cycle counter indices used internally in the domain decomposition */
@@ -308,9 +312,12 @@ void dd_init_local_top(const gmx_mtop_t &top_global,
 void dd_init_local_state(struct gmx_domdec_t *dd,
                          const t_state *state_global, t_state *local_state);
 
-/*! \brief Generate a list of links between charge groups that are linked by bonded interactions */
-t_blocka *make_charge_group_links(const gmx_mtop_t *mtop, gmx_domdec_t *dd,
-                                  cginfo_mb_t *cginfo_mb);
+/*! \brief Generate a list of links between atoms that are linked by bonded interactions
+ *
+ * Also stores whether atoms are linked in \p cginfo_mb.
+ */
+t_blocka *makeBondedLinks(const gmx_mtop_t *mtop,
+                          cginfo_mb_t      *cginfo_mb);
 
 /*! \brief Calculate the maximum distance involved in 2-body and multi-body bonded interactions */
 void dd_bonded_cg_distance(const gmx::MDLogger &mdlog,

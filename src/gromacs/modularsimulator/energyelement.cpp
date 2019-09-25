@@ -45,16 +45,25 @@
 
 #include "gromacs/math/vec.h"
 #include "gromacs/mdlib/compute_io.h"
+#include "gromacs/mdlib/enerdata_utils.h"
 #include "gromacs/mdlib/energyoutput.h"
 #include "gromacs/mdlib/mdatoms.h"
 #include "gromacs/mdlib/mdoutf.h"
 #include "gromacs/mdlib/stat.h"
+#include "gromacs/mdlib/update.h"
+#include "gromacs/mdrunutility/handlerestart.h"
 #include "gromacs/mdtypes/enerdata.h"
+#include "gromacs/mdtypes/energyhistory.h"
 #include "gromacs/mdtypes/inputrec.h"
+#include "gromacs/mdtypes/observableshistory.h"
+#include "gromacs/mdtypes/pullhistory.h"
+#include "gromacs/mdtypes/state.h"
 #include "gromacs/topology/topology.h"
-#include "gromacs/utility/fatalerror.h"
 
+#include "freeenergyperturbationelement.h"
+#include "parrinellorahmanbarostat.h"
 #include "statepropagatordata.h"
+#include "vrescalethermostat.h"
 
 struct pull_t;
 class t_state;
@@ -64,17 +73,20 @@ namespace gmx
 class Awh;
 
 EnergyElement::EnergyElement(
-        StatePropagatorData     *statePropagatorData,
-        const gmx_mtop_t        *globalTopology,
-        const t_inputrec        *inputrec,
-        const MDAtoms           *mdAtoms,
-        gmx_enerdata_t          *enerd,
-        gmx_ekindata_t          *ekind,
-        const Constraints       *constr,
-        FILE                    *fplog,
-        t_fcdata                *fcd,
-        const MdModulesNotifier &mdModulesNotifier,
-        bool                     isMaster) :
+        StatePropagatorData           *statePropagatorData,
+        FreeEnergyPerturbationElement *freeEnergyPerturbationElement,
+        const gmx_mtop_t              *globalTopology,
+        const t_inputrec              *inputrec,
+        const MDAtoms                 *mdAtoms,
+        gmx_enerdata_t                *enerd,
+        gmx_ekindata_t                *ekind,
+        const Constraints             *constr,
+        FILE                          *fplog,
+        t_fcdata                      *fcd,
+        const MdModulesNotifier       &mdModulesNotifier,
+        bool                           isMaster,
+        ObservablesHistory            *observablesHistory,
+        StartingBehavior               startingBehavior) :
     isMaster_(isMaster),
     energyWritingStep_(-1),
     energyCalculationStep_(-1),
@@ -82,11 +94,15 @@ EnergyElement::EnergyElement(
     logWritingStep_(-1),
     forceVirialStep_(-1),
     shakeVirialStep_(-1),
-#ifndef NDEBUG
     totalVirialStep_(-1),
     pressureStep_(-1),
-#endif
+    needToSumEkinhOld_(false),
+    startingBehavior_(startingBehavior),
+    dummyLegacyState_(),
     statePropagatorData_(statePropagatorData),
+    freeEnergyPerturbationElement_(freeEnergyPerturbationElement),
+    vRescaleThermostat_(nullptr),
+    parrinelloRahmanBarostat_(nullptr),
     inputrec_(inputrec),
     top_global_(globalTopology),
     mdAtoms_(mdAtoms),
@@ -96,7 +112,8 @@ EnergyElement::EnergyElement(
     fplog_(fplog),
     fcd_(fcd),
     mdModulesNotifier_(mdModulesNotifier),
-    groups_(&globalTopology->groups)
+    groups_(&globalTopology->groups),
+    observablesHistory_(observablesHistory)
 {
     clear_mat(forceVirial_);
     clear_mat(shakeVirial_);
@@ -104,7 +121,10 @@ EnergyElement::EnergyElement(
     clear_mat(pressure_);
     clear_rvec(muTot_);
 
-    // TODO: If energy history is re-introduced, it should probably be initialized here.
+    if (freeEnergyPerturbationElement_)
+    {
+        dummyLegacyState_.flags = (1u << estFEPSTATE);
+    }
 }
 
 void EnergyElement::scheduleTask(
@@ -153,6 +173,9 @@ void EnergyElement::trajectoryWriterSetup(gmx_mdoutf *outf)
     {
         return;
     }
+
+    initializeEnergyHistory(
+            startingBehavior_, observablesHistory_, energyOutput_.get());
 
     // TODO: This probably doesn't really belong here...
     //       but we have all we need in this element,
@@ -228,11 +251,28 @@ void EnergyElement::doStep(
         bool isFreeEnergyCalculationStep)
 {
     enerd_->term[F_ETOT] = enerd_->term[F_EPOT] + enerd_->term[F_EKIN];
-    // All the state is used for is turned off for now (free energy, temperature / pressure coupling)
-    t_state *localState = nullptr;
+    if (vRescaleThermostat_)
+    {
+        dummyLegacyState_.therm_integral = vRescaleThermostat_->thermostatIntegral();
+    }
+    if (freeEnergyPerturbationElement_)
+    {
+        sum_dhdl(enerd_, freeEnergyPerturbationElement_->constLambdaView(), *inputrec_->fepvals);
+        dummyLegacyState_.fep_state = freeEnergyPerturbationElement_->currentFEPState();
+    }
+    if (parrinelloRahmanBarostat_)
+    {
+        copy_mat(parrinelloRahmanBarostat_->boxVelocities(), dummyLegacyState_.boxv);
+        copy_mat(statePropagatorData_->constBox(), dummyLegacyState_.box);
+    }
+    if (integratorHasConservedEnergyQuantity(inputrec_))
+    {
+        enerd_->term[F_ECONSERVED] = enerd_->term[F_ETOT] +
+            NPT_energy(inputrec_, &dummyLegacyState_, nullptr);
+    }
     energyOutput_->addDataAtEnergyStep(
             isFreeEnergyCalculationStep, isEnergyCalculationStep,
-            time, mdAtoms_->mdatoms()->tmass, enerd_, localState,
+            time, mdAtoms_->mdatoms()->tmass, enerd_, &dummyLegacyState_,
             inputrec_->fepvals, inputrec_->expandedvals,
             statePropagatorData_->constPreviousBox(),
             shakeVirial_, forceVirial_, totalVirial_, pressure_,
@@ -284,6 +324,11 @@ void EnergyElement::addToConstraintVirial(const tensor virial, Step step)
 
 rvec* EnergyElement::forceVirial(Step gmx_unused step)
 {
+    if (step > forceVirialStep_)
+    {
+        forceVirialStep_ = step;
+        clear_mat(forceVirial_);
+    }
     GMX_ASSERT(step >= forceVirialStep_ || forceVirialStep_ == -1,
                "Asked for force virial of previous step.");
     return forceVirial_;
@@ -291,6 +336,11 @@ rvec* EnergyElement::forceVirial(Step gmx_unused step)
 
 rvec* EnergyElement::constraintVirial(Step gmx_unused step)
 {
+    if (step > shakeVirialStep_)
+    {
+        shakeVirialStep_ = step;
+        clear_mat(shakeVirial_);
+    }
     GMX_ASSERT(step >= shakeVirialStep_ || shakeVirialStep_ == -1,
                "Asked for constraint virial of previous step.");
     return shakeVirial_;
@@ -298,6 +348,11 @@ rvec* EnergyElement::constraintVirial(Step gmx_unused step)
 
 rvec* EnergyElement::totalVirial(Step gmx_unused step)
 {
+    if (step > totalVirialStep_)
+    {
+        totalVirialStep_ = step;
+        clear_mat(totalVirial_);
+    }
     GMX_ASSERT(step >= totalVirialStep_ || totalVirialStep_ == -1,
                "Asked for total virial of previous step.");
     return totalVirial_;
@@ -305,6 +360,11 @@ rvec* EnergyElement::totalVirial(Step gmx_unused step)
 
 rvec* EnergyElement::pressure(Step gmx_unused step)
 {
+    if (step > pressureStep_)
+    {
+        pressureStep_ = step;
+        clear_mat(pressure_);
+    }
     GMX_ASSERT(step >= pressureStep_ || pressureStep_ == -1,
                "Asked for pressure of previous step.");
     return pressure_;
@@ -323,6 +383,91 @@ gmx_enerdata_t* EnergyElement::enerdata()
 gmx_ekindata_t* EnergyElement::ekindata()
 {
     return ekind_;
+}
+
+bool* EnergyElement::needToSumEkinhOld()
+{
+    return &needToSumEkinhOld_;
+}
+
+void EnergyElement::writeCheckpoint(t_state gmx_unused *localState, t_state *globalState)
+{
+    if (isMaster_)
+    {
+        if (needToSumEkinhOld_)
+        {
+            globalState->ekinstate.bUpToDate = false;
+        }
+        else
+        {
+            update_ekinstate(&globalState->ekinstate, ekind_);
+            globalState->ekinstate.bUpToDate = true;
+        }
+        energyOutput_->fillEnergyHistory(observablesHistory_->energyHistory.get());
+    }
+}
+
+void EnergyElement::initializeEnergyHistory(
+        StartingBehavior    startingBehavior,
+        ObservablesHistory *observablesHistory,
+        EnergyOutput       *energyOutput)
+{
+    if (startingBehavior != StartingBehavior::NewSimulation)
+    {
+        /* Restore from energy history if appending to output files */
+        if (startingBehavior == StartingBehavior::RestartWithAppending)
+        {
+            /* If no history is available (because a checkpoint is from before
+             * it was written) make a new one later, otherwise restore it.
+             */
+            if (observablesHistory->energyHistory)
+            {
+                energyOutput->restoreFromEnergyHistory(*observablesHistory->energyHistory);
+            }
+        }
+        else if (observablesHistory->energyHistory)
+        {
+            /* We might have read an energy history from checkpoint.
+             * As we are not appending, we want to restart the statistics.
+             * Free the allocated memory and reset the counts.
+             */
+            observablesHistory->energyHistory = {};
+            /* We might have read a pull history from checkpoint.
+             * We will still want to keep the statistics, so that the files
+             * can be joined and still be meaningful.
+             * This means that observablesHistory_->pullHistory
+             * should not be reset.
+             */
+        }
+    }
+    if (!observablesHistory->energyHistory)
+    {
+        observablesHistory->energyHistory = std::make_unique<energyhistory_t>();
+    }
+    if (!observablesHistory->pullHistory)
+    {
+        observablesHistory->pullHistory = std::make_unique<PullHistory>();
+    }
+    /* Set the initial energy history */
+    energyOutput->fillEnergyHistory(observablesHistory->energyHistory.get());
+}
+
+void EnergyElement::setVRescaleThermostat(const gmx::VRescaleThermostat *vRescaleThermostat)
+{
+    vRescaleThermostat_ = vRescaleThermostat;
+    if (vRescaleThermostat_)
+    {
+        dummyLegacyState_.flags |= (1u << estTHERM_INT);
+    }
+}
+
+void EnergyElement::setParrinelloRahamnBarostat(const gmx::ParrinelloRahmanBarostat *parrinelloRahmanBarostat)
+{
+    parrinelloRahmanBarostat_ = parrinelloRahmanBarostat;
+    if (parrinelloRahmanBarostat_)
+    {
+        dummyLegacyState_.flags |= (1u << estBOX) | (1u << estBOXV);
+    }
 }
 
 } // namespace gmx

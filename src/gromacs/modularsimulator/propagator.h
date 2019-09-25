@@ -42,6 +42,10 @@
 #ifndef GMX_MODULARSIMULATOR_PROPAGATOR_H
 #define GMX_MODULARSIMULATOR_PROPAGATOR_H
 
+#include <vector>
+
+#include "gromacs/math/vectypes.h"
+#include "gromacs/utility/arrayref.h"
 #include "gromacs/utility/real.h"
 
 #include "modularsimulatorinterfaces.h"
@@ -77,6 +81,29 @@ enum class IntegrationStep
     VelocityVerletPositionsAndVelocities,
     Count
 };
+
+//! Sets the number of different velocity scaling values
+enum class NumVelocityScalingValues
+{
+    None,     //!< No velocity scaling (either this step or ever)
+    Single,   //!< Single T-scaling value (either one group or all values =1)
+    Multiple, //!< Multiple T-scaling values, need to use T-group indices
+    Count
+};
+
+//! Sets the type of Parrinello-Rahman pressure scaling
+enum class ParrinelloRahmanVelocityScaling
+{
+    No,       //!< Do not apply velocity scaling (not a PR-coupling run or step)
+    Diagonal, //!< Apply velocity scaling using a diagonal matrix
+    Full,     //!< Apply velocity scaling using a full matrix
+    Count
+};
+
+//! Generic callback to the propagator
+typedef std::function<void(Step)> PropagatorCallback;
+//! Pointer to generic callback to the propagator
+typedef std::unique_ptr<PropagatorCallback> PropagatorCallbackPtr;
 
 /*! \libinternal
  * \brief Propagator element
@@ -119,8 +146,22 @@ class Propagator final :
         //! No element teardown needed
         void elementTeardown() override {}
 
+        //! Set the number of velocity scaling variables
+        void setNumVelocityScalingVariables(int numVelocityScalingVariables);
+        //! Get view on the velocity scaling vector
+        ArrayRef<real> viewOnVelocityScaling();
+        //! Get velocity scaling callback
+        PropagatorCallbackPtr velocityScalingCallback();
+
+        //! Get view on the full PR scaling matrix
+        ArrayRef<rvec> viewOnPRScalingMatrix();
+        //! Get PR scaling callback
+        PropagatorCallbackPtr prScalingCallback();
+
     private:
         //! The actual propagation
+        template <NumVelocityScalingValues numVelocityScalingValues,
+                  ParrinelloRahmanVelocityScaling parrinelloRahmanVelocityScaling>
         void run();
 
         //! The time step
@@ -129,12 +170,27 @@ class Propagator final :
         //! Pointer to the micro state
         StatePropagatorData *statePropagatorData_;
 
+        //! Whether we're doing single-value velocity scaling
+        bool              doSingleVelocityScaling;
+        //! Wether we're doing group-wise velocity scaling
+        bool              doGroupVelocityScaling;
+        //! The vector of velocity scaling values
+        std::vector<real> velocityScaling_;
+        //! The next velocity scaling step
+        Step              scalingStepVelocity_;
+
+        //! The diagonal of the PR scaling matrix
+        rvec   diagPR;
+        //! The full PR scaling matrix
+        matrix matrixPR;
+        //! The next PR scaling step
+        Step   scalingStepPR_;
+
         // Access to ISimulator data
         //! Atom parameters for this domain.
         const MDAtoms *mdAtoms_;
         //! Manages wall cycle accounting.
         gmx_wallcycle *wcycle_;
-
 };
 
 //! \}

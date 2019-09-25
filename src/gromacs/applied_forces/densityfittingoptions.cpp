@@ -51,6 +51,7 @@
 #include "gromacs/utility/exceptions.h"
 #include "gromacs/utility/keyvaluetreebuilder.h"
 #include "gromacs/utility/keyvaluetreetransform.h"
+#include "gromacs/utility/mdmodulenotification.h"
 #include "gromacs/utility/strconvert.h"
 
 #include "densityfittingamplitudelookup.h"
@@ -152,12 +153,12 @@ void DensityFittingOptions::buildMdpOutput(KeyValueTreeObjectBuilder *builder) c
     {
         addDensityFittingMdpOutputValue(builder, groupString_, c_groupTag_);
 
-        addDensityFittingMdpOutputValueComment(builder, "; Similarity measure between densities: inner-product, or relative-entropy", c_similarityMeasureTag_);
+        addDensityFittingMdpOutputValueComment(builder, "; Similarity measure between densities: inner-product, relative-entropy, or cross-correlation", c_similarityMeasureTag_);
         addDensityFittingMdpOutputValue<std::string>(builder,
                                                      c_densitySimilarityMeasureMethodNames[parameters_.similarityMeasureMethod_],
                                                      c_similarityMeasureTag_);
 
-        addDensityFittingMdpOutputValueComment(builder, "; Atom amplitude for spreading onto grid: unity, mass, or charges", c_amplitudeMethodTag_);
+        addDensityFittingMdpOutputValueComment(builder, "; Atom amplitude for spreading onto grid: unity, mass, or charge", c_amplitudeMethodTag_);
         addDensityFittingMdpOutputValue<std::string>(builder,
                                                      c_densityFittingAmplitudeMethodNames[parameters_.amplitudeLookupMethod_],
                                                      c_amplitudeMethodTag_);
@@ -246,6 +247,17 @@ void DensityFittingOptions::readInternalParametersFromKvt(const KeyValueTreeObje
     parameters_.indices_.resize(kvtIndexArray.size());
     std::transform(std::begin(kvtIndexArray), std::end(kvtIndexArray), std::begin(parameters_.indices_),
                    [](const KeyValueTreeValue &val) { return val.cast<std::int64_t>(); });
+}
+
+void DensityFittingOptions::checkEnergyCaluclationFrequency(EnergyCalculationFrequencyErrors * energyCalculationFrequencyErrors) const
+{
+    if (energyCalculationFrequencyErrors->energyCalculationIntervalInSteps() % parameters_.calculationIntervalInSteps_ != 0)
+    {
+        energyCalculationFrequencyErrors->addError("nstcalcenergy (" +
+                                                   toString(energyCalculationFrequencyErrors->energyCalculationIntervalInSteps())
+                                                   + ") is not a multiple of " + DensityFittingModuleInfo::name_ + "-" + c_everyNStepsTag_
+                                                   + " (" + toString(parameters_.calculationIntervalInSteps_) + ") .");
+    }
 }
 
 const std::string &DensityFittingOptions::referenceDensityFileName() const

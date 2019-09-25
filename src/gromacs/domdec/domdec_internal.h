@@ -445,6 +445,8 @@ struct DDSystemInfo
     //! The maximum radius over all update groups
     real                                maxUpdateGroupRadius;
 
+    //! Are molecules always whole, i.e. not broken by PBC?
+    bool moleculesAreAlwaysWhole         = false;
     //! Are there inter-domain bonded interactions?
     bool haveInterDomainBondeds          = false;
     //! Are there inter-domain multi-body interactions?
@@ -488,6 +490,9 @@ struct DDSettings
     int  dlb_scale_lim = 0;
     //! Flop counter (0=no,1=yes,2=with (eFlop-1)*5% noise
     int  eFlop = 0;
+
+    //! Request 1D domain decomposition with maximum one communication pulse
+    bool request1DAnd1Pulse;
 
     //! Whether to order the DD dimensions from z to x
     bool useDDOrderZYX = false;
@@ -571,10 +576,6 @@ struct gmx_domdec_comm_t // NOLINT (clang-analyzer-optin.performance.Padding)
     /**< Information on the Cartesian part of the DD rank setup */
     CartesianRankSetup cartesianRankSetup;
 
-    /* The DLB state, used for reloading old states, during e.g. EM */
-    /**< The global charge groups, this defined the DD state (except for the DLB state) */
-    t_block cgs_gl = { };
-
     /* Charge group / atom sorting */
     /**< Data structure for cg/atom sorting */
     std::unique_ptr<gmx_domdec_sort_t> sort;
@@ -583,10 +584,8 @@ struct gmx_domdec_comm_t // NOLINT (clang-analyzer-optin.performance.Padding)
     std::unique_ptr<gmx::UpdateGroupsCog> updateGroupsCog;
 
     /* Data for the optional filtering of communication of atoms for bonded interactions */
-    /**< Links between cg's through bonded interactions */
-    t_blocka *cglink = nullptr;
-    /**< Local cg availability, TODO: remove when group scheme is removed */
-    char     *bLocalCG = nullptr;
+    /**< Links between atoms through bonded interactions */
+    t_blocka *bondedLinks = nullptr;
 
     /* The DLB state, possible values are defined above */
     DlbState dlbState;
@@ -620,8 +619,6 @@ struct gmx_domdec_comm_t // NOLINT (clang-analyzer-optin.performance.Padding)
      */
     real PMELoadBal_max_cutoff = 0;
 
-    /**< tric_dir from \p gmx_ddbox_t is only stored here because dd_get_ns_ranges needs it */
-    ivec tric_dir = { };
     /**< box lower corner, required with dim's without pbc and -gcom */
     rvec box0 = { };
     /**< box size, required with dim's without pbc and -gcom */
@@ -651,7 +648,10 @@ struct gmx_domdec_comm_t // NOLINT (clang-analyzer-optin.performance.Padding)
 
     /** The coordinate/force communication setup and indices */
     gmx_domdec_comm_dim_t cd[DIM];
-    /** The maximum number of cells to communicate with in one dimension */
+    /** Restricts the maximum number of cells to communicate with in one dimension
+     *
+     * Dynamic load balancing is not permitted to change sizes if it
+     * would violate this restriction. */
     int                   maxpulse = 0;
 
     /** Which cg distribution is stored on the master node,
@@ -762,7 +762,7 @@ struct gmx_domdec_comm_t // NOLINT (clang-analyzer-optin.performance.Padding)
  *
  * Zone permutation from the Cartesian x-major/z-minor order to an order
  * that leads to consecutive charge groups for neighbor searching.
- * TODO: remove when the group scheme is removed
+ * TODO: It should be possible to remove this now that the group scheme is removed
  */
 static const int zone_perm[3][4] = { {0, 0, 0, 0}, {1, 0, 0, 0}, {3, 0, 1, 2} };
 

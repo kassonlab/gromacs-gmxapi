@@ -107,8 +107,8 @@ struct gmx_shellfc_t {
     int          nflexcon;               /* The number of flexible constraints        */
 
     /* Temporary arrays, should be fixed size 2 when fully converted to C++ */
-    PaddedVector<gmx::RVec> *x;          /* Array for iterative minimization          */
-    PaddedVector<gmx::RVec> *f;          /* Array for iterative minimization          */
+    PaddedHostVector<gmx::RVec>     *x;  /* Array for iterative minimization          */
+    PaddedHostVector<gmx::RVec>     *f;  /* Array for iterative minimization          */
 
     /* Flexible constraint working data */
     rvec        *acc_dir;                /* Acceleration direction for flexcon        */
@@ -329,8 +329,8 @@ gmx_shellfc_t *init_shell_flexcon(FILE *fplog,
     }
 
     snew(shfc, 1);
-    shfc->x        = new PaddedVector<gmx::RVec>[2] {};
-    shfc->f        = new PaddedVector<gmx::RVec>[2] {};
+    shfc->x        = new PaddedHostVector<gmx::RVec>[2] {};
+    shfc->f        = new PaddedHostVector<gmx::RVec>[2] {};
     shfc->nflexcon = nflexcon;
 
     if (nshell == 0)
@@ -998,7 +998,7 @@ void relax_shell_flexcon(FILE                                     *fplog,
                          t_graph                                  *graph,
                          gmx_shellfc_t                            *shfc,
                          t_forcerec                               *fr,
-                         gmx::MdScheduleWorkload                  *mdScheduleWork,
+                         gmx::MdrunScheduleWorkload               *runScheduleWork,
                          double                                    t,
                          rvec                                      mu_tot,
                          const gmx_vsite_t                        *vsite,
@@ -1134,7 +1134,7 @@ void relax_shell_flexcon(FILE                                     *fplog,
              box, x, hist,
              forceWithPadding[Min], force_vir, md, enerd, fcd,
              lambda, graph,
-             fr, mdScheduleWork, vsite, mu_tot, t, nullptr,
+             fr, runScheduleWork, vsite, mu_tot, t, nullptr,
              (bDoNS ? GMX_FORCE_NS : 0) | shellfc_flags,
              ddBalanceRegionHandler);
 
@@ -1245,7 +1245,7 @@ void relax_shell_flexcon(FILE                                     *fplog,
                  top, box, posWithPadding[Try], hist,
                  forceWithPadding[Try], force_vir,
                  md, enerd, fcd, lambda, graph,
-                 fr, mdScheduleWork, vsite, mu_tot, t, nullptr,
+                 fr, runScheduleWork, vsite, mu_tot, t, nullptr,
                  shellfc_flags,
                  ddBalanceRegionHandler);
         sum_epot(&(enerd->grpp), enerd->term);

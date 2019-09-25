@@ -99,6 +99,7 @@ class GetIrTest : public ::testing::Test
             get_ir(inputMdpFilename.c_str(), outputMdpFilename.c_str(),
                    &mdModules_, &ir_, &opts_, WriteMdpHeader::no, wi_);
 
+            check_ir(inputMdpFilename.c_str(), mdModules_.notifier(), &ir_, &opts_, wi_);
             // Now check
             bool                 failure = warning_errors_exist(wi_);
             TestReferenceData    data;
@@ -136,15 +137,6 @@ TEST_F(GetIrTest, HandlesDifferentKindsOfMdpLines)
         "integrator = steep"
     };
     runTest(joinStrings(inputMdpFile, "\n"));
-}
-
-// This case is used often by SimulationRunner::useEmptyMdpFile (see
-// comments there for explanation). When we remove the group scheme,
-// that usage will have to disappear, and so can this test.
-TEST_F(GetIrTest, HandlesOnlyCutoffScheme)
-{
-    const char *inputMdpFile = "cutoff-scheme = Group\n";
-    runTest(inputMdpFile);
 }
 
 TEST_F(GetIrTest, RejectsNonCommentLineWithNoEquals)

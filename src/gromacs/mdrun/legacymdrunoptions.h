@@ -54,6 +54,7 @@
 #include "gromacs/domdec/options.h"
 #include "gromacs/gmxlib/network.h"
 #include "gromacs/hardware/hw_info.h"
+#include "gromacs/mdrunutility/multisim.h"
 #include "gromacs/mdtypes/mdrunoptions.h"
 
 #include "replicaexchange.h"
@@ -155,8 +156,11 @@ class LegacyMdrunOptions
         { nullptr, "auto", "cpu", "gpu", nullptr };
         const char       *bonded_opt_choices[5] =
         { nullptr, "auto", "cpu", "gpu", nullptr };
+        const char       *update_opt_choices[5] =
+        { nullptr, "auto", "cpu", "gpu", nullptr };
         const char       *gpuIdsAvailable       = "";
         const char       *userGpuTaskAssignment = "";
+
 
         ImdOptions       &imdOptions = mdrunOptions.imdOptions;
 
@@ -216,7 +220,7 @@ class LegacyMdrunOptions
             { "-nstlist", FALSE, etINT, {&nstlist_cmdline},
               "Set nstlist when using a Verlet buffer tolerance (0 is guess)" },
             { "-tunepme", FALSE, etBOOL, {&mdrunOptions.tunePme},
-              "Optimize PME load between PP/PME ranks or GPU/CPU (only with the Verlet cut-off scheme)" },
+              "Optimize PME load between PP/PME ranks or GPU/CPU" },
             { "-pme",     FALSE, etENUM, {pme_opt_choices},
               "Perform PME calculations on" },
             { "-pmefft", FALSE, etENUM, {pme_fft_opt_choices},
@@ -267,9 +271,9 @@ class LegacyMdrunOptions
         /*! \} */
 
         //! Handle to communication object.
-        CommrecHandle     cr = init_commrec();
+        CommrecHandle                   cr = init_commrec();
         //! Multi-simulation object.
-        gmx_multisim_t   *ms = nullptr;
+        std::unique_ptr<gmx_multisim_t> ms;
 
         //! Parses the command-line input and prepares to start mdrun.
         int updateFromCommandLine(int argc, char **argv, ArrayRef<const char *> desc);

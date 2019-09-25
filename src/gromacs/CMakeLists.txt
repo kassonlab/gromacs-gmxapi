@@ -137,6 +137,11 @@ endif()
 list(APPEND libgromacs_object_library_dependencies thread_mpi)
 
 configure_file(version.h.cmakein version.h)
+if(GMX_INSTALL_LEGACY_API)
+  install(FILES
+          ${CMAKE_CURRENT_BINARY_DIR}/version.h
+          DESTINATION include/gromacs)
+endif()
 
 # This code is here instead of utility/CMakeLists.txt, because CMake
 # custom commands and source file properties can only be set in the directory
@@ -174,7 +179,7 @@ if (GMX_USE_CUDA)
     # with keywords otherwise...
     set(CUDA_LIBRARIES PRIVATE ${CUDA_LIBRARIES})
     if (NOT GMX_CLANG_CUDA)
-        cuda_add_library(libgromacs ${LIBGROMACS_SOURCES})
+        gmx_cuda_add_library(libgromacs ${LIBGROMACS_SOURCES})
     else()
         add_library(libgromacs ${LIBGROMACS_SOURCES})
     endif()

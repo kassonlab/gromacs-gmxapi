@@ -215,7 +215,7 @@ int gmx_mdrun(int argc, char *argv[])
     LogFilePtr       logFileGuard     = nullptr;
     std::tie(startingBehavior,
              logFileGuard) = handleRestart(options.cr.get(),
-                                           options.ms,
+                                           options.ms.get(),
                                            options.mdrunOptions.appendingBehavior,
                                            ssize(options.filenames),
                                            options.filenames.data());
@@ -248,10 +248,11 @@ int gmx_mdrun(int argc, char *argv[])
     // \todo pass by value
     builder.addElectrostatics(options.pme_opt_choices[0], options.pme_fft_opt_choices[0]);
     builder.addBondedTaskAssignment(options.bonded_opt_choices[0]);
+    builder.addUpdateTaskAssignment(options.update_opt_choices[0]);
     builder.addNeighborList(options.nstlist_cmdline);
     builder.addReplicaExchange(options.replExParams);
     // \todo take ownership of multisim resources (ms)
-    builder.addMultiSim(options.ms);
+    builder.addMultiSim(options.ms.get());
     builder.addCommunicationRecord(simulationContext.communicationRecord_.get());
     // \todo Provide parallelism resources through SimulationContext.
     // Need to establish run-time values from various inputs to provide a resource handle to Mdrunner
